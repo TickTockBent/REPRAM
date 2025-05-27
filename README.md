@@ -218,33 +218,27 @@ curl http://localhost:8080/metrics
 - Web3 authentication bridges
 - Post-quantum cryptography
 
-## 🚀 Scale Testing with Docker
+## 🚀 Scale Testing
 
-REPRAM includes a comprehensive scale testing setup using Docker:
+REPRAM includes comprehensive scale testing capabilities for Docker deployments:
 
-### Quick Scale Test
+### Quick Start
 ```bash
-# Start 3-node cluster
-make docker-compose-cluster
-
-# Run load test against cluster
-./scripts/load-test.sh --url http://localhost:8082 --concurrency 50 --duration 120s
+make docker-scale-test-quick  # Fast validation test
+make docker-scale-test-full   # Complete performance matrix
+make docker-monitor          # Real-time cluster monitoring
 ```
 
-### Advanced Scale Testing
-```bash
-# Custom cluster size (edit docker-compose.yml)
-docker-compose up --scale repram-cluster-node=5
+### Documentation
+- **[Scale Testing Walkthrough](docs/scale-testing-walkthrough.md)** - Step-by-step guide with detailed instructions
+- **[Docker Scale Testing Guide](docs/docker-scale-testing.md)** - Technical reference and advanced usage
+- **[Deployment Guide](docs/deployment-guide.md)** - Production deployment procedures
 
-# Multi-phase testing
-make load-test-ramp    # Gradual load increase
-make load-test-stress  # Payload size stress test
-
-# Monitor during testing
-curl http://localhost:8082/metrics | grep repram_
-```
-
-See [docs/deployment-guide.md](docs/deployment-guide.md) for complete scale testing procedures.
+The scale testing framework provides:
+- **Automated cluster scaling** (1-7 nodes) with dynamic Docker Compose generation
+- **Variable load testing** (10-100+ concurrent workers) with realistic workloads
+- **Real-time monitoring** with live dashboards and metrics collection
+- **Comprehensive reporting** with performance analysis and capacity planning
 
 ## 🤝 Use Cases
 
@@ -284,10 +278,15 @@ See [LICENSE](LICENSE) for details.
 
 ## 📞 Documentation & Support
 
+### Core Documentation
 - **[Development Plan](docs/development-plan.md)** - Project roadmap and architecture
-- **[Deployment Guide](docs/deployment-guide.md)** - Production deployment instructions
 - **[Project Overview](docs/project-overview.md)** - Technical deep dive
 - **[Phase 3 Summary](docs/phase3-summary.md)** - Latest production features
+
+### Deployment & Operations
+- **[Deployment Guide](docs/deployment-guide.md)** - Production deployment instructions
+- **[Scale Testing Walkthrough](docs/scale-testing-walkthrough.md)** - Step-by-step testing guide
+- **[Docker Scale Testing Guide](docs/docker-scale-testing.md)** - Advanced testing reference
 
 For issues with the open-source node software, please open an issue in this repository.
 
