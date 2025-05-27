@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # Single node deployment
+  repram-node:
+    build: .
+    command: ["./repram-node"]
+    ports:
+      - "8080:8080"
+    environment:
+      - REPRAM_PORT=8080
+      - REPRAM_LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Raw node deployment
+  repram-node-raw:
+    build: .
+    command: ["./repram-node-raw"]
+    ports:
+      - "8081:8080"
+    environment:
+      - REPRAM_PORT=8080
+      - REPRAM_LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Cluster node 1
+  repram-cluster-1:
+    build: .
+    command: ["./repram-cluster-node"]
+    ports:
+      - "8082:8080"
+      - "9082:9090"
+    environment:
+      - REPRAM_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPRAM_NODE_ID=node1
+      - REPRAM_LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Cluster node 2
+  repram-cluster-2:
+    build: .
+    command: ["./repram-cluster-node"]
+    ports:
+      - "8083:8080"
+      - "9083:9090"
+    environment:
+      - REPRAM_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPRAM_NODE_ID=node2
+      - REPRAM_BOOTSTRAP_PEERS=repram-cluster-1:9090
+      - REPRAM_LOG_LEVEL=info
+    depends_on:
+      - repram-cluster-1
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Cluster node 3
+  repram-cluster-3:
+    build: .
+    command: ["./repram-cluster-node"]
+    ports:
+      - "8084:8080"
+      - "9084:9090"
+    environment:
+      - REPRAM_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPRAM_NODE_ID=node3
+      - REPRAM_BOOTSTRAP_PEERS=repram-cluster-1:9090,repram-cluster-2:9090
+      - REPRAM_LOG_LEVEL=info
+    depends_on:
+      - repram-cluster-1
+      - repram-cluster-2
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    driver: bridge

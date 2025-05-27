@@ -4,7 +4,7 @@ CLUSTER_BINARY=repram-cluster-node
 EXAMPLE_BINARY=repram-example
 SDK_EXAMPLE=repram-sdk-example
 
-.PHONY: build build-raw build-cluster build-example build-sdk-example run run-raw run-cluster test clean example sdk-example
+.PHONY: build build-raw build-cluster build-example build-sdk-example run run-raw run-cluster test clean example sdk-example docker-build docker-run docker-compose-up docker-compose-down docker-compose-cluster load-test-build load-test load-test-ramp load-test-stress
 
 build:
 	go build -o bin/$(BINARY_NAME) cmd/node/main.go
@@ -63,3 +63,32 @@ demo-sdk: build-sdk-example
 	@echo "Running SDK example (encrypted data)..."
 	make sdk-example
 	@pkill repram-node
+
+# Docker commands
+docker-build:
+	docker build -t repram:latest .
+
+docker-run:
+	docker run -p 8080:8080 repram:latest
+
+docker-compose-up:
+	docker-compose up --build
+
+docker-compose-down:
+	docker-compose down
+
+docker-compose-cluster:
+	docker-compose up --build repram-cluster-1 repram-cluster-2 repram-cluster-3
+
+# Load testing
+load-test-build:
+	cd test/load && go build -o load-tester .
+
+load-test: load-test-build
+	./scripts/load-test.sh
+
+load-test-ramp: load-test-build
+	./scripts/load-test.sh --type ramp
+
+load-test-stress: load-test-build
+	./scripts/load-test.sh --type stress

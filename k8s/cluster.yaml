@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: repram-cluster
+  namespace: repram
+  labels:
+    app.kubernetes.io/name: repram
+    app.kubernetes.io/component: cluster
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  serviceName: repram-cluster-headless
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: repram
+      app.kubernetes.io/component: cluster
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: repram
+        app.kubernetes.io/component: cluster
+        app.kubernetes.io/version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: repram-service-account
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: repram-cluster-node
+        image: repram:latest
+        imagePullPolicy: IfNotPresent
+        command: ["./repram-cluster-node"]
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: gossip
+          containerPort: 9090
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: repram-config
+        env:
+        - name: REPRAM_NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: REPRAM_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: REPRAM_BOOTSTRAP_PEERS
+          value: "repram-cluster-0.repram-cluster-headless.repram.svc.cluster.local:9090,repram-cluster-1.repram-cluster-headless.repram.svc.cluster.local:9090,repram-cluster-2.repram-cluster-headless.repram.svc.cluster.local:9090"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: repram-cluster-headless
+  namespace: repram
+  labels:
+    app.kubernetes.io/name: repram
+    app.kubernetes.io/component: cluster
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: 8080
+    targetPort: http
+    protocol: TCP
+    name: http
+  - port: 9090
+    targetPort: gossip
+    protocol: TCP
+    name: gossip
+  selector:
+    app.kubernetes.io/name: repram
+    app.kubernetes.io/component: cluster
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: repram-cluster-service
+  namespace: repram
+  labels:
+    app.kubernetes.io/name: repram
+    app.kubernetes.io/component: cluster
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app.kubernetes.io/name: repram
+    app.kubernetes.io/component: cluster

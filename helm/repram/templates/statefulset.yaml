@@ -1,0 +1,95 @@
+{{- if eq .Values.mode "cluster" }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "repram.fullname" . }}
+  labels:
+    {{- include "repram.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cluster
+spec:
+  serviceName: {{ include "repram.fullname" . }}-headless
+  replicas: {{ .Values.replicaCount }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "repram.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: cluster
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "repram.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: cluster
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "repram.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["./repram-cluster-node"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.port }}
+              protocol: TCP
+            - name: gossip
+              containerPort: {{ .Values.config.gossipPort }}
+              protocol: TCP
+          env:
+            - name: REPRAM_PORT
+              value: "{{ .Values.config.port }}"
+            - name: REPRAM_GOSSIP_PORT
+              value: "{{ .Values.config.gossipPort }}"
+            - name: REPRAM_LOG_LEVEL
+              value: "{{ .Values.config.logLevel }}"
+            - name: REPRAM_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: REPRAM_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: REPRAM_BOOTSTRAP_PEERS
+              value: "{{ range $i := until (int .Values.replicaCount) }}{{ include "repram.fullname" $ }}-{{ $i }}.{{ include "repram.fullname" $ }}-headless.{{ $.Release.Namespace }}.svc.cluster.local:{{ $.Values.config.gossipPort }}{{ if lt $i (sub (int $.Values.replicaCount) 1) }},{{ end }}{{ end }}"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -83,3 +83,18 @@ func (m *MemoryStore) cleanupExpired() {
 func (m *MemoryStore) Close() {
 	close(m.cleanup)
 }
+
+// GetStats returns storage statistics
+func (m *MemoryStore) GetStats() (int, int64) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	
+	count := len(m.data)
+	var totalSize int64
+	
+	for _, entry := range m.data {
+		totalSize += int64(len(entry.Data))
+	}
+	
+	return count, totalSize
+}
