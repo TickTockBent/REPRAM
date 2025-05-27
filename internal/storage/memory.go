@@ -1,0 +1,85 @@
+package storage
+
+import (
+	"sync"
+	"time"
+)
+
+type Entry struct {
+	Data      []byte    `json:"data"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type MemoryStore struct {
+	data    map[string]*Entry
+	mutex   sync.RWMutex
+	cleanup chan bool
+}
+
+func NewMemoryStore() *MemoryStore {
+	store := &MemoryStore{
+		data:    make(map[string]*Entry),
+		cleanup: make(chan bool),
+	}
+	
+	go store.startCleanupWorker()
+	return store
+}
+
+func (m *MemoryStore) Put(key string, data []byte, ttl time.Duration) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	
+	m.data[key] = &Entry{
+		Data:      data,
+		ExpiresAt: time.Now().Add(ttl),
+	}
+	return nil
+}
+
+func (m *MemoryStore) Get(key string) ([]byte, bool) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	
+	entry, exists := m.data[key]
+	if !exists {
+		return nil, false
+	}
+	
+	if time.Now().After(entry.ExpiresAt) {
+		delete(m.data, key)
+		return nil, false
+	}
+	
+	return entry.Data, true
+}
+
+func (m *MemoryStore) startCleanupWorker() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			m.cleanupExpired()
+		case <-m.cleanup:
+			return
+		}
+	}
+}
+
+func (m *MemoryStore) cleanupExpired() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	
+	now := time.Now()
+	for key, entry := range m.data {
+		if now.After(entry.ExpiresAt) {
+			delete(m.data, key)
+		}
+	}
+}
+
+func (m *MemoryStore) Close() {
+	close(m.cleanup)
+}
