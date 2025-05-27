@@ -3,6 +3,8 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,31 +45,61 @@ func NewClusterNode(nodeID string, address string, port int, replicationFactor i
 	
 	protocol := gossip.NewProtocol(localNode, replicationFactor)
 	
+	// For single node deployment, quorum size should be 1
+	quorumSize := (replicationFactor / 2) + 1
+	if quorumSize < 1 {
+		quorumSize = 1
+	}
+	
 	return &ClusterNode{
 		localNode:     localNode,
 		protocol:      protocol,
 		store:         storage.NewMemoryStore(),
-		quorumSize:    (replicationFactor / 2) + 1,
+		quorumSize:    quorumSize,
 		pendingWrites: make(map[string]*WriteOperation),
 	}
 }
 
 func (cn *ClusterNode) Start(ctx context.Context, bootstrapNodes []string) error {
-	transport := gossip.NewGRPCTransport(cn.localNode)
+	transport := gossip.NewSimpleGRPCTransport(cn.localNode)
 	cn.protocol.SetTransport(transport)
 	cn.protocol.SetMessageHandler(cn.handleGossipMessage)
 	
 	var bootstrapNodeList []*gossip.Node
-	for i, addr := range bootstrapNodes {
-		if addr != fmt.Sprintf("%s:%d", cn.localNode.Address, cn.localNode.Port) {
-			bootstrapNodeList = append(bootstrapNodeList, &gossip.Node{
-				ID:      gossip.NodeID(fmt.Sprintf("node-%d", i)),
-				Address: addr,
-				Port:    8090 + i, // Assume sequential ports for now
-			})
+	for _, addr := range bootstrapNodes {
+		// Skip empty addresses
+		if addr == "" {
+			continue
 		}
+		
+		// Skip if this is our own address
+		if addr == fmt.Sprintf("%s:%d", cn.localNode.Address, cn.localNode.Port) {
+			continue
+		}
+		
+		// Parse host:port
+		parts := strings.Split(addr, ":")
+		if len(parts) != 2 {
+			fmt.Printf("Warning: invalid bootstrap address format: %s\n", addr)
+			continue
+		}
+		
+		host := parts[0]
+		portStr := parts[1]
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			fmt.Printf("Warning: invalid port in bootstrap address: %s\n", addr)
+			continue
+		}
+		
+		bootstrapNodeList = append(bootstrapNodeList, &gossip.Node{
+			ID:      gossip.NodeID(fmt.Sprintf("bootstrap-%s-%d", host, port)),
+			Address: host,
+			Port:    port,
+		})
 	}
 	
+	fmt.Printf("Starting cluster node with %d bootstrap peers: %v\n", len(bootstrapNodeList), bootstrapNodes)
 	return cn.protocol.Start(ctx, bootstrapNodeList)
 }
 
