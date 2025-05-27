@@ -4,7 +4,7 @@ CLUSTER_BINARY=repram-cluster-node
 EXAMPLE_BINARY=repram-example
 SDK_EXAMPLE=repram-sdk-example
 
-.PHONY: build build-raw build-cluster build-example build-sdk-example run run-raw run-cluster test clean example sdk-example docker-build docker-run docker-compose-up docker-compose-down docker-compose-cluster load-test-build load-test load-test-ramp load-test-stress
+.PHONY: build build-raw build-cluster build-example build-sdk-example run run-raw run-cluster test clean example sdk-example docker-build docker-run docker-compose-up docker-compose-down docker-compose-cluster load-test-build load-test load-test-ramp load-test-stress docker-scale-test-quick docker-scale-test-full docker-scale-test-stress docker-monitor docker-monitor-long
 
 build:
 	go build -o bin/$(BINARY_NAME) cmd/node/main.go
@@ -92,3 +92,19 @@ load-test-ramp: load-test-build
 
 load-test-stress: load-test-build
 	./scripts/load-test.sh --type stress
+
+# Docker scale testing
+docker-scale-test-quick:
+	./scripts/docker-scale-test.sh --quick
+
+docker-scale-test-full:
+	./scripts/docker-scale-test.sh --full
+
+docker-scale-test-stress:
+	./scripts/docker-scale-test.sh --stress
+
+docker-monitor:
+	./scripts/docker-monitoring.sh
+
+docker-monitor-long:
+	./scripts/docker-monitoring.sh --duration 1800
