@@ -76,15 +76,45 @@ This document outlines the phased development approach for REPRAM, a distributed
 - **Reputation System**: Node reliability scoring and selection
 - **Web3 Bridges**: Integration with blockchain authentication
 - **Advanced Encryption**: Post-quantum cryptography support
-- **Cross-network TTL**: Compliance features for data governance
 
 ### Advanced Features:
 - Integration with decentralized storage networks
 - Blockchain-based authentication and authorization
 - Advanced cryptographic protocols
-- Compliance and regulatory features
 - Extended persistence options
 - Network reputation and trust mechanisms
+
+## Phase 5: Enterprise Compliance & Attestation
+
+**Goal**: Transform REPRAM into a compliance powerhouse for regulated industries
+
+### Core Compliance Features:
+- **Selective Compliance Flagging**: Optional attestation for specific data
+- **Cryptographic Deletion Proofs**: Ed25519-signed attestations for audit trails
+- **Multi-Framework Support**: HIPAA, PCI-DSS, GDPR, SOC2 compliance
+- **Zero-Trust Compliance**: Privacy-preserving design with only key hashes
+- **Performance Isolation**: Zero impact on non-compliance operations
+
+### Technical Components:
+- **SDK Compliance Layer**: Client-controlled compliance metadata encoding
+- **Node Attestation Engine**: Periodic deletion cycle generation
+- **Compliance Service API**: WebSocket subscriptions and REST queries
+- **10-Cycle Buffer**: Resilient attestation storage with automatic purge
+- **Cryptographic Integrity**: Full signature chain for verification
+
+### Enterprise Features:
+- **Audit Trail Generation**: Automated compliance reporting
+- **Multi-Node Verification**: Independent attestation from multiple sources
+- **Disaster Recovery**: Built-in redundancy and replay capabilities
+- **SIEM Integration**: Enterprise security and audit system compatibility
+- **Geographic Controls**: Multi-jurisdiction data governance support
+
+### Target Markets:
+- **Healthcare**: HIPAA-compliant ephemeral storage for PHI
+- **Financial Services**: PCI-DSS compliant transaction data
+- **Government**: FedRAMP and NIST compliance capabilities
+- **Enterprise SaaS**: SOC2 and ISO 27001 audit support
+- **Legal/Compliance**: GDPR right-to-erasure verification
 
 ## Development Principles
 
@@ -125,17 +155,45 @@ This document outlines the phased development approach for REPRAM, a distributed
 - Integration with external storage networks
 - Advanced cryptographic features
 - Ecosystem partnerships and integrations
-- Compliance and regulatory features
+- Extended persistence options
+
+### Phase 5:
+- Enterprise compliance framework deployment
+- Cryptographic attestation system
+- Multi-framework regulatory support
+- Zero-impact compliance architecture
+
+## Strategic Vision: Compliance as a Differentiator
+
+Phase 5 represents a bold strategic move that positions REPRAM as the only ephemeral storage solution with enterprise-grade compliance capabilities. This unique combination addresses a critical gap in the market:
+
+**The Problem**: Enterprises need temporary data storage (sessions, caches, processing buffers) but still require compliance attestation for regulatory frameworks. Current solutions force a choice between ephemeral efficiency or compliance overhead.
+
+**REPRAM's Solution**: Selective compliance that maintains performance for 99% of operations while providing cryptographic proof of deletion for the 1% that requires it.
+
+**Market Opportunity**:
+- Healthcare organizations processing PHI in temporary workflows
+- Financial services handling PCI-DSS data in transaction processing
+- Government contractors requiring FedRAMP compliance for all systems
+- Global enterprises managing GDPR right-to-erasure requirements
+- SaaS platforms needing SOC2 attestation for customer data handling
 
 ## Next Steps
 
-With Phases 1-3 complete, REPRAM is now production-ready with full distributed capabilities, security hardening, and operational features. The immediate priorities for Phase 4 are:
+With Phases 1-3 complete, REPRAM is now production-ready with full distributed capabilities, security hardening, and operational features. The roadmap priorities are:
 
+### Phase 4 (Technical Expansion):
 1. **Long-term Storage Options**: Design paid persistence layer for extended TTL
 2. **IPFS Integration**: Implement large blob offloading to IPFS network
 3. **Reputation System**: Build node reliability scoring and selection mechanism
 4. **Web3 Bridges**: Add blockchain authentication integration
 5. **Advanced Encryption**: Research and implement post-quantum cryptography support
-6. **Compliance Features**: Add cross-network TTL and data governance capabilities
 
-The system is ready for production deployment while the team can focus on advanced features and ecosystem integrations.
+### Phase 5 (Enterprise Compliance):
+1. **Compliance Framework**: Implement selective attestation architecture
+2. **SDK Enhancement**: Add compliance metadata encoding layer
+3. **Attestation Engine**: Build cryptographic deletion proof system
+4. **Compliance Service**: Create monitoring and reporting infrastructure
+5. **Regulatory Validation**: Achieve HIPAA, PCI-DSS, GDPR certifications
+
+The system is ready for production deployment while the team can focus on transforming REPRAM into the compliance-ready ephemeral storage standard for enterprise adoption.
