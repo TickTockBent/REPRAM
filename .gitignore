@@ -2,3 +2,4 @@ test-results/*
 monitoring-results/*
 test/*
 docker-compose-scale*.yml
+bin/repram-cluster-node
