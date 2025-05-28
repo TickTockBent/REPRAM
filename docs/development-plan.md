@@ -83,6 +83,10 @@ This document outlines the phased development approach for REPRAM, a distributed
 - Advanced cryptographic protocols
 - Extended persistence options
 - Network reputation and trust mechanisms
+- **Public Key Encryption Mode**: Allow data to be encrypted for specific recipients
+  - Sender encrypts with recipient's public key
+  - Only recipient can decrypt with their private key
+  - Sender cannot decrypt their own data after encryption
 
 ## Phase 5: Enterprise Compliance & Attestation
 

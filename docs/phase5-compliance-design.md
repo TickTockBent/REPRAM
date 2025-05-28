@@ -6,6 +6,18 @@
 
 Building on the production-ready foundation of Phases 1-3, Phase 5 introduces optional compliance attestation capabilities for enterprise customers requiring audit trails for regulatory compliance (HIPAA, PCI-DSS, GDPR, SOC2, FedRAMP). The core enhancement enables clients to flag specific data for deletion attestation while maintaining the lean, ephemeral architecture for standard operations. This positions REPRAM as the first ephemeral storage solution that can meet enterprise compliance requirements without sacrificing performance.
 
+## Adherence to Core Principles
+
+Phase 5 is carefully designed to maintain all of REPRAM's core principles:
+
+- **Pure Key-Value Storage**: Compliance metadata is encoded in the value by the SDK; nodes only see a compliance bit
+- **Client-Side Encryption**: All compliance data is encrypted by the SDK before reaching nodes
+- **Public Readability**: Anyone can still read encrypted values; compliance doesn't add access control
+- **Mandatory TTL**: All data still expires, including compliance-flagged data and attestations
+- **Zero-Knowledge Nodes**: Attestations only contain key hashes, never actual keys or values
+- **Gossip Protocol**: Compliance bit travels with key-value pairs; full replication continues
+- **Zero Performance Impact**: Non-compliance operations remain completely unaffected
+
 ## Key Features
 
 ### Compliance-Flagged Storage
