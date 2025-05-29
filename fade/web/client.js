@@ -17,6 +17,11 @@ class RepramFadeClient {
         
         // Preview key for next message
         this.previewKey = null;
+        
+        // Track node information
+        this.nodes = [];
+        this.lastUsedNode = null;
+        this.preferredNode = null; // null means auto/load-balanced
     }
     
     loadExpiredCount() {
@@ -48,6 +53,19 @@ class RepramFadeClient {
 
     async init() {
         console.log('Initializing REPRAM Fade client...');
+        
+        // Update node selector labels for clarity
+        const select = document.getElementById('nodeSelect');
+        if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            // Update labels to show this is routing preference, not direct connection
+            select.options[0].text = 'Auto (Round Robin)';
+            select.options[1].text = 'Prefer Node 1';
+            select.options[2].text = 'Prefer Node 2';
+            select.options[3].text = 'Prefer Node 3';
+            
+            console.log('Remote access via ' + window.location.hostname + ' - using proxy with node preference.');
+        }
+        
         await this.connectToNode();
         await this.loadRecentMessages();
         this.startPolling();
@@ -58,8 +76,14 @@ class RepramFadeClient {
     async connectToNode() {
         try {
             console.log('Attempting to connect to REPRAM network...');
+            const headers = {};
+            if (this.preferredNode) {
+                headers['X-Preferred-Node'] = this.preferredNode;
+            }
+            
             const response = await fetch(`${this.baseURL}/api/health`, {
-                method: 'GET'
+                method: 'GET',
+                headers: headers
             });
             
             console.log('Health check response:', response.status);
@@ -67,16 +91,54 @@ class RepramFadeClient {
             if (response.ok) {
                 this.connected = true;
                 console.log('Connected to REPRAM network via proxy');
-                document.getElementById('currentNode').textContent = 'Connected';
+                this.updateConnectionStatus('connected');
+                // Update node status
+                await this.updateNodeStatus();
                 return;
             } else {
                 console.error('Health check failed with status:', response.status);
+                this.updateConnectionStatus('error');
             }
         } catch (error) {
             console.error('Failed to connect to REPRAM network:', error);
+            this.updateConnectionStatus('error');
         }
         
         this.showError('Unable to connect to REPRAM network. Please try again later.');
+    }
+
+    async updateNodeStatus() {
+        try {
+            if (this.selectedNode) {
+                // When directly connected, we only know about this one node
+                this.nodes = [{
+                    id: `node-${this.selectedNode.split(':').pop()}`,
+                    url: this.selectedNode,
+                    healthy: this.connected,
+                    current: true
+                }];
+            } else {
+                // Use the proxy's node status endpoint
+                const response = await fetch(`${this.baseURL}/api/nodes/status`);
+                if (response.ok) {
+                    this.nodes = await response.json();
+                }
+            }
+            this.updateNetworkDisplay();
+        } catch (error) {
+            console.error('Failed to fetch node status:', error);
+        }
+    }
+
+    updateNetworkDisplay() {
+        const activeNodes = this.nodes.filter(n => n.healthy).length;
+        document.getElementById('currentNode').textContent = `${activeNodes} nodes active`;
+        
+        // Update a more detailed display if needed
+        const nodeList = this.nodes.map(n => 
+            `${n.id}: ${n.healthy ? '✓' : '✗'} ${n.current ? '(current)' : ''}`
+        ).join(', ');
+        console.log('Node status:', nodeList);
     }
 
     async submitMessage(content, ttl, callsign, location) {
@@ -95,11 +157,18 @@ class RepramFadeClient {
         
         try {
             // Using raw/put endpoint with our own key
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            // Add preferred node header if selected
+            if (this.preferredNode) {
+                headers['X-Preferred-Node'] = this.preferredNode;
+            }
+            
             const response = await fetch(`${this.baseURL}/api/raw/put`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: headers,
                 body: JSON.stringify({
                     key: key,  // Send our pre-generated key
                     data: formattedContent,
@@ -110,11 +179,20 @@ class RepramFadeClient {
             if (response.ok) {
                 const result = await response.json();
                 const actualKey = result.key || key;
-                // Show immediate local feedback
-                this.displayMessage(actualKey, formattedContent, ttl);
+                
+                // Capture which node handled the request
+                const nodeId = response.headers.get('x-repram-node') || 'unknown';
+                const nodeUrl = response.headers.get('x-repram-node-url') || '';
+                this.lastUsedNode = { id: nodeId, url: nodeUrl };
+                
+                // Show immediate local feedback with node info
+                this.displayMessage(actualKey, formattedContent, ttl, nodeId);
                 
                 // Clear the nextKey so a new one is generated for the next message
                 this.nextKey = null;
+                
+                // Update node status periodically
+                await this.updateNodeStatus();
                 
                 return actualKey;
             } else {
@@ -135,14 +213,23 @@ class RepramFadeClient {
 
         try {
             // Using raw/get endpoint
-            const response = await fetch(`${this.baseURL}/api/raw/get/${encodeURIComponent(key)}`);
+            const url = this.selectedNode ? `${this.baseURL}/raw/get/${encodeURIComponent(key)}` : `${this.baseURL}/api/raw/get/${encodeURIComponent(key)}`;
+            const response = await fetch(url);
             
             if (response.ok) {
                 const result = await response.json();
+                // Capture which node served this
+                let nodeId;
+                if (this.selectedNode) {
+                    nodeId = `node-${this.selectedNode.split(':').pop()}`;
+                } else {
+                    nodeId = response.headers.get('x-repram-node') || null;
+                }
                 return {
                     content: result.data,
                     ttl: result.ttl || 3600, // Now we get TTL from the response
-                    remaining_ttl: result.ttl || 3600
+                    remaining_ttl: result.ttl || 3600,
+                    nodeId: nodeId
                 };
             } else if (response.status === 404) {
                 return null; // Message expired or doesn't exist
@@ -169,8 +256,15 @@ class RepramFadeClient {
         }
         
         try {
-            // Scan for messages with "raw-" prefix (messages created by raw node)
-            const response = await fetch(`${this.baseURL}/api/raw/scan?prefix=raw-&limit=50`);
+            // Scan for messages
+            const headers = {};
+            if (this.preferredNode) {
+                headers['X-Preferred-Node'] = this.preferredNode;
+            }
+            
+            const response = await fetch(`${this.baseURL}/api/raw/scan?prefix=msg-&limit=50`, {
+                headers: headers
+            });
             
             if (!response.ok) {
                 console.error('Failed to scan messages:', response.status);
@@ -191,10 +285,24 @@ class RepramFadeClient {
                 }
                 
                 try {
-                    const msgResponse = await fetch(`${this.baseURL}/api/raw/get/${encodeURIComponent(keyInfo.key)}`);
+                    const headers = {};
+                    if (this.preferredNode) {
+                        headers['X-Preferred-Node'] = this.preferredNode;
+                    }
+                    
+                    const msgResponse = await fetch(`${this.baseURL}/api/raw/get/${encodeURIComponent(keyInfo.key)}`, {
+                        headers: headers
+                    });
                     if (msgResponse.ok) {
                         const msgData = await msgResponse.json();
-                        this.displayMessage(keyInfo.key, msgData.data, keyInfo.ttl);
+                        // Capture which node served this message
+                        let nodeId;
+                        if (this.selectedNode) {
+                            nodeId = `node-${this.selectedNode.split(':').pop()}`;
+                        } else {
+                            nodeId = msgResponse.headers.get('X-REPRAM-Node') || null;
+                        }
+                        this.displayMessage(keyInfo.key, msgData.data, keyInfo.ttl, nodeId);
                     }
                 } catch (error) {
                     console.error(`Failed to fetch message ${keyInfo.key}:`, error);
@@ -216,10 +324,27 @@ class RepramFadeClient {
     }
 
     generateKey() {
-        // Generate a key that matches the raw node format
+        // Fun word lists for generating memorable keys
+        const adjectives = [
+            'quantum', 'electric', 'neon', 'cyber', 'phantom', 'cosmic', 'digital', 
+            'spectral', 'holographic', 'virtual', 'glitched', 'synthetic', 'atomic',
+            'fractal', 'binary', 'ethereal', 'temporal', 'neural', 'prismatic',
+            'indolent', 'zealous', 'cryptic', 'arcane', 'volatile', 'emergent'
+        ];
+        
+        const nouns = [
+            'phoenix', 'serpent', 'wraith', 'specter', 'oracle', 'nexus', 'matrix',
+            'cipher', 'enigma', 'paradox', 'vortex', 'daemon', 'entity', 'phantom',
+            'baboon', 'raven', 'mantis', 'sphinx', 'hydra', 'chimera', 'basilisk',
+            'construct', 'artifact', 'anomaly', 'singularity', 'protocol', 'algorithm'
+        ];
+        
+        const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+        const noun = nouns[Math.floor(Math.random() * nouns.length)];
         const timestamp = Date.now() * 1000000; // Convert to nanoseconds (approximate)
-        const random = Math.floor(Math.random() * 1000); // Add some randomness
-        return `msg-${timestamp}${random}`;
+        const random = Math.floor(Math.random() * 1000);
+        
+        return `msg-${adj}-${noun}-${timestamp}${random}`;
     }
     
     generatePreviewKey() {
@@ -239,7 +364,7 @@ class RepramFadeClient {
         };
     }
 
-    displayMessage(key, rawMessage, remainingTTL, isRetrieved = false) {
+    displayMessage(key, rawMessage, remainingTTL, nodeId = null, isRetrieved = false) {
         // Avoid duplicates
         if (this.messages.has(key)) return;
 
@@ -249,7 +374,8 @@ class RepramFadeClient {
             remainingTTL: parseInt(remainingTTL),
             element: null,
             timestamp: Date.now(),
-            isRetrieved: isRetrieved
+            isRetrieved: isRetrieved,
+            nodeId: nodeId
         };
         
         this.messages.set(key, messageData);
@@ -268,10 +394,13 @@ class RepramFadeClient {
         // Show exact TTL for retrieved messages
         const ttlDisplay = isRetrieved ? this.formatTTL(remainingTTL, true) : this.formatTTL(remainingTTL);
         
+        const nodeInfo = nodeId ? `<span class="node-indicator" title="Stored on ${nodeId}">[${nodeId}]</span>` : '';
+        
         const messageHTML = `
             <div class="message-content">${displayContent}</div>
             <div class="message-meta">
                 <span class="message-key" onclick="fadeClient.copyToClipboard('${key}', event)" title="Click to copy key">KEY: ${key}</span>
+                ${nodeInfo}
                 <span class="ttl-indicator" data-key="${key}" title="Exact TTL: ${this.formatTTL(remainingTTL, true)}">TTL: ${ttlDisplay}</span>
             </div>
         `;
@@ -350,10 +479,112 @@ class RepramFadeClient {
 
     startPolling() {
         // Poll for new messages every 3 seconds
+        let scanCounter = 0;
         this.pollInterval = setInterval(async () => {
-            await this.loadRecentMessages();
-            this.updateNetworkStatus();
+            // Rotate through different scanning messages for visual feedback
+            const scanMessages = ['SCANNING NETWORK...', 'CHECKING NODES...', 'POLLING MESSAGES...'];
+            const scanMsg = scanMessages[scanCounter % scanMessages.length];
+            scanCounter++;
+            
+            this.updateConnectionStatus('scanning');
+            document.getElementById('statusText').textContent = scanMsg;
+            
+            try {
+                // Check if node is still healthy
+                const headers = {};
+                if (this.preferredNode) {
+                    headers['X-Preferred-Node'] = this.preferredNode;
+                }
+                
+                const healthResponse = await fetch(`${this.baseURL}/api/health`, { 
+                    method: 'GET', 
+                    headers: headers,
+                    timeout: 2000 
+                });
+                
+                if (!healthResponse.ok) {
+                    this.connected = false;
+                    this.updateConnectionStatus('error');
+                    document.getElementById('messageBoard').innerHTML = '<div class="loading" style="color: #dc3545;">Connection lost. Retrying...</div>';
+                    return;
+                }
+                
+                this.connected = true;
+                await this.loadRecentMessages();
+                await this.updateNetworkStatus();
+                this.updateConnectionStatus('connected');
+            } catch (error) {
+                console.error('Polling error:', error);
+                this.connected = false;
+                this.updateConnectionStatus('error');
+                document.getElementById('messageBoard').innerHTML = '<div class="loading" style="color: #dc3545;">Connection lost. Retrying...</div>';
+            }
         }, 3000);
+    }
+
+    updateConnectionStatus(status, nodeId = null) {
+        const icon = document.getElementById('statusIcon');
+        const text = document.getElementById('statusText');
+        const info = document.getElementById('nodeInfo');
+        
+        switch(status) {
+            case 'scanning':
+                icon.className = 'status-icon scanning';
+                icon.textContent = '◈';
+                text.textContent = 'SCANNING NETWORK...';
+                break;
+            case 'connected':
+                icon.className = 'status-icon connected';
+                icon.textContent = '◆';
+                if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                    text.textContent = 'PROXY MODE';
+                } else {
+                    text.textContent = 'CONNECTED';
+                }
+                if (this.preferredNode) {
+                    // Show preferred node
+                    info.textContent = `[Prefer: ${this.preferredNode}]`;
+                } else if (this.lastUsedNode) {
+                    info.textContent = `[Last: ${this.lastUsedNode.id}]`;
+                }
+                break;
+            case 'error':
+                icon.className = 'status-icon error';
+                icon.textContent = '◇';
+                text.textContent = 'CONNECTION ERROR';
+                info.textContent = '';
+                break;
+            default:
+                icon.className = 'status-icon';
+                icon.textContent = '◆';
+                text.textContent = 'INITIALIZING...';
+                info.textContent = '';
+        }
+    }
+
+    async switchNode(nodeUrl) {
+        if (nodeUrl) {
+            // Extract port number for preference
+            const port = nodeUrl.split(':').pop();
+            this.preferredNode = port;
+            console.log(`Setting preferred node to port ${port}`);
+            
+            // Update status immediately
+            document.getElementById('nodeInfo').textContent = `[Prefer: ${port}]`;
+        } else {
+            // Back to auto/round-robin
+            this.preferredNode = null;
+            console.log('Switching to auto/round-robin mode');
+            document.getElementById('nodeInfo').textContent = '';
+        }
+        
+        // Clear current messages and reload
+        this.messages.clear();
+        document.getElementById('messageBoard').innerHTML = '<div class="loading">Updating node preference...</div>';
+        
+        // Reload messages
+        await this.loadRecentMessages();
+        this.updateConnectionStatus('connected');
     }
 
     startTTLUpdater() {
@@ -414,11 +645,13 @@ class RepramFadeClient {
 
     async updateNetworkStatus() {
         try {
-            const response = await fetch(`${this.baseURL}/api/health`);
-            const isHealthy = response.ok;
+            // Update node status from the server
+            await this.updateNodeStatus();
+            
+            const activeNodes = this.nodes.filter(n => n.healthy).length;
             
             // Update node count
-            document.getElementById('nodeCount').textContent = isHealthy ? '1' : '0';
+            document.getElementById('nodeCount').textContent = activeNodes.toString();
             
             // Update expired count with real data
             document.getElementById('expiredCount').textContent = this.expiredToday.toLocaleString();
@@ -437,19 +670,28 @@ class RepramFadeClient {
         const nodeList = document.getElementById('nodeList');
         nodeList.innerHTML = '';
         
-        const regions = [
-            { name: 'Local Node', status: this.connected }
-        ];
-        
-        regions.forEach(region => {
+        // Display all nodes from the server status
+        if (this.nodes.length > 0) {
+            this.nodes.forEach(node => {
+                const nodeItem = document.createElement('div');
+                nodeItem.className = 'node-item';
+                const port = node.url.split(':').pop();
+                nodeItem.innerHTML = `
+                    <span class="node-status ${node.healthy ? 'online' : 'offline'}"></span>
+                    <span>${node.id}: localhost:${port} ${node.current ? '(current)' : ''}</span>
+                `;
+                nodeList.appendChild(nodeItem);
+            });
+        } else {
+            // Fallback to default display
             const nodeItem = document.createElement('div');
             nodeItem.className = 'node-item';
             nodeItem.innerHTML = `
-                <span class="node-status ${region.status ? 'online' : 'offline'}"></span>
-                <span>${region.name}: localhost:8080</span>
+                <span class="node-status ${this.connected ? 'online' : 'offline'}"></span>
+                <span>Local Node: localhost:8080</span>
             `;
             nodeList.appendChild(nodeItem);
-        });
+        }
     }
 
     escapeHtml(text) {
@@ -658,18 +900,20 @@ async function lookupMessage() {
                 displayContent = fadeClient.escapeHtml(parsed.content);
             }
             
+            const nodeInfo = message.nodeId ? ` <span style="color: #ff00ff; font-size: 0.8em;">[from ${message.nodeId}]</span>` : '';
+            
             resultDiv.innerHTML = `
                 <div class="lookup-success">
                     <div style="margin-bottom: 8px;"><strong>Message found:</strong></div>
                     <div style="font-style: italic; margin-bottom: 8px;">${displayContent}</div>
                     <div style="font-size: 0.9em; color: #00ffff;">
-                        <strong>TTL Remaining:</strong> ${fadeClient.formatTTL(message.remaining_ttl, true)}
+                        <strong>TTL Remaining:</strong> ${fadeClient.formatTTL(message.remaining_ttl, true)}${nodeInfo}
                     </div>
                 </div>
             `;
             
             // Also display the message in the main board with exact TTL
-            fadeClient.displayMessage(key, message.content, message.remaining_ttl, true);
+            fadeClient.displayMessage(key, message.content, message.remaining_ttl, message.nodeId, true);
         } else {
             resultDiv.innerHTML = `
                 <div class="lookup-error">

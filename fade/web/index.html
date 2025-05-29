@@ -25,6 +25,24 @@
             <p class="tagline">[ EPHEMERAL MESSAGE SYSTEM // DISTRIBUTED NETWORK ]</p>
         </header>
 
+        <!-- Connection Status Indicator -->
+        <div class="connection-status" id="connectionStatus">
+            <div class="status-line">
+                <span class="status-icon" id="statusIcon">◆</span>
+                <span class="status-text" id="statusText">INITIALIZING...</span>
+                <span class="node-info" id="nodeInfo"></span>
+                <div class="node-selector" id="nodeSelector">
+                    <select id="nodeSelect" onchange="fadeClient.switchNode(this.value)">
+                        <option value="">Auto (Load Balance)</option>
+                        <option value="http://localhost:8080" class="localhost-only">Node 1 (8080)</option>
+                        <option value="http://localhost:8081" class="localhost-only">Node 2 (8081)</option>
+                        <option value="http://localhost:8082" class="localhost-only">Node 3 (8082)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="scan-line" id="scanLine"></div>
+        </div>
+
         <!-- Live Message Board -->
         <div class="message-board" id="messageBoard">
             <div class="loading">Connecting to REPRAM network...</div>
@@ -74,7 +92,7 @@
         <!-- Direct Message Lookup -->
         <div class="input-area">
             <h3>RETRIEVE://MESSAGE_BY_KEY</h3>
-            <p class="description">Every message gets a unique key. If someone shares a key with you, you can read that specific message:</p>
+            <p class="description">Every message gets a unique key. If someone shares a key with you, you can read that specific message. Unless it's already gone. Like tears in rain.</p>
             <div class="lookup-controls">
                 <input 
                     type="text" 
@@ -91,7 +109,7 @@
             <h3>PROTOCOL://EPHEMERAL</h3>
             <ul>
                 <li><strong>No accounts needed</strong> - just type and submit</li>
-                <li><strong>Messages spread globally</strong> - takes ~15 minutes to reach all nodes</li>
+                <li><strong>Messages spread globally</strong> - replicants take ~15 minutes to reach all nodes</li>
                 <li><strong>Everything disappears</strong> - automatic deletion when TTL expires</li>
                 <li><strong>Completely open</strong> - anyone can read, anyone can write</li>
                 <li><strong>Distributed network</strong> - no central server to shut down</li>

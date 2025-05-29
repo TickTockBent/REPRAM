@@ -24,7 +24,8 @@ type ProxyServer struct {
 func enableCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Preferred-Node")
+	w.Header().Set("Access-Control-Expose-Headers", "X-REPRAM-Node, X-REPRAM-Node-URL")
 }
 
 // proxyRequest forwards requests to REPRAM nodes
@@ -36,10 +37,27 @@ func (ps *ProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, path
 		return
 	}
 
+	// Check for preferred node header
+	preferredNode := r.Header.Get("X-Preferred-Node")
+	startIndex := ps.currentNode
+	
+	// If a preferred node is specified, try to use it
+	if preferredNode != "" {
+		log.Printf("Preferred node requested: %s", preferredNode)
+		for i, node := range ps.nodes {
+			log.Printf("Checking node %d: %s", i, node)
+			if strings.Contains(node, preferredNode) {
+				startIndex = i
+				log.Printf("Using node %d (%s) as preferred", i, node)
+				break
+			}
+		}
+	}
+
 	// Try each node until one works
 	var lastErr error
 	for i := 0; i < len(ps.nodes); i++ {
-		nodeIndex := (ps.currentNode + i) % len(ps.nodes)
+		nodeIndex := (startIndex + i) % len(ps.nodes)
 		nodeURL := ps.nodes[nodeIndex] + path
 		
 		// Create new request
@@ -76,6 +94,10 @@ func (ps *ProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, path
 		for k, v := range resp.Header {
 			w.Header()[k] = v
 		}
+		
+		// Add custom header to indicate which node handled the request
+		w.Header().Set("X-REPRAM-Node", fmt.Sprintf("node-%d", nodeIndex+1))
+		w.Header().Set("X-REPRAM-Node-URL", ps.nodes[nodeIndex])
 		enableCORS(w) // Re-add CORS headers
 		
 		// Copy status code and body
@@ -91,7 +113,49 @@ func (ps *ProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, path
 	})
 }
 
+// nodeStatusHandler returns the status of all configured nodes
+func (ps *ProxyServer) nodeStatusHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	
+	type NodeStatus struct {
+		ID      string `json:"id"`
+		URL     string `json:"url"`
+		Healthy bool   `json:"healthy"`
+		Current bool   `json:"current"`
+	}
+	
+	statuses := make([]NodeStatus, len(ps.nodes))
+	client := &http.Client{Timeout: 2 * time.Second}
+	
+	for i, nodeURL := range ps.nodes {
+		status := NodeStatus{
+			ID:      fmt.Sprintf("node-%d", i+1),
+			URL:     nodeURL,
+			Healthy: false,
+			Current: i == ps.currentNode,
+		}
+		
+		// Check health
+		resp, err := client.Get(nodeURL + "/health")
+		if err == nil && resp.StatusCode == http.StatusOK {
+			status.Healthy = true
+			resp.Body.Close()
+		}
+		
+		statuses[i] = status
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(statuses)
+}
+
 func (ps *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Handle special node status endpoint
+	if r.URL.Path == "/api/nodes/status" {
+		ps.nodeStatusHandler(w, r)
+		return
+	}
+	
 	// Handle API routes
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		// Remove /api prefix and proxy to REPRAM node
