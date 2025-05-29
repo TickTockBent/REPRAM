@@ -1067,5 +1067,3 @@ Different clients can provide varying levels of community features:
 - **Performance Testing**: Load testing with community participation
 - **Resilience Demo**: Planned node outages showing network healing
 - **Compliance Showcase**: Attestation generation in real-time
-
-This demo project perfectly captures REPRAM's essence: a simple, open, ephemeral message board that demonstrates distributed storage without technical barriers. The optional community features provide personality while maintaining architectural purity, creating the perfect foundation for both casual users and serious enterprise adoption.
