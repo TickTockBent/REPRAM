@@ -3,3 +3,7 @@ monitoring-results/*
 test/*
 docker-compose-scale*.yml
 bin/*
+fade/web.log
+fade/raw-node*.log
+fade/node*.log
+fade/simple-cluster.pids

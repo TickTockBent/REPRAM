@@ -1,0 +1,50 @@
+# Dockerfile for Fade web interface
+FROM golang:1.22-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the fade web server
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o fade-server ./fade/server.go
+
+# Final stage - minimal runtime image
+FROM alpine:latest
+
+# Install runtime dependencies and wget for health checks
+RUN apk --no-cache add ca-certificates tzdata wget
+
+# Create non-root user
+RUN adduser -D -s /bin/sh fade
+
+# Set working directory
+WORKDIR /app
+
+# Copy fade server binary
+COPY --from=builder /app/fade-server .
+
+# Copy static web files
+COPY fade/web ./web/
+
+# Change ownership to non-root user
+RUN chown -R fade:fade /app
+
+# Switch to non-root user
+USER fade
+
+# Expose fade web port
+EXPOSE 3000
+
+# Default command
+CMD ["./fade-server"]
