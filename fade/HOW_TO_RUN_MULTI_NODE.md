@@ -25,8 +25,21 @@ cd fade
 ./start-simple-multi-node.sh
 ```
 
-You should see:
+The script will now verify each node starts successfully:
 ```
+Starting raw nodes...
+Starting raw node 1 on port 8080...
+✓ Node 1 started successfully
+Starting raw node 2 on port 8081...
+✓ Node 2 started successfully
+Starting raw node 3 on port 8082...
+✓ Node 3 started successfully
+
+Verifying all nodes are healthy...
+✓ Raw node on port 8080 is healthy
+✓ Raw node on port 8081 is healthy
+✓ Raw node on port 8082 is healthy
+
 ✓ Simple multi-node Fade setup is ready!
 
 URLs:
@@ -164,6 +177,21 @@ echo "Node 3 messages: $(curl -s http://localhost:8082/raw/scan | jq '.count')"
 
 ## Troubleshooting
 
+### If Nodes Fail to Start
+
+The improved script will now show you exactly what went wrong:
+- **Build failures**: Script exits if build fails
+- **Port conflicts**: Shows which node failed and displays log tail
+- **Health check failures**: Automatically cleans up and exits
+
+If you see an error like:
+```
+❌ Node 2 failed to start. Check raw-node2.log for details
+2025/05/29 18:16:35 listen tcp :8080: bind: address already in use
+```
+
+This means the node wasn't using the correct port. The script now uses environment variables correctly.
+
 ### Port Already in Use
 ```bash
 # Find what's using the port
@@ -172,6 +200,8 @@ lsof -i :3000
 # Kill it
 kill -9 <PID>
 ```
+
+The script now handles this gracefully - if port 3000 is already in use by a Fade server, it will reuse it.
 
 ### Node Not Responding
 ```bash
