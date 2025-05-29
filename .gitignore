@@ -7,3 +7,4 @@ fade/web.log
 fade/raw-node*.log
 fade/node*.log
 fade/simple-cluster.pids
+fade/cluster-node*.log
