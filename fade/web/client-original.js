@@ -463,15 +463,9 @@ class RepramFadeClient {
     }
 
     startPolling() {
-        // Poll for new messages every 5 seconds (reduced frequency)
+        // Poll for new messages every 3 seconds
         let scanCounter = 0;
         this.pollInterval = setInterval(async () => {
-            // Skip some polls if there are no messages to reduce load
-            if (scanCounter % 2 === 0 && this.messages.size === 0) {
-                scanCounter++;
-                return;
-            }
-            
             // Rotate through different scanning messages for visual feedback
             const scanMessages = ['SCANNING NETWORK...', 'CHECKING NODES...', 'POLLING MESSAGES...'];
             const scanMsg = scanMessages[scanCounter % scanMessages.length];
@@ -502,10 +496,7 @@ class RepramFadeClient {
                 
                 this.connected = true;
                 await this.loadRecentMessages();
-                // Update network status less frequently  
-                if (scanCounter % 3 === 0) {
-                    await this.updateNetworkStatus();
-                }
+                await this.updateNetworkStatus();
                 this.updateConnectionStatus('connected');
             } catch (error) {
                 console.error('Polling error:', error);
@@ -513,7 +504,7 @@ class RepramFadeClient {
                 this.updateConnectionStatus('error');
                 document.getElementById('messageBoard').innerHTML = '<div class="loading" style="color: #dc3545;">Connection lost. Retrying...</div>';
             }
-        }, 5000); // Increased from 3 to 5 seconds
+        }, 3000);
     }
 
     updateConnectionStatus(status, nodeId = null) {
@@ -582,29 +573,21 @@ class RepramFadeClient {
     }
 
     startTTLUpdater() {
-        let updateCounter = 0;
         this.ttlInterval = setInterval(() => {
-            updateCounter++;
-            
             this.messages.forEach((data, key) => {
                 data.remainingTTL -= 1;
 
                 if (data.remainingTTL <= 0) {
                     this.removeMessage(key);
                 } else {
-                    // Only update DOM every 5 seconds for non-critical TTLs to reduce thrashing
-                    const shouldUpdateDOM = data.remainingTTL < 300 || updateCounter % 5 === 0;
-                    
-                    if (shouldUpdateDOM) {
-                        const ttlSpan = data.element?.querySelector('.ttl-indicator');
-                        if (ttlSpan) {
-                            // Update display - show exact time for retrieved messages or under 1 hour
-                            const displayTTL = data.isRetrieved ? this.formatTTL(data.remainingTTL, true) : this.formatTTL(data.remainingTTL);
-                            ttlSpan.textContent = `TTL: ${displayTTL}`;
-                            
-                            // Always update the tooltip with exact time
-                            ttlSpan.title = `Exact TTL: ${this.formatTTL(data.remainingTTL, true)}`;
-                        }
+                    const ttlSpan = data.element?.querySelector('.ttl-indicator');
+                    if (ttlSpan) {
+                        // Update display - show exact time for retrieved messages or under 1 hour
+                        const displayTTL = data.isRetrieved ? this.formatTTL(data.remainingTTL, true) : this.formatTTL(data.remainingTTL);
+                        ttlSpan.textContent = `TTL: ${displayTTL}`;
+                        
+                        // Always update the tooltip with exact time
+                        ttlSpan.title = `Exact TTL: ${this.formatTTL(data.remainingTTL, true)}`;
                     }
 
                     // Add expiring class when < 5 minutes
