@@ -8,12 +8,12 @@ echo
 cd "$(dirname "$0")"
 
 # Check if we need to build
-if [ ! -f "../bin/repram-fade-cluster" ]; then
-    echo "Building fade cluster node..."
+if [ ! -f "../bin/cluster-node" ]; then
+    echo "Building cluster node..."
     cd ..
-    go build -o bin/repram-fade-cluster ./cmd/fade-cluster-node
+    go build -o bin/cluster-node ./cmd/cluster-node
     if [ $? -ne 0 ]; then
-        echo "❌ Failed to build fade cluster node. Please check the build output above."
+        echo "❌ Failed to build cluster node. Please check the build output above."
         exit 1
     fi
     cd fade
@@ -22,7 +22,7 @@ fi
 # Kill any existing nodes
 echo "Cleaning up any existing nodes..."
 pkill -f repram-node-raw 2>/dev/null || true
-pkill -f repram-fade-cluster 2>/dev/null || true
+pkill -f cluster-node 2>/dev/null || true
 pkill -f fade-server 2>/dev/null || true
 pkill -f server.go 2>/dev/null || true
 sleep 2
@@ -53,7 +53,7 @@ NODE_ADDRESS=localhost \
 REPRAM_PORT=8080 \
 REPRAM_GOSSIP_PORT=7080 \
 REPLICATION_FACTOR=3 \
-../bin/repram-fade-cluster > cluster-node1.log 2>&1 &
+../bin/cluster-node > cluster-node1.log 2>&1 &
 NODE1_PID=$!
 
 # Wait for node 1 to be ready before starting others
@@ -72,7 +72,7 @@ REPRAM_PORT=8081 \
 REPRAM_GOSSIP_PORT=7081 \
 REPLICATION_FACTOR=3 \
 REPRAM_BOOTSTRAP_PEERS=localhost:8080 \
-../bin/repram-fade-cluster > cluster-node2.log 2>&1 &
+../bin/cluster-node > cluster-node2.log 2>&1 &
 NODE2_PID=$!
 
 echo "Starting cluster node 3 on port 8082 (bootstrapping from node 1)..."
@@ -82,7 +82,7 @@ REPRAM_PORT=8082 \
 REPRAM_GOSSIP_PORT=7082 \
 REPLICATION_FACTOR=3 \
 REPRAM_BOOTSTRAP_PEERS=localhost:8080 \
-../bin/repram-fade-cluster > cluster-node3.log 2>&1 &
+../bin/cluster-node > cluster-node3.log 2>&1 &
 NODE3_PID=$!
 
 # Wait for all nodes to be healthy
