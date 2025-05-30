@@ -46,35 +46,52 @@ wait_for_node() {
 # Start cluster nodes with gossip
 echo "Starting gossip-enabled cluster nodes..."
 
-# Start all nodes simultaneously since they all know about each other
-echo "Starting cluster node 1 on port 8080..."
-REPRAM_NODE_ID=fade-node-1 REPRAM_PORT=8080 REPRAM_GOSSIP_PORT=7080 REPLICATION_FACTOR=1 REPRAM_BOOTSTRAP_PEERS=localhost:7081,localhost:7082 ../bin/repram-fade-cluster > cluster-node1.log 2>&1 &
+# Start nodes in sequence with proper bootstrap
+echo "Starting cluster node 1 on port 8080 (seed node)..."
+REPRAM_NODE_ID=fade-node-1 \
+NODE_ADDRESS=localhost \
+REPRAM_PORT=8080 \
+REPRAM_GOSSIP_PORT=7080 \
+REPLICATION_FACTOR=3 \
+../bin/repram-fade-cluster > cluster-node1.log 2>&1 &
 NODE1_PID=$!
 
-echo "Starting cluster node 2 on port 8081..."
-REPRAM_NODE_ID=fade-node-2 REPRAM_PORT=8081 REPRAM_GOSSIP_PORT=7081 REPLICATION_FACTOR=1 REPRAM_BOOTSTRAP_PEERS=localhost:7080,localhost:7082 ../bin/repram-fade-cluster > cluster-node2.log 2>&1 &
-NODE2_PID=$!
-
-echo "Starting cluster node 3 on port 8082..."
-REPRAM_NODE_ID=fade-node-3 REPRAM_PORT=8082 REPRAM_GOSSIP_PORT=7082 REPLICATION_FACTOR=1 REPRAM_BOOTSTRAP_PEERS=localhost:7080,localhost:7081 ../bin/repram-fade-cluster > cluster-node3.log 2>&1 &
-NODE3_PID=$!
-
-# Wait for all nodes to be healthy
-echo "Waiting for nodes to start..."
-sleep 3
-
-# Check each node
-if wait_for_node 8080; then
-    echo "✓ Node 1 started successfully"
-else
+# Wait for node 1 to be ready before starting others
+sleep 2
+if ! wait_for_node 8080; then
     echo "❌ Node 1 failed to start. Check cluster-node1.log for details"
     tail -10 cluster-node1.log
-    kill $NODE1_PID $NODE2_PID $NODE3_PID 2>/dev/null || true
+    kill $NODE1_PID 2>/dev/null || true
     exit 1
 fi
 
+echo "Starting cluster node 2 on port 8081 (bootstrapping from node 1)..."
+REPRAM_NODE_ID=fade-node-2 \
+NODE_ADDRESS=localhost \
+REPRAM_PORT=8081 \
+REPRAM_GOSSIP_PORT=7081 \
+REPLICATION_FACTOR=3 \
+REPRAM_BOOTSTRAP_PEERS=localhost:8080 \
+../bin/repram-fade-cluster > cluster-node2.log 2>&1 &
+NODE2_PID=$!
+
+echo "Starting cluster node 3 on port 8082 (bootstrapping from node 1)..."
+REPRAM_NODE_ID=fade-node-3 \
+NODE_ADDRESS=localhost \
+REPRAM_PORT=8082 \
+REPRAM_GOSSIP_PORT=7082 \
+REPLICATION_FACTOR=3 \
+REPRAM_BOOTSTRAP_PEERS=localhost:8080 \
+../bin/repram-fade-cluster > cluster-node3.log 2>&1 &
+NODE3_PID=$!
+
+# Wait for all nodes to be healthy
+echo "Waiting for all nodes to start and bootstrap..."
+sleep 2
+
+# Check node 2
 if wait_for_node 8081; then
-    echo "✓ Node 2 started successfully"
+    echo "✓ Node 2 started and bootstrapped successfully"
 else
     echo "❌ Node 2 failed to start. Check cluster-node2.log for details"
     tail -10 cluster-node2.log
@@ -82,8 +99,9 @@ else
     exit 1
 fi
 
+# Check node 3
 if wait_for_node 8082; then
-    echo "✓ Node 3 started successfully"
+    echo "✓ Node 3 started and bootstrapped successfully"
 else
     echo "❌ Node 3 failed to start. Check cluster-node3.log for details"
     tail -10 cluster-node3.log
@@ -91,10 +109,10 @@ else
     exit 1
 fi
 
-# Give gossip time to establish connections between all nodes
+# Give bootstrap time to complete
 echo
-echo "Waiting for gossip protocol to establish full mesh connections..."
-sleep 5
+echo "Waiting for bootstrap and gossip protocol to establish connections..."
+sleep 3
 
 # Double-check all nodes are healthy
 echo
@@ -159,14 +177,14 @@ echo "To test gossip replication:"
 echo "  1. Open http://localhost:3000 in multiple browser windows"
 echo "  2. Select different nodes in each window using the node selector"  
 echo "  3. Send a message on one node"
-echo "  4. After 15-30 seconds, messages should appear on other nodes"
-echo "  5. Watch node indicators to see which node stored the original"
+echo "  4. Messages should appear on other nodes within 1-3 seconds"
+echo "  5. Watch node indicators to see real-time replication"
 echo
 echo "Gossip protocol details:"
-echo "  - Data replicates automatically between nodes"
-echo "  - Replication uses periodic gossip rounds (15 second intervals)"
-echo "  - Each node maintains full replicas of all data"
-echo "  - Network partitions are handled gracefully"
+echo "  - Bootstrap: Nodes discover topology via HTTP endpoint"
+echo "  - Replication: Data propagates immediately on write"
+echo "  - Quorum: Write succeeds when majority (2/3) nodes confirm"
+echo "  - Fault tolerance: Cluster survives single node failures"
 echo
 echo "To stop:"
 echo "  ./stop-gossip-multi-node.sh"
