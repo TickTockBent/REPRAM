@@ -93,18 +93,18 @@ This document outlines the phased development approach for REPRAM, a distributed
 **Goal**: Transform REPRAM into a compliance powerhouse for regulated industries
 
 ### Core Compliance Features:
-- **Selective Compliance Flagging**: Optional attestation for specific data
-- **Cryptographic Deletion Proofs**: Ed25519-signed attestations for audit trails
+- **First-Bit Encoding**: Compliance flag embedded in encrypted blob
+- **Ephemeral Attestations**: Time-limited deletion proofs (10-cycle buffer)
 - **Multi-Framework Support**: HIPAA, PCI-DSS, GDPR, SOC2 compliance
-- **Zero-Trust Compliance**: Privacy-preserving design with only key hashes
-- **Performance Isolation**: Zero impact on non-compliance operations
+- **Zero-Trust Compliance**: Only key hashes in attestations, no values
+- **External Monitoring**: Compliance service operates outside REPRAM network
 
 ### Technical Components:
-- **SDK Compliance Layer**: Client-controlled compliance metadata encoding
-- **Node Attestation Engine**: Periodic deletion cycle generation
-- **Compliance Service API**: WebSocket subscriptions and REST queries
-- **10-Cycle Buffer**: Resilient attestation storage with automatic purge
-- **Cryptographic Integrity**: Full signature chain for verification
+- **SDK Compliance Engine**: First-bit encoding and metadata management
+- **Node Enhancements**: Minimal changes - just first-bit checking on deletion
+- **Public Compliance API**: Open WebSocket/REST endpoints (no auth required)
+- **Client-Side Storage**: Organizations store their own attestations
+- **External Cloud Service**: Managed compliance monitoring and storage
 
 ### Enterprise Features:
 - **Audit Trail Generation**: Automated compliance reporting

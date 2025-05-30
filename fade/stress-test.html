@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FADE Stress Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #000;
+            color: #00ff00;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+            height: 400px;
+            overflow-y: auto;
+        }
+        button {
+            background: #000;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: monospace;
+        }
+        button:hover {
+            background: #00ff00;
+            color: #000;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .stat-box {
+            padding: 10px;
+            border: 1px solid #00ff00;
+            text-align: center;
+        }
+        .error { color: #ff0000; }
+        .success { color: #00ff00; }
+        .warning { color: #ffff00; }
+        .timeout { color: #ff6600; }
+        input, select {
+            background: #000;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 5px;
+            margin: 5px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>FADE Stress Test - Performance Analysis</h1>
+    
+    <div class="controls">
+        <h3>Test Configuration</h3>
+        <label>Messages to send: <input type="number" id="messageCount" value="20" min="1" max="1000"></label>
+        <label>Delay between messages (ms): <input type="number" id="delay" value="100" min="0" max="5000"></label>
+        <label>Concurrent requests: <input type="number" id="concurrent" value="1" min="1" max="10"></label>
+        <label>Node preference: 
+            <select id="nodePreference">
+                <option value="">Auto (Round Robin)</option>
+                <option value="8080">Node 1 (8080)</option>
+                <option value="8081">Node 2 (8081)</option>
+                <option value="8082">Node 3 (8082)</option>
+            </select>
+        </label>
+        <br>
+        <button id="startTest">Start Stress Test</button>
+        <button id="stopTest" disabled>Stop Test</button>
+        <button id="clearResults">Clear Results</button>
+    </div>
+
+    <div class="stats">
+        <div class="stat-box">
+            <div>Total Requests</div>
+            <div id="totalRequests">0</div>
+        </div>
+        <div class="stat-box">
+            <div>Successful</div>
+            <div id="successful">0</div>
+        </div>
+        <div class="stat-box">
+            <div>Failed</div>
+            <div id="failed">0</div>
+        </div>
+        <div class="stat-box">
+            <div>Timeouts</div>
+            <div id="timeouts">0</div>
+        </div>
+        <div class="stat-box">
+            <div>Avg Response Time</div>
+            <div id="avgTime">0ms</div>
+        </div>
+        <div class="stat-box">
+            <div>Requests/sec</div>
+            <div id="rps">0</div>
+        </div>
+    </div>
+
+    <div class="results" id="results">
+        <div>Stress test results will appear here...</div>
+    </div>
+
+    <script>
+        class StressTest {
+            constructor() {
+                this.running = false;
+                this.stats = {
+                    total: 0,
+                    successful: 0,
+                    failed: 0,
+                    timeouts: 0,
+                    responseTimes: [],
+                    startTime: null
+                };
+                this.abortController = null;
+            }
+
+            async startTest() {
+                if (this.running) return;
+                
+                const messageCount = parseInt(document.getElementById('messageCount').value);
+                const delay = parseInt(document.getElementById('delay').value);
+                const concurrent = parseInt(document.getElementById('concurrent').value);
+                const nodePreference = document.getElementById('nodePreference').value;
+                
+                this.running = true;
+                this.abortController = new AbortController();
+                this.resetStats();
+                this.updateUI();
+                
+                this.log(`Starting stress test: ${messageCount} messages, ${delay}ms delay, ${concurrent} concurrent`);
+                this.log(`Node preference: ${nodePreference || 'Auto (Round Robin)'}`);
+                
+                this.stats.startTime = Date.now();
+                
+                if (concurrent === 1) {
+                    // Sequential test
+                    await this.runSequentialTest(messageCount, delay, nodePreference);
+                } else {
+                    // Concurrent test
+                    await this.runConcurrentTest(messageCount, delay, concurrent, nodePreference);
+                }
+                
+                this.running = false;
+                this.updateUI();
+                this.log('Stress test completed');
+            }
+
+            async runSequentialTest(messageCount, delay, nodePreference) {
+                for (let i = 0; i < messageCount && this.running; i++) {
+                    const startTime = Date.now();
+                    
+                    try {
+                        await this.sendMessage(i + 1, nodePreference);
+                        const responseTime = Date.now() - startTime;
+                        this.stats.responseTimes.push(responseTime);
+                        this.stats.successful++;
+                        this.log(`✓ Message ${i + 1}: ${responseTime}ms`, 'success');
+                    } catch (error) {
+                        const responseTime = Date.now() - startTime;
+                        if (error.name === 'AbortError') {
+                            this.log(`✗ Message ${i + 1}: Aborted`, 'warning');
+                            break;
+                        } else if (error.message.includes('timeout')) {
+                            this.stats.timeouts++;
+                            this.log(`⚠ Message ${i + 1}: Timeout (${responseTime}ms)`, 'timeout');
+                        } else {
+                            this.stats.failed++;
+                            this.log(`✗ Message ${i + 1}: ${error.message} (${responseTime}ms)`, 'error');
+                        }
+                    }
+                    
+                    this.stats.total++;
+                    this.updateStats();
+                    
+                    if (delay > 0 && i < messageCount - 1) {
+                        await this.sleep(delay);
+                    }
+                }
+            }
+
+            async runConcurrentTest(messageCount, delay, concurrent, nodePreference) {
+                const batches = Math.ceil(messageCount / concurrent);
+                
+                for (let batch = 0; batch < batches && this.running; batch++) {
+                    const promises = [];
+                    const batchStart = batch * concurrent;
+                    const batchEnd = Math.min(batchStart + concurrent, messageCount);
+                    
+                    for (let i = batchStart; i < batchEnd; i++) {
+                        promises.push(this.sendMessageWithStats(i + 1, nodePreference));
+                    }
+                    
+                    await Promise.allSettled(promises);
+                    this.updateStats();
+                    
+                    if (delay > 0 && batch < batches - 1) {
+                        await this.sleep(delay);
+                    }
+                }
+            }
+
+            async sendMessageWithStats(messageNum, nodePreference) {
+                const startTime = Date.now();
+                
+                try {
+                    await this.sendMessage(messageNum, nodePreference);
+                    const responseTime = Date.now() - startTime;
+                    this.stats.responseTimes.push(responseTime);
+                    this.stats.successful++;
+                    this.log(`✓ Message ${messageNum}: ${responseTime}ms`, 'success');
+                } catch (error) {
+                    const responseTime = Date.now() - startTime;
+                    if (error.name === 'AbortError') {
+                        this.log(`✗ Message ${messageNum}: Aborted`, 'warning');
+                    } else if (error.message.includes('timeout')) {
+                        this.stats.timeouts++;
+                        this.log(`⚠ Message ${messageNum}: Timeout (${responseTime}ms)`, 'timeout');
+                    } else {
+                        this.stats.failed++;
+                        this.log(`✗ Message ${messageNum}: ${error.message} (${responseTime}ms)`, 'error');
+                    }
+                }
+                
+                this.stats.total++;
+            }
+
+            async sendMessage(messageNum, nodePreference) {
+                const key = `stress-test-${Date.now()}-${messageNum}`;
+                const message = `Stress test message ${messageNum} - ${new Date().toISOString()}`;
+                
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+                
+                if (nodePreference) {
+                    headers['X-Preferred-Node'] = nodePreference;
+                }
+                
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+                
+                try {
+                    const response = await fetch(`/api/data/${key}`, {
+                        method: 'PUT',
+                        headers: headers,
+                        body: JSON.stringify({
+                            data: btoa(message),
+                            ttl: 300
+                        }),
+                        signal: controller.signal
+                    });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const result = await response.text();
+                    const nodeId = response.headers.get('x-repram-node') || 'unknown';
+                    
+                    return { key, result, nodeId };
+                } catch (error) {
+                    clearTimeout(timeoutId);
+                    if (error.name === 'AbortError') {
+                        throw new Error('Request timeout');
+                    }
+                    throw error;
+                }
+            }
+
+            resetStats() {
+                this.stats = {
+                    total: 0,
+                    successful: 0,
+                    failed: 0,
+                    timeouts: 0,
+                    responseTimes: [],
+                    startTime: Date.now()
+                };
+            }
+
+            updateStats() {
+                document.getElementById('totalRequests').textContent = this.stats.total;
+                document.getElementById('successful').textContent = this.stats.successful;
+                document.getElementById('failed').textContent = this.stats.failed;
+                document.getElementById('timeouts').textContent = this.stats.timeouts;
+                
+                if (this.stats.responseTimes.length > 0) {
+                    const avg = this.stats.responseTimes.reduce((a, b) => a + b, 0) / this.stats.responseTimes.length;
+                    document.getElementById('avgTime').textContent = Math.round(avg) + 'ms';
+                }
+                
+                if (this.stats.startTime) {
+                    const elapsed = (Date.now() - this.stats.startTime) / 1000;
+                    const rps = this.stats.total / elapsed;
+                    document.getElementById('rps').textContent = rps.toFixed(2);
+                }
+            }
+
+            updateUI() {
+                document.getElementById('startTest').disabled = this.running;
+                document.getElementById('stopTest').disabled = !this.running;
+            }
+
+            stopTest() {
+                this.running = false;
+                if (this.abortController) {
+                    this.abortController.abort();
+                }
+                this.log('Test stopped by user', 'warning');
+                this.updateUI();
+            }
+
+            clearResults() {
+                document.getElementById('results').innerHTML = '<div>Stress test results will appear here...</div>';
+            }
+
+            log(message, type = '') {
+                const results = document.getElementById('results');
+                const div = document.createElement('div');
+                div.className = type;
+                div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                results.appendChild(div);
+                results.scrollTop = results.scrollHeight;
+            }
+
+            sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+        }
+
+        // Initialize stress test
+        const stressTest = new StressTest();
+
+        // Event listeners
+        document.getElementById('startTest').addEventListener('click', () => stressTest.startTest());
+        document.getElementById('stopTest').addEventListener('click', () => stressTest.stopTest());
+        document.getElementById('clearResults').addEventListener('click', () => stressTest.clearResults());
+
+        // Update stats every second
+        setInterval(() => {
+            if (stressTest.running) {
+                stressTest.updateStats();
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

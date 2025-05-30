@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # Fade cluster node 1 (primary)
+  fade-node-1:
+    build: ..
+    command: ["./repram-fade-cluster-node"]
+    ports:
+      - "8080:8080"  # HTTP API
+      - "9090:9090"  # Gossip
+    environment:
+      - REPRAM_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPRAM_NODE_ID=fade-node-1
+      - NODE_ADDRESS=fade-node-1
+      - REPLICATION_FACTOR=2
+      - REPRAM_LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - fade-network
+
+  # Fade cluster node 2
+  fade-node-2:
+    build: ..
+    command: ["./repram-fade-cluster-node"]
+    ports:
+      - "8081:8080"  # HTTP API
+      - "9091:9090"  # Gossip
+    environment:
+      - REPRAM_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPRAM_NODE_ID=fade-node-2
+      - NODE_ADDRESS=fade-node-2
+      - REPLICATION_FACTOR=2
+      - REPRAM_BOOTSTRAP_PEERS=fade-node-1:9090
+      - REPRAM_LOG_LEVEL=info
+    depends_on:
+      fade-node-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - fade-network
+
+  # Fade cluster node 3
+  fade-node-3:
+    build: ..
+    command: ["./repram-fade-cluster-node"]
+    ports:
+      - "8082:8080"  # HTTP API
+      - "9092:9090"  # Gossip
+    environment:
+      - REPRAM_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPRAM_NODE_ID=fade-node-3
+      - NODE_ADDRESS=fade-node-3
+      - REPLICATION_FACTOR=2
+      - REPRAM_BOOTSTRAP_PEERS=fade-node-1:9090,fade-node-2:9090
+      - REPRAM_LOG_LEVEL=info
+    depends_on:
+      fade-node-1:
+        condition: service_healthy
+      fade-node-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    networks:
+      - fade-network
+
+  # Fade web UI proxy server
+  fade-web:
+    build: 
+      context: ..
+      dockerfile: Dockerfile.fade
+    ports:
+      - "3000:3000"  # Web UI
+    environment:
+      - FADE_NODES=http://fade-node-1:8080,http://fade-node-2:8080,http://fade-node-3:8080
+    depends_on:
+      fade-node-1:
+        condition: service_healthy
+      fade-node-2:
+        condition: service_healthy
+      fade-node-3:
+        condition: service_healthy
+    networks:
+      - fade-network
+
+networks:
+  fade-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
