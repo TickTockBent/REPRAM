@@ -34,6 +34,27 @@ func main() {
 
 	router := nodeServer.Router()
 	
+	// Add CORS middleware
+	corsHandler := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Enable CORS for Fade UI
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			
+			// Handle preflight requests
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			
+			next.ServeHTTP(w, r)
+		})
+	}
+	
+	// Wrap all routes with CORS handler
+	handler := corsHandler(router)
+	
 	router.HandleFunc("/raw/put", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -144,5 +165,5 @@ func main() {
 	fmt.Println("  GET /raw/scan - List keys with optional prefix filter")
 	fmt.Println("  PUT /data/{key} - Store binary data (for SDK use)")
 	fmt.Println("  GET /data/{key} - Retrieve binary data (for SDK use)")
-	log.Fatal(http.ListenAndServe(":"+port, router))
+	log.Fatal(http.ListenAndServe(":"+port, handler))
 }

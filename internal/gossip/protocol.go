@@ -10,9 +10,10 @@ import (
 type NodeID string
 
 type Node struct {
-	ID      NodeID `json:"id"`
-	Address string `json:"address"`
-	Port    int    `json:"port"`
+	ID         NodeID `json:"id"`
+	Address    string `json:"address"`
+	Port       int    `json:"port"`        // Gossip port
+	HTTPPort   int    `json:"http_port"`   // HTTP API port
 }
 
 func (n *Node) String() string {
@@ -28,6 +29,8 @@ type Message struct {
 	TTL       int         `json:"ttl,omitempty"`
 	Timestamp time.Time   `json:"timestamp"`
 	MessageID string      `json:"message_id"`
+	// Node information for JOIN messages
+	NodeInfo  *Node       `json:"node_info,omitempty"`
 }
 
 type MessageType string
@@ -37,8 +40,6 @@ const (
 	MessageTypeGet        MessageType = "GET"
 	MessageTypePing       MessageType = "PING"
 	MessageTypePong       MessageType = "PONG"
-	MessageTypeJoin       MessageType = "JOIN"
-	MessageTypeLeave      MessageType = "LEAVE"
 	MessageTypeSync       MessageType = "SYNC"
 	MessageTypeAck        MessageType = "ACK"
 )
@@ -76,7 +77,7 @@ func (p *Protocol) SetTransport(transport Transport) {
 	transport.SetMessageHandler(p.handleMessage)
 }
 
-func (p *Protocol) Start(ctx context.Context, bootstrapNodes []*Node) error {
+func (p *Protocol) Start(ctx context.Context) error {
 	if p.transport == nil {
 		return fmt.Errorf("transport not set")
 	}
@@ -85,14 +86,10 @@ func (p *Protocol) Start(ctx context.Context, bootstrapNodes []*Node) error {
 		return fmt.Errorf("failed to start transport: %w", err)
 	}
 
-	for _, node := range bootstrapNodes {
-		if node.ID != p.localNode.ID {
-			p.addPeer(node)
-			p.sendJoin(ctx, node)
-		}
-	}
-
+	// Start periodic health checks
 	go p.startHealthCheck(ctx)
+	
+	fmt.Printf("[%s] Gossip protocol started\n", p.localNode.ID)
 	return nil
 }
 
@@ -128,8 +125,6 @@ func (p *Protocol) getPeers() []*Node {
 
 func (p *Protocol) handleMessage(msg *Message) error {
 	switch msg.Type {
-	case MessageTypeJoin:
-		return p.handleJoin(msg)
 	case MessageTypePing:
 		return p.handlePing(msg)
 	case MessageTypePong:
@@ -144,15 +139,6 @@ func (p *Protocol) handleMessage(msg *Message) error {
 	return nil
 }
 
-func (p *Protocol) handleJoin(msg *Message) error {
-	node := &Node{
-		ID:      msg.From,
-		Address: "unknown", // Would be filled from transport metadata
-		Port:    0,
-	}
-	p.addPeer(node)
-	return nil
-}
 
 func (p *Protocol) handlePing(msg *Message) error {
 	pong := &Message{
@@ -184,15 +170,6 @@ func (p *Protocol) handlePut(msg *Message) error {
 	return nil
 }
 
-func (p *Protocol) sendJoin(ctx context.Context, node *Node) error {
-	msg := &Message{
-		Type:      MessageTypeJoin,
-		From:      p.localNode.ID,
-		Timestamp: time.Now(),
-		MessageID: generateMessageID(),
-	}
-	return p.transport.Send(ctx, node, msg)
-}
 
 func (p *Protocol) startHealthCheck(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
@@ -233,7 +210,19 @@ func (p *Protocol) Broadcast(ctx context.Context, msg *Message) error {
 	if p.transport == nil {
 		return fmt.Errorf("transport not set")
 	}
-	return p.transport.Broadcast(ctx, msg)
+	
+	// Send to all known peers
+	peers := p.getPeers()
+	fmt.Printf("[%s] Broadcasting %s message to %d peers\n", p.localNode.ID, msg.Type, len(peers))
+	for _, peer := range peers {
+		fmt.Printf("[%s] Sending %s to peer %s\n", p.localNode.ID, msg.Type, peer.ID)
+		if err := p.transport.Send(ctx, peer, msg); err != nil {
+			fmt.Printf("[%s] Failed to send to peer %s: %v\n", p.localNode.ID, peer.ID, err)
+			// Continue to other peers even if one fails
+		}
+	}
+	
+	return nil
 }
 
 func (p *Protocol) GetPeers() []*Node {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"repram/internal/cluster"
+	"repram/internal/gossip"
 )
 
 func main() {
@@ -113,6 +114,8 @@ func (s *HTTPServer) Router() *mux.Router {
 	// Cluster-specific endpoints
 	r.HandleFunc("/cluster/put/{key}", s.putHandler).Methods("PUT")
 	r.HandleFunc("/cluster/get/{key}", s.getHandler).Methods("GET")
+	// Gossip endpoint
+	r.HandleFunc("/gossip/message", s.gossipHandler).Methods("POST")
 	return r
 }
 
@@ -166,4 +169,50 @@ func (s *HTTPServer) getHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
+}
+
+func (s *HTTPServer) gossipHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	
+	var simpleMsg gossip.SimpleMessage
+	if err := json.Unmarshal(body, &simpleMsg); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	
+	// Convert SimpleMessage to gossip.Message
+	gossipMsg := &gossip.Message{
+		Type:      gossip.MessageType(simpleMsg.Type),
+		From:      gossip.NodeID(simpleMsg.From),
+		To:        gossip.NodeID(simpleMsg.To),
+		Key:       simpleMsg.Key,
+		Data:      simpleMsg.Data,
+		TTL:       int(simpleMsg.TTL),
+		Timestamp: time.Unix(simpleMsg.Timestamp, 0),
+		MessageID: simpleMsg.MessageID,
+	}
+	
+	// Convert NodeInfo if present
+	if simpleMsg.NodeInfo != nil {
+		gossipMsg.NodeInfo = &gossip.Node{
+			ID:      gossip.NodeID(simpleMsg.NodeInfo.ID),
+			Address: simpleMsg.NodeInfo.Address,
+			Port:    simpleMsg.NodeInfo.Port,
+		}
+	}
+	
+	// Handle the gossip message
+	if err := s.clusterNode.HandleGossipMessage(gossipMsg); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to handle gossip message: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
 }

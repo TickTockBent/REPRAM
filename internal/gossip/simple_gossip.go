@@ -18,6 +18,13 @@ type SimpleMessage struct {
 	TTL       int32
 	Timestamp int64
 	MessageID string
+	NodeInfo  *SimpleNodeInfo `json:"node_info,omitempty"`
+}
+
+type SimpleNodeInfo struct {
+	ID      string `json:"id"`
+	Address string `json:"address"`
+	Port    int    `json:"port"`
 }
 
 type SimpleResponse struct {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"repram/internal/cluster"
+	"repram/internal/gossip"
 )
 
 func main() {
@@ -120,6 +121,9 @@ func (s *HTTPServer) Router() *mux.Router {
 	r.HandleFunc("/raw/put", s.rawPutHandler).Methods("POST")
 	r.HandleFunc("/raw/get/{key}", s.rawGetHandler).Methods("GET")
 	r.HandleFunc("/raw/scan", s.rawScanHandler).Methods("GET")
+	
+	// Gossip protocol endpoint
+	r.HandleFunc("/gossip/message", s.gossipMessageHandler).Methods("POST")
 	
 	// Enable CORS for all endpoints
 	r.Use(corsMiddleware)
@@ -263,4 +267,40 @@ func (s *HTTPServer) rawScanHandler(w http.ResponseWriter, r *http.Request) {
 		"keys": []string{},
 		"count": 0,
 	})
+}
+
+// gossipMessageHandler handles incoming gossip protocol messages
+func (s *HTTPServer) gossipMessageHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	
+	var simpleMsg gossip.SimpleMessage
+	if err := json.Unmarshal(body, &simpleMsg); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	
+	// Convert SimpleMessage to Message and process
+	msg := &gossip.Message{
+		Type:      gossip.MessageType(simpleMsg.Type),
+		From:      gossip.NodeID(simpleMsg.From),
+		To:        gossip.NodeID(simpleMsg.To),
+		Key:       simpleMsg.Key,
+		Data:      simpleMsg.Data,
+		TTL:       int(simpleMsg.TTL),
+		Timestamp: time.Unix(simpleMsg.Timestamp, 0),
+		MessageID: simpleMsg.MessageID,
+	}
+	
+	// Handle the message via cluster node
+	if err := s.clusterNode.HandleGossipMessage(msg); err != nil {
+		http.Error(w, fmt.Sprintf("Message processing failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "Message processed")
 }
