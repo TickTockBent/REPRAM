@@ -73,7 +73,7 @@ func main() {
 		}
 	}
 	
-	clusterNode := cluster.NewClusterNode(nodeID, address, port, replicationFactor)
+	clusterNode := cluster.NewClusterNode(nodeID, address, port, httpPort, replicationFactor)
 	
 	ctx := context.Background()
 	if err := clusterNode.Start(ctx, bootstrapNodes); err != nil {
@@ -124,6 +124,9 @@ func (s *HTTPServer) Router() *mux.Router {
 	
 	// Gossip protocol endpoint
 	r.HandleFunc("/gossip/message", s.gossipMessageHandler).Methods("POST")
+	
+	// Bootstrap endpoint
+	r.HandleFunc("/bootstrap", s.bootstrapHandler).Methods("POST")
 	
 	// Enable CORS for all endpoints
 	r.Use(corsMiddleware)
@@ -295,6 +298,16 @@ func (s *HTTPServer) gossipMessageHandler(w http.ResponseWriter, r *http.Request
 		MessageID: simpleMsg.MessageID,
 	}
 	
+	// Convert NodeInfo if present
+	if simpleMsg.NodeInfo != nil {
+		msg.NodeInfo = &gossip.Node{
+			ID:       gossip.NodeID(simpleMsg.NodeInfo.ID),
+			Address:  simpleMsg.NodeInfo.Address,
+			Port:     simpleMsg.NodeInfo.Port,
+			HTTPPort: simpleMsg.NodeInfo.HTTPPort,
+		}
+	}
+	
 	// Handle the message via cluster node
 	if err := s.clusterNode.HandleGossipMessage(msg); err != nil {
 		http.Error(w, fmt.Sprintf("Message processing failed: %v", err), http.StatusInternalServerError)
@@ -303,4 +316,24 @@ func (s *HTTPServer) gossipMessageHandler(w http.ResponseWriter, r *http.Request
 	
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "Message processed")
+}
+// bootstrapHandler handles bootstrap requests from new nodes
+func (s *HTTPServer) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	
+	var req gossip.BootstrapRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	
+	resp := s.clusterNode.HandleBootstrap(&req)
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
 }
