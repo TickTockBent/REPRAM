@@ -124,15 +124,14 @@ You'll see output like:
 Starting REPRAM Fade multi-node setup with GOSSIP replication...
 This uses cluster nodes that replicate data between each other
 
-Starting cluster node 1 on port 8080...
-Starting cluster node 2 on port 8081...
-Starting cluster node 3 on port 8082...
-Waiting for nodes to start...
+Starting cluster node 1 on port 8080 (seed node)...
 ✓ Node 1 started successfully
-✓ Node 2 started successfully
-✓ Node 3 started successfully
+Starting cluster node 2 on port 8081 (bootstrapping from node 1)...
+✓ Node 2 started and bootstrapped successfully
+Starting cluster node 3 on port 8082 (bootstrapping from node 1)...
+✓ Node 3 started and bootstrapped successfully
 
-Waiting for gossip protocol to establish full mesh connections...
+Waiting for bootstrap and gossip protocol to establish connections...
 
 ✓ Multi-node Fade setup with GOSSIP is ready!
 
@@ -142,6 +141,33 @@ URLs:
   - Cluster Node 2: http://localhost:8081 (gossip port: 7081)
   - Cluster Node 3: http://localhost:8082 (gossip port: 7082)
 ```
+
+### Step 2a: Monitor Cluster Health (Optional)
+
+In a new terminal, monitor the health of all nodes:
+```bash
+./monitor-health.sh
+```
+
+This shows:
+- Real-time node status (✓ healthy, ✗ down)
+- Process information and PIDs
+- Automatic replication tests every 5 seconds
+- Web server status
+
+### Step 2b: Monitor Gossip Activity (Optional)
+
+In another terminal, watch gossip messages in real-time:
+```bash
+./monitor-gossip.sh
+```
+
+This displays:
+- Color-coded gossip messages from all nodes
+- Bootstrap events and peer discovery
+- PUT broadcasts and ACK acknowledgments
+- SYNC messages for topology updates
+- PING/PONG health checks
 
 ### Step 3: Test Gossip Replication
 
@@ -156,12 +182,13 @@ URLs:
 
 3. **Window 2 - Check Node 2**:
    - Select "Node 2 (8081)" in the node selector
-   - Wait 30-60 seconds for gossip replication
-   - The message should appear with `[node-1]` indicator (showing original source)
+   - The message should appear within 1-3 seconds
+   - It will show `[node-1]` indicator (showing original source)
 
 4. **Verify Full Replication**:
    - Select "Node 3 (8082)" in either window
    - The same message should appear here too with `[node-1]` indicator
+   - Use `./monitor-gossip.sh` to see the replication happening in real-time
 
 #### Test 2: Node Source Tracking
 
@@ -178,14 +205,29 @@ URLs:
 
 #### Test 3: Real-Time Gossip Monitoring
 
-Monitor gossip activity in real-time:
-```bash
-# Watch cluster logs
-tail -f cluster-node1.log cluster-node2.log cluster-node3.log
+Use the monitoring scripts to observe the cluster:
 
-# Watch for replication messages
-grep -i "successfully sent\|message processed" cluster-node*.log
-```
+1. **Health Monitor** (in a new terminal):
+   ```bash
+   ./monitor-health.sh
+   ```
+   Shows node status and runs automatic replication tests every 5 seconds.
+
+2. **Gossip Monitor** (in another terminal):
+   ```bash
+   ./monitor-gossip.sh
+   ```
+   Shows color-coded gossip messages:
+   - Yellow `[PUT-BROADCAST]` when a node sends data
+   - Green `[PUT-RECEIVED]` when nodes receive replicated data
+   - Cyan `[ACK-SEND]` for acknowledgments
+   - Blue `[SYNC]` for peer discovery
+
+3. **Manual Log Inspection**:
+   ```bash
+   # Watch raw logs if needed
+   tail -f cluster-node*.log | grep -E "Broadcasting|Received|SYNC"
+   ```
 
 ### Step 4: Test Network Partition Tolerance
 
@@ -241,11 +283,12 @@ grep -i "successfully sent\|message processed" cluster-node*.log
 ```
 
 **Key Differences from Simple Multi-Node**:
-- ✅ **Data replication**: Messages appear on all nodes
+- ✅ **Data replication**: Messages appear on all nodes within 1-3 seconds
 - ✅ **Source tracking**: Original node is preserved with indicators
-- ✅ **Gossip protocol**: Real HTTP-based peer communication
-- ✅ **Fault tolerance**: Network partition recovery
-- ✅ **Full mesh**: Each node knows about all other nodes
+- ✅ **Bootstrap protocol**: Initial peer discovery via HTTP endpoints
+- ✅ **Gossip protocol**: Real-time data replication between peers
+- ✅ **Fault tolerance**: Quorum-based writes (2/3 nodes must acknowledge)
+- ✅ **Full mesh**: Nodes discover each other via bootstrap, then maintain connections
 
 ## Advanced Testing
 
@@ -396,11 +439,12 @@ tail -50 raw-node1.log
 - **Use Case**: Testing proxy logic, load balancing, and failover
 
 ### Gossip-Enabled Cluster Mode
-- **Full Replication**: Messages appear on all nodes via gossip protocol
+- **Full Replication**: Messages appear on all nodes within 1-3 seconds
 - **Source Tracking**: Node indicators show original message source (`[node-1]`, `[node-2]`, etc.)
-- **Eventual Consistency**: Messages replicate within 30-60 seconds
+- **Immediate Consistency**: Quorum-based writes ensure data durability
 - **Network Partitions**: Cluster handles node failures gracefully
-- **Hardcoded Mesh**: Each node knows about all other nodes at startup
+- **Dynamic Topology**: Bootstrap protocol for discovery, SYNC messages for updates
+- **Monitoring Tools**: Real-time health and gossip message monitoring scripts
 - **Use Case**: Testing true distributed behavior and REPRAM's replication capabilities
 
 Both modes demonstrate REPRAM's distributed ephemeral storage capabilities, with gossip mode showing the full vision of the system!
