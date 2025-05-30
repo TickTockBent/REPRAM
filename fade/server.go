@@ -103,6 +103,11 @@ func (ps *ProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, path
 		// Copy status code and body
 		w.WriteHeader(resp.StatusCode)
 		io.Copy(w, resp.Body)
+		
+		// Update current node for round-robin (only when no preferred node specified)
+		if preferredNode == "" {
+			ps.currentNode = (ps.currentNode + 1) % len(ps.nodes)
+		}
 		return
 	}
 	

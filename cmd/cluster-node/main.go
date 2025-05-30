@@ -111,9 +111,11 @@ func (s *HTTPServer) Router() *mux.Router {
 	// Standard endpoints (compatible with load tester)
 	r.HandleFunc("/data/{key}", s.putHandler).Methods("PUT")
 	r.HandleFunc("/data/{key}", s.getHandler).Methods("GET")
+	r.HandleFunc("/scan", s.scanHandler).Methods("GET")
 	// Cluster-specific endpoints
 	r.HandleFunc("/cluster/put/{key}", s.putHandler).Methods("PUT")
 	r.HandleFunc("/cluster/get/{key}", s.getHandler).Methods("GET")
+	r.HandleFunc("/cluster/scan", s.scanHandler).Methods("GET")
 	// Gossip endpoint
 	r.HandleFunc("/gossip/message", s.gossipHandler).Methods("POST")
 	// Bootstrap endpoint
@@ -171,6 +173,17 @@ func (s *HTTPServer) getHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
+}
+
+func (s *HTTPServer) scanHandler(w http.ResponseWriter, r *http.Request) {
+	// Get all keys from the cluster node
+	keys := s.clusterNode.Scan()
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"keys": keys,
+	})
 }
 
 func (s *HTTPServer) gossipHandler(w http.ResponseWriter, r *http.Request) {
