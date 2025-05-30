@@ -215,6 +215,111 @@ h1::after {
     51%, 100% { opacity: 0; }
 }
 
+/* Connection Status */
+.connection-status {
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid #00ffff;
+    margin-bottom: 20px;
+    padding: 10px 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+.status-line {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+.status-icon {
+    font-size: 1.2rem;
+    animation: statusPulse 2s ease-in-out infinite;
+}
+
+.status-icon.connected {
+    color: #00ff00;
+}
+
+.status-icon.scanning {
+    color: #ffff00;
+    animation: statusSpin 1s linear infinite;
+}
+
+.status-icon.error {
+    color: #ff0000;
+    animation: statusBlink 0.5s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes statusSpin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes statusBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+}
+
+.status-text {
+    color: #00ffff;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.node-info {
+    margin-left: auto;
+    color: #ff00ff;
+    font-size: 0.8rem;
+    opacity: 0.8;
+}
+
+.node-selector {
+    margin-left: 20px;
+}
+
+.node-selector select {
+    background: rgba(0, 0, 0, 0.8);
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    padding: 4px 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    cursor: pointer;
+    outline: none;
+}
+
+.node-selector select:hover {
+    border-color: #00ffff;
+    box-shadow: 0 0 5px #00ffff;
+}
+
+.node-selector select option {
+    background: #000;
+    color: #00ff00;
+}
+
+.scan-line {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #00ffff, transparent);
+    width: 20%;
+    animation: scanMove 3s linear infinite;
+}
+
+@keyframes scanMove {
+    0% { left: -20%; }
+    100% { left: 100%; }
+}
+
 /* Message Board */
 .message-board {
     height: 500px;
@@ -564,6 +669,17 @@ h1::after {
 .message-key:hover {
     color: #ffff00;
     text-shadow: 0 0 10px #ffff00;
+}
+
+.node-indicator {
+    font-family: 'Courier New', monospace;
+    font-size: 0.6rem;
+    color: #ff00ff;
+    margin-left: 10px;
+    padding: 2px 6px;
+    border: 1px solid #ff00ff;
+    background: rgba(255, 0, 255, 0.1);
+    text-transform: uppercase;
 }
 
 /* Copy feedback animation */
