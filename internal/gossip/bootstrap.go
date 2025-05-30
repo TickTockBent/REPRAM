@@ -111,6 +111,10 @@ func (p *Protocol) HandleBootstrap(req *BootstrapRequest) *BootstrapResponse {
 	p.addPeer(newNode)
 	fmt.Printf("[%s] Node %s joined via bootstrap\n", p.localNode.ID, req.NodeID)
 	
+	// Notify all existing peers about the new node
+	// This ensures all nodes know about each other
+	go p.notifyPeersAboutNewNode(newNode)
+	
 	// Return current cluster topology
 	peers := p.getPeers()
 	// Include ourselves in the response
@@ -119,5 +123,30 @@ func (p *Protocol) HandleBootstrap(req *BootstrapRequest) *BootstrapResponse {
 	return &BootstrapResponse{
 		Success: true,
 		Peers:   allPeers,
+	}
+}
+
+// notifyPeersAboutNewNode sends a SYNC message to existing peers about a new node
+func (p *Protocol) notifyPeersAboutNewNode(newNode *Node) {
+	peers := p.getPeers()
+	for _, peer := range peers {
+		if peer.ID != newNode.ID {
+			// Create a SYNC message with the new node info
+			msg := &Message{
+				Type:      MessageTypeSync,
+				From:      p.localNode.ID,
+				Timestamp: time.Now(),
+				MessageID: generateMessageID(),
+				NodeInfo:  newNode,
+			}
+			
+			if err := p.Send(context.Background(), peer, msg); err != nil {
+				fmt.Printf("[%s] Failed to notify %s about new node %s: %v\n", 
+					p.localNode.ID, peer.ID, newNode.ID, err)
+			} else {
+				fmt.Printf("[%s] Notified %s about new node %s\n", 
+					p.localNode.ID, peer.ID, newNode.ID)
+			}
+		}
 	}
 }

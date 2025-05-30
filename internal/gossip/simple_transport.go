@@ -114,21 +114,16 @@ func (t *SimpleGRPCTransport) Send(ctx context.Context, node *Node, msg *Message
 	// Convert NodeInfo if present
 	if msg.NodeInfo != nil {
 		simpleMsg.NodeInfo = &SimpleNodeInfo{
-			ID:      string(msg.NodeInfo.ID),
-			Address: msg.NodeInfo.Address,
-			Port:    msg.NodeInfo.Port,
+			ID:       string(msg.NodeInfo.ID),
+			Address:  msg.NodeInfo.Address,
+			Port:     msg.NodeInfo.Port,
+			HTTPPort: msg.NodeInfo.HTTPPort,
 		}
 	}
 	
-	// Send via HTTP to the target node's HTTP port, not gossip port
-	// The gossip messages are sent to the HTTP server, not the gossip port
-	// For now, assume HTTP port is gossip port - 1000 (9091 -> 8091)
-	httpPort := node.Port - 1000
-	if httpPort < 1000 {
-		httpPort = node.Port // fallback
-	}
-	url := fmt.Sprintf("http://%s:%d/gossip/message", node.Address, httpPort)
-	fmt.Printf("[Transport] Sending %s message to %s (gossip port %d, http port %d)\n", msg.Type, url, node.Port, httpPort)
+	// Send via HTTP to the target node's HTTP port
+	url := fmt.Sprintf("http://%s:%d/gossip/message", node.Address, node.HTTPPort)
+	fmt.Printf("[Transport] Sending %s message to %s\n", msg.Type, url)
 	return t.sendHTTPMessage(ctx, url, simpleMsg)
 }
 
@@ -162,7 +157,7 @@ func (t *SimpleGRPCTransport) sendHTTPMessage(ctx context.Context, url string, m
 		return fmt.Errorf("message rejected with status: %d", resp.StatusCode)
 	}
 	
-	fmt.Printf("Successfully sent %s message to %s\n", msg.Type, url)
+	fmt.Printf("[Transport] Successfully sent %s message to %s\n", msg.Type, url)
 	return nil
 }
 
@@ -190,9 +185,10 @@ func (t *SimpleGRPCTransport) handleSimpleMessage(msg *SimpleMessage) error {
 	// Convert NodeInfo if present
 	if msg.NodeInfo != nil {
 		gossipMsg.NodeInfo = &Node{
-			ID:      NodeID(msg.NodeInfo.ID),
-			Address: msg.NodeInfo.Address,
-			Port:    msg.NodeInfo.Port,
+			ID:       NodeID(msg.NodeInfo.ID),
+			Address:  msg.NodeInfo.Address,
+			Port:     msg.NodeInfo.Port,
+			HTTPPort: msg.NodeInfo.HTTPPort,
 		}
 	}
 	

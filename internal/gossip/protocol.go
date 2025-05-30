@@ -74,6 +74,7 @@ func NewProtocol(localNode *Node, replicationFactor int) *Protocol {
 
 func (p *Protocol) SetTransport(transport Transport) {
 	p.transport = transport
+	// Always use protocol's handleMessage which will delegate to app handler
 	transport.SetMessageHandler(p.handleMessage)
 }
 
@@ -124,14 +125,22 @@ func (p *Protocol) getPeers() []*Node {
 }
 
 func (p *Protocol) handleMessage(msg *Message) error {
+	// Handle protocol-level messages first
 	switch msg.Type {
 	case MessageTypePing:
 		return p.handlePing(msg)
 	case MessageTypePong:
 		return p.handlePong(msg)
-	case MessageTypePut:
-		return p.handlePut(msg)
+	case MessageTypeSync:
+		return p.handleSync(msg)
+	case MessageTypePut, MessageTypeAck:
+		// Application-level messages - pass to handler
+		if p.messageHandler != nil {
+			return p.messageHandler(msg)
+		}
+		return nil
 	default:
+		// Unknown message type
 		if p.messageHandler != nil {
 			return p.messageHandler(msg)
 		}
@@ -163,9 +172,27 @@ func (p *Protocol) handlePong(msg *Message) error {
 	return nil
 }
 
-func (p *Protocol) handlePut(msg *Message) error {
-	if p.messageHandler != nil {
-		return p.messageHandler(msg)
+
+func (p *Protocol) handleSync(msg *Message) error {
+	fmt.Printf("[%s] Received SYNC message from %s\n", p.localNode.ID, msg.From)
+	
+	// SYNC messages carry information about new nodes
+	if msg.NodeInfo != nil {
+		// Check if we already know this peer
+		p.peersMutex.RLock()
+		_, exists := p.peers[msg.NodeInfo.ID]
+		p.peersMutex.RUnlock()
+		
+		if !exists {
+			p.addPeer(msg.NodeInfo)
+			fmt.Printf("[%s] Learned about new peer %s via SYNC from %s\n", 
+				p.localNode.ID, msg.NodeInfo.ID, msg.From)
+		} else {
+			fmt.Printf("[%s] Already know peer %s (SYNC from %s)\n", 
+				p.localNode.ID, msg.NodeInfo.ID, msg.From)
+		}
+	} else {
+		fmt.Printf("[%s] SYNC message from %s has no NodeInfo\n", p.localNode.ID, msg.From)
 	}
 	return nil
 }
@@ -231,6 +258,11 @@ func (p *Protocol) GetPeers() []*Node {
 
 func (p *Protocol) SetMessageHandler(handler func(*Message) error) {
 	p.messageHandler = handler
+}
+
+// HandleMessage is the public entry point for processing messages
+func (p *Protocol) HandleMessage(msg *Message) error {
+	return p.handleMessage(msg)
 }
 
 func generateMessageID() string {

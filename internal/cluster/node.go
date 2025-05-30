@@ -3,8 +3,6 @@ package cluster
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -159,11 +157,26 @@ func (cn *ClusterNode) Get(key string) ([]byte, bool) {
 }
 
 func (cn *ClusterNode) HandleGossipMessage(msg *gossip.Message) error {
-	return cn.handleGossipMessage(msg)
+	// Route protocol messages to the protocol handler
+	switch msg.Type {
+	case gossip.MessageTypePing, gossip.MessageTypePong, gossip.MessageTypeSync:
+		// Let the protocol handle its own messages
+		return cn.protocol.HandleMessage(msg)
+	default:
+		// Application messages
+		return cn.handleGossipMessage(msg)
+	}
 }
 
 func (cn *ClusterNode) handleGossipMessage(msg *gossip.Message) error {
+	// First let the protocol handle system messages
 	switch msg.Type {
+	case gossip.MessageTypePing, gossip.MessageTypePong, gossip.MessageTypeSync:
+		// These are handled by the protocol layer, not the application
+		// The protocol's message handler is already set, so this should not happen
+		// but we'll handle it gracefully
+		fmt.Printf("[%s] Unexpected %s message in cluster handler\n", cn.localNode.ID, msg.Type)
+		return nil
 	case gossip.MessageTypePut:
 		return cn.handlePutMessage(msg)
 	case gossip.MessageTypeAck:
@@ -223,4 +236,7 @@ func (cn *ClusterNode) handleAckMessage(msg *gossip.Message) error {
 	}
 	
 	return nil
+}
+func (cn *ClusterNode) HandleBootstrap(req *gossip.BootstrapRequest) *gossip.BootstrapResponse {
+	return cn.protocol.HandleBootstrap(req)
 }

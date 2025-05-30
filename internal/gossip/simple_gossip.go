@@ -22,9 +22,10 @@ type SimpleMessage struct {
 }
 
 type SimpleNodeInfo struct {
-	ID      string `json:"id"`
-	Address string `json:"address"`
-	Port    int    `json:"port"`
+	ID       string `json:"id"`
+	Address  string `json:"address"`
+	Port     int    `json:"port"`
+	HTTPPort int    `json:"http_port"`
 }
 
 type SimpleResponse struct {
