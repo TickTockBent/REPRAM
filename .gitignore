@@ -2,4 +2,9 @@ test-results/*
 monitoring-results/*
 test/*
 docker-compose-scale*.yml
-bin/repram-cluster-node
+bin/*
+fade/web.log
+fade/raw-node*.log
+fade/node*.log
+fade/simple-cluster.pids
+fade/cluster-node*.log

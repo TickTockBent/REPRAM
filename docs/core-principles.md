@@ -55,12 +55,14 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 ### 5.1 Compliance as Client Concern
 - **SDK handles compliance**: All compliance logic lives in the SDK
 - **Compliance data in value**: Compliance metadata is encoded into the encrypted value
-- **Single compliance bit**: Nodes only see a boolean flag indicating compliance-required data
+- **First-bit encoding**: Compliance flag encoded in first bit of encrypted blob
+- **No data classification**: Nodes see only opaque blobs, no separate fields
 
 ### 5.2 Attestation Without Violation
-- **Only key hashes stored**: Attestations contain SHA-256 of keys, not the keys themselves
-- **No value storage**: Attestations never include or reference the encrypted values
-- **Time-limited attestation storage**: Even attestation data has a retention limit (10 cycles)
+- **Ephemeral attestations only**: 10-cycle rolling buffer, auto-expiring
+- **No permanent records**: Even attestations are time-limited
+- **Client-controlled storage**: Organizations must store attestations they need
+- **Public attestation access**: No authentication required for compliance data
 
 ### 5.3 Zero Performance Impact
 - **Opt-in compliance**: Standard operations unchanged
@@ -97,15 +99,16 @@ If any answer is "no", the feature violates REPRAM's core principles and must be
 
 ## Phase 5 Compliance Validation
 
-The Phase 5 compliance framework adheres to all core principles:
+The redesigned SDK-based compliance framework adheres to all core principles:
 
-- ✓ **Key-value storage maintained**: Compliance data encoded in value
-- ✓ **Client-side encryption preserved**: SDK handles all compliance metadata
-- ✓ **Public readability unchanged**: Anyone can still read encrypted blobs
-- ✓ **TTL enforcement continues**: All data still expires, including compliance data
-- ✓ **Gossip replication works**: Compliance bit gossips with key-value pairs
-- ✓ **Zero-knowledge preserved**: Nodes only see hashes in attestations
-- ✓ **Zero impact achieved**: Non-compliance operations completely unaffected
-- ✓ **Standard crypto used**: Ed25519 for signatures, SHA-256 for hashing
+- ✓ **Pure key-value maintained**: No separate compliance field, just encrypted blobs
+- ✓ **Client-side encoding**: SDK controls compliance flag via first-bit encoding
+- ✓ **Public readability unchanged**: All endpoints remain open, no authentication
+- ✓ **TTL enforcement continues**: All data expires, including attestation buffers
+- ✓ **Gossip replication unchanged**: Standard key-value pairs gossip normally
+- ✓ **Zero-knowledge preserved**: Nodes check one bit but understand nothing
+- ✓ **Minimal node changes**: Only deletion-time first-bit checking added
+- ✓ **No node identity**: Nodes remain anonymous, no signatures or identification
+- ✓ **External compliance service**: Monitoring happens outside REPRAM network
 
-The compliance framework successfully extends REPRAM's capabilities without violating any core principle.
+The first-bit encoding approach enables compliance with minimal node modifications.

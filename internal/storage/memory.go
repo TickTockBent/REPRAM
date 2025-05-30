@@ -98,3 +98,39 @@ func (m *MemoryStore) GetStats() (int, int64) {
 	
 	return count, totalSize
 }
+
+// Range iterates over all non-expired keys
+// The callback function receives the key and remaining TTL in seconds
+// If the callback returns false, iteration stops
+func (m *MemoryStore) Range(fn func(key string, ttl int) bool) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	
+	now := time.Now()
+	for key, entry := range m.data {
+		if now.After(entry.ExpiresAt) {
+			continue // Skip expired entries
+		}
+		
+		remainingTTL := int(entry.ExpiresAt.Sub(now).Seconds())
+		if !fn(key, remainingTTL) {
+			break
+		}
+	}
+}
+
+// Scan returns all non-expired keys
+func (m *MemoryStore) Scan() []string {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	
+	var keys []string
+	now := time.Now()
+	for key, entry := range m.data {
+		if !now.After(entry.ExpiresAt) { // Not expired
+			keys = append(keys, key)
+		}
+	}
+	
+	return keys
+}

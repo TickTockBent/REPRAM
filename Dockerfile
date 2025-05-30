@@ -25,6 +25,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram-cluster-no
 # Build the raw node binary
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram-node-raw ./cmd/node-raw
 
+# Build the fade cluster node binary
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram-fade-cluster-node ./cmd/fade-cluster-node
+
 # Final stage - minimal runtime image
 FROM alpine:latest
 
@@ -41,6 +44,7 @@ WORKDIR /app
 COPY --from=builder /app/repram-node .
 COPY --from=builder /app/repram-cluster-node .
 COPY --from=builder /app/repram-node-raw .
+COPY --from=builder /app/repram-fade-cluster-node .
 
 # Change ownership to non-root user
 RUN chown -R repram:repram /app

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"repram/internal/cluster"
+	"repram/internal/gossip"
 )
 
 func main() {
@@ -77,7 +78,7 @@ func main() {
 		}
 	}
 	
-	clusterNode := cluster.NewClusterNode(nodeID, address, port, replicationFactor)
+	clusterNode := cluster.NewClusterNode(nodeID, address, port, httpPort, replicationFactor)
 	
 	ctx := context.Background()
 	if err := clusterNode.Start(ctx, bootstrapNodes); err != nil {
@@ -110,9 +111,15 @@ func (s *HTTPServer) Router() *mux.Router {
 	// Standard endpoints (compatible with load tester)
 	r.HandleFunc("/data/{key}", s.putHandler).Methods("PUT")
 	r.HandleFunc("/data/{key}", s.getHandler).Methods("GET")
+	r.HandleFunc("/scan", s.scanHandler).Methods("GET")
 	// Cluster-specific endpoints
 	r.HandleFunc("/cluster/put/{key}", s.putHandler).Methods("PUT")
 	r.HandleFunc("/cluster/get/{key}", s.getHandler).Methods("GET")
+	r.HandleFunc("/cluster/scan", s.scanHandler).Methods("GET")
+	// Gossip endpoint
+	r.HandleFunc("/gossip/message", s.gossipHandler).Methods("POST")
+	// Bootstrap endpoint
+	r.HandleFunc("/bootstrap", s.bootstrapHandler).Methods("POST")
 	return r
 }
 
@@ -166,4 +173,82 @@ func (s *HTTPServer) getHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
+}
+
+func (s *HTTPServer) scanHandler(w http.ResponseWriter, r *http.Request) {
+	// Get all keys from the cluster node
+	keys := s.clusterNode.Scan()
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"keys": keys,
+	})
+}
+
+func (s *HTTPServer) gossipHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	
+	var simpleMsg gossip.SimpleMessage
+	if err := json.Unmarshal(body, &simpleMsg); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	
+	// Convert SimpleMessage to gossip.Message
+	gossipMsg := &gossip.Message{
+		Type:      gossip.MessageType(simpleMsg.Type),
+		From:      gossip.NodeID(simpleMsg.From),
+		To:        gossip.NodeID(simpleMsg.To),
+		Key:       simpleMsg.Key,
+		Data:      simpleMsg.Data,
+		TTL:       int(simpleMsg.TTL),
+		Timestamp: time.Unix(simpleMsg.Timestamp, 0),
+		MessageID: simpleMsg.MessageID,
+	}
+	
+	// Convert NodeInfo if present
+	if simpleMsg.NodeInfo != nil {
+		gossipMsg.NodeInfo = &gossip.Node{
+			ID:       gossip.NodeID(simpleMsg.NodeInfo.ID),
+			Address:  simpleMsg.NodeInfo.Address,
+			Port:     simpleMsg.NodeInfo.Port,
+			HTTPPort: simpleMsg.NodeInfo.HTTPPort,
+		}
+	}
+	
+	// Handle the gossip message
+	if err := s.clusterNode.HandleGossipMessage(gossipMsg); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to handle gossip message: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+func (s *HTTPServer) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	
+	var req gossip.BootstrapRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	
+	resp := s.clusterNode.HandleBootstrap(&req)
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
 }

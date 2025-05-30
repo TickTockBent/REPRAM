@@ -10,9 +10,10 @@ import (
 type NodeID string
 
 type Node struct {
-	ID      NodeID `json:"id"`
-	Address string `json:"address"`
-	Port    int    `json:"port"`
+	ID         NodeID `json:"id"`
+	Address    string `json:"address"`
+	Port       int    `json:"port"`        // Gossip port
+	HTTPPort   int    `json:"http_port"`   // HTTP API port
 }
 
 func (n *Node) String() string {
@@ -28,6 +29,8 @@ type Message struct {
 	TTL       int         `json:"ttl,omitempty"`
 	Timestamp time.Time   `json:"timestamp"`
 	MessageID string      `json:"message_id"`
+	// Node information for JOIN messages
+	NodeInfo  *Node       `json:"node_info,omitempty"`
 }
 
 type MessageType string
@@ -37,8 +40,6 @@ const (
 	MessageTypeGet        MessageType = "GET"
 	MessageTypePing       MessageType = "PING"
 	MessageTypePong       MessageType = "PONG"
-	MessageTypeJoin       MessageType = "JOIN"
-	MessageTypeLeave      MessageType = "LEAVE"
 	MessageTypeSync       MessageType = "SYNC"
 	MessageTypeAck        MessageType = "ACK"
 )
@@ -51,6 +52,8 @@ type Protocol struct {
 	quorumSize     int
 	messageHandler func(*Message) error
 	transport      Transport
+	topologyTicker *time.Ticker
+	stopChan       chan struct{}
 }
 
 type Transport interface {
@@ -68,15 +71,17 @@ func NewProtocol(localNode *Node, replicationFactor int) *Protocol {
 		peers:            make(map[NodeID]*Node),
 		replicationFactor: replicationFactor,
 		quorumSize:       quorumSize,
+		stopChan:         make(chan struct{}),
 	}
 }
 
 func (p *Protocol) SetTransport(transport Transport) {
 	p.transport = transport
+	// Always use protocol's handleMessage which will delegate to app handler
 	transport.SetMessageHandler(p.handleMessage)
 }
 
-func (p *Protocol) Start(ctx context.Context, bootstrapNodes []*Node) error {
+func (p *Protocol) Start(ctx context.Context) error {
 	if p.transport == nil {
 		return fmt.Errorf("transport not set")
 	}
@@ -85,18 +90,23 @@ func (p *Protocol) Start(ctx context.Context, bootstrapNodes []*Node) error {
 		return fmt.Errorf("failed to start transport: %w", err)
 	}
 
-	for _, node := range bootstrapNodes {
-		if node.ID != p.localNode.ID {
-			p.addPeer(node)
-			p.sendJoin(ctx, node)
-		}
-	}
-
+	// Start periodic health checks
 	go p.startHealthCheck(ctx)
+	
+	// Start periodic topology synchronization
+	go p.startTopologySync(ctx)
+	
+	fmt.Printf("[%s] Gossip protocol started\n", p.localNode.ID)
 	return nil
 }
 
 func (p *Protocol) Stop() error {
+	// Stop topology sync
+	close(p.stopChan)
+	if p.topologyTicker != nil {
+		p.topologyTicker.Stop()
+	}
+	
 	if p.transport != nil {
 		return p.transport.Stop()
 	}
@@ -127,16 +137,22 @@ func (p *Protocol) getPeers() []*Node {
 }
 
 func (p *Protocol) handleMessage(msg *Message) error {
+	// Handle protocol-level messages first
 	switch msg.Type {
-	case MessageTypeJoin:
-		return p.handleJoin(msg)
 	case MessageTypePing:
 		return p.handlePing(msg)
 	case MessageTypePong:
 		return p.handlePong(msg)
-	case MessageTypePut:
-		return p.handlePut(msg)
+	case MessageTypeSync:
+		return p.handleSync(msg)
+	case MessageTypePut, MessageTypeAck:
+		// Application-level messages - pass to handler
+		if p.messageHandler != nil {
+			return p.messageHandler(msg)
+		}
+		return nil
 	default:
+		// Unknown message type
 		if p.messageHandler != nil {
 			return p.messageHandler(msg)
 		}
@@ -144,15 +160,6 @@ func (p *Protocol) handleMessage(msg *Message) error {
 	return nil
 }
 
-func (p *Protocol) handleJoin(msg *Message) error {
-	node := &Node{
-		ID:      msg.From,
-		Address: "unknown", // Would be filled from transport metadata
-		Port:    0,
-	}
-	p.addPeer(node)
-	return nil
-}
 
 func (p *Protocol) handlePing(msg *Message) error {
 	pong := &Message{
@@ -177,22 +184,31 @@ func (p *Protocol) handlePong(msg *Message) error {
 	return nil
 }
 
-func (p *Protocol) handlePut(msg *Message) error {
-	if p.messageHandler != nil {
-		return p.messageHandler(msg)
+
+func (p *Protocol) handleSync(msg *Message) error {
+	fmt.Printf("[%s] Received SYNC message from %s\n", p.localNode.ID, msg.From)
+	
+	// SYNC messages carry information about new nodes
+	if msg.NodeInfo != nil {
+		// Check if we already know this peer
+		p.peersMutex.RLock()
+		_, exists := p.peers[msg.NodeInfo.ID]
+		p.peersMutex.RUnlock()
+		
+		if !exists {
+			p.addPeer(msg.NodeInfo)
+			fmt.Printf("[%s] Learned about new peer %s via SYNC from %s\n", 
+				p.localNode.ID, msg.NodeInfo.ID, msg.From)
+		} else {
+			fmt.Printf("[%s] Already know peer %s (SYNC from %s)\n", 
+				p.localNode.ID, msg.NodeInfo.ID, msg.From)
+		}
+	} else {
+		fmt.Printf("[%s] SYNC message from %s has no NodeInfo\n", p.localNode.ID, msg.From)
 	}
 	return nil
 }
 
-func (p *Protocol) sendJoin(ctx context.Context, node *Node) error {
-	msg := &Message{
-		Type:      MessageTypeJoin,
-		From:      p.localNode.ID,
-		Timestamp: time.Now(),
-		MessageID: generateMessageID(),
-	}
-	return p.transport.Send(ctx, node, msg)
-}
 
 func (p *Protocol) startHealthCheck(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
@@ -233,7 +249,19 @@ func (p *Protocol) Broadcast(ctx context.Context, msg *Message) error {
 	if p.transport == nil {
 		return fmt.Errorf("transport not set")
 	}
-	return p.transport.Broadcast(ctx, msg)
+	
+	// Send to all known peers
+	peers := p.getPeers()
+	fmt.Printf("[%s] Broadcasting %s message to %d peers\n", p.localNode.ID, msg.Type, len(peers))
+	for _, peer := range peers {
+		fmt.Printf("[%s] Sending %s to peer %s\n", p.localNode.ID, msg.Type, peer.ID)
+		if err := p.transport.Send(ctx, peer, msg); err != nil {
+			fmt.Printf("[%s] Failed to send to peer %s: %v\n", p.localNode.ID, peer.ID, err)
+			// Continue to other peers even if one fails
+		}
+	}
+	
+	return nil
 }
 
 func (p *Protocol) GetPeers() []*Node {
@@ -244,6 +272,57 @@ func (p *Protocol) SetMessageHandler(handler func(*Message) error) {
 	p.messageHandler = handler
 }
 
+// HandleMessage is the public entry point for processing messages
+func (p *Protocol) HandleMessage(msg *Message) error {
+	return p.handleMessage(msg)
+}
+
 func generateMessageID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// startTopologySync periodically exchanges peer lists to fix broken topology
+func (p *Protocol) startTopologySync(ctx context.Context) {
+	p.topologyTicker = time.NewTicker(30 * time.Second) // Sync every 30 seconds
+	defer p.topologyTicker.Stop()
+	
+	for {
+		select {
+		case <-p.topologyTicker.C:
+			p.performTopologySync(ctx)
+		case <-p.stopChan:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (p *Protocol) performTopologySync(ctx context.Context) {
+	p.peersMutex.RLock()
+	peerCount := len(p.peers)
+	expectedPeers := p.replicationFactor - 1 // Don't count ourselves
+	p.peersMutex.RUnlock()
+	
+	// Only sync if we have fewer peers than expected
+	if peerCount >= expectedPeers {
+		return
+	}
+	
+	fmt.Printf("[%s] Topology sync: have %d peers, expected %d - requesting peer lists\n", 
+		p.localNode.ID, peerCount, expectedPeers)
+	
+	// Send SYNC requests to all known peers to get their peer lists
+	msg := &Message{
+		Type:      MessageTypeSync,
+		From:      p.localNode.ID,
+		Timestamp: time.Now(),
+		MessageID: generateMessageID(),
+		NodeInfo:  p.localNode, // Include our own node info
+	}
+	
+	// Broadcast to all known peers
+	if err := p.Broadcast(ctx, msg); err != nil {
+		fmt.Printf("[%s] Failed to broadcast topology sync: %v\n", p.localNode.ID, err)
+	}
 }
