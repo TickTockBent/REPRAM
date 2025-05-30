@@ -9,7 +9,14 @@ This guide walks you through running a multi-node REPRAM setup to test distribut
 - Web browser (Chrome/Firefox recommended)
 - Ports 8080-8082 and 3000 available
 
-## Quick Start (5 minutes)
+## Multi-Node Testing Options
+
+REPRAM Fade supports two types of multi-node setups:
+
+1. **Simple Multi-Node**: Independent nodes (no replication) - Good for testing load balancing
+2. **Gossip-Enabled Cluster**: Real distributed replication - Good for testing full REPRAM behavior
+
+## Option 1: Quick Start - Simple Multi-Node (5 minutes)
 
 ### Step 1: Build the Project
 
@@ -18,7 +25,7 @@ cd /path/to/REPRAM
 make build-raw
 ```
 
-### Step 2: Start the Multi-Node Cluster
+### Step 2: Start the Simple Multi-Node Cluster
 
 ```bash
 cd fade
@@ -95,6 +102,150 @@ URLs:
    ```
 
 4. The UI continues working with remaining nodes!
+
+## Option 2: Gossip-Enabled Cluster (Recommended for Full Testing)
+
+### Step 1: Build Cluster Components
+
+```bash
+cd /path/to/REPRAM
+go build -o bin/repram-fade-cluster ./cmd/fade-cluster-node
+```
+
+### Step 2: Start the Gossip Cluster
+
+```bash
+cd fade
+./start-gossip-multi-node.sh
+```
+
+You'll see output like:
+```
+Starting REPRAM Fade multi-node setup with GOSSIP replication...
+This uses cluster nodes that replicate data between each other
+
+Starting cluster node 1 on port 8080...
+Starting cluster node 2 on port 8081...
+Starting cluster node 3 on port 8082...
+Waiting for nodes to start...
+✓ Node 1 started successfully
+✓ Node 2 started successfully
+✓ Node 3 started successfully
+
+Waiting for gossip protocol to establish full mesh connections...
+
+✓ Multi-node Fade setup with GOSSIP is ready!
+
+URLs:
+  - Fade UI: http://localhost:3000
+  - Cluster Node 1: http://localhost:8080 (gossip port: 7080)
+  - Cluster Node 2: http://localhost:8081 (gossip port: 7081)
+  - Cluster Node 3: http://localhost:8082 (gossip port: 7082)
+```
+
+### Step 3: Test Gossip Replication
+
+#### Test 1: Message Replication Across Nodes
+
+1. **Open 2 browser windows** to http://localhost:3000
+
+2. **Window 1 - Send to Node 1**:
+   - Select "Node 1 (8080)" in the node selector
+   - Send message: "Hello from Node 1"
+   - Note the message shows `[node-1]` indicator
+
+3. **Window 2 - Check Node 2**:
+   - Select "Node 2 (8081)" in the node selector
+   - Wait 30-60 seconds for gossip replication
+   - The message should appear with `[node-1]` indicator (showing original source)
+
+4. **Verify Full Replication**:
+   - Select "Node 3 (8082)" in either window
+   - The same message should appear here too with `[node-1]` indicator
+
+#### Test 2: Node Source Tracking
+
+1. Send messages from different nodes:
+   ```
+   Node 1: "Message from first node"  → Shows [node-1]
+   Node 2: "Message from second node" → Shows [node-2]
+   Node 3: "Message from third node"  → Shows [node-3]
+   ```
+
+2. **Verify all messages appear on all nodes** with correct source indicators
+
+3. **Key insight**: Each message retains its original node indicator even after replication
+
+#### Test 3: Real-Time Gossip Monitoring
+
+Monitor gossip activity in real-time:
+```bash
+# Watch cluster logs
+tail -f cluster-node1.log cluster-node2.log cluster-node3.log
+
+# Watch for replication messages
+grep -i "successfully sent\|message processed" cluster-node*.log
+```
+
+### Step 4: Test Network Partition Tolerance
+
+1. **Stop Node 2**:
+   ```bash
+   kill $(lsof -ti:8081)
+   ```
+
+2. **Continue sending messages** on Nodes 1 and 3
+   - Messages should still replicate between active nodes
+   - Node selector shows Node 2 as unhealthy
+
+3. **Restart Node 2**:
+   ```bash
+   # The cluster will auto-restart Node 2 or you can restart manually
+   ./start-gossip-multi-node.sh
+   ```
+
+4. **Verify catchup**: Node 2 should sync with the cluster
+
+### Stopping Gossip Cluster
+
+```bash
+./stop-gossip-multi-node.sh
+```
+
+### Understanding Gossip Architecture
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Browser 1  │     │  Browser 2  │     │  Browser 3  │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │
+       └───────────────────┴───────────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │ Fade Proxy  │
+                    │  Port 3000  │ (Node Preference Routing)
+                    └──────┬──────┘
+                           │
+       ┌───────────────────┼───────────────────┐
+       │                   │                   │
+┌──────▼──────┐     ┌──────▼──────┐     ┌──────▼──────┐
+│ Cluster 1   │◄───►│ Cluster 2   │◄───►│ Cluster 3   │
+│ HTTP: 8080  │     │ HTTP: 8081  │     │ HTTP: 8082  │
+│ Gossip:7080 │     │ Gossip:7081 │     │ Gossip:7082 │
+└─────────────┘     └─────────────┘     └─────────────┘
+       ▲                   ▲                   ▲
+       │                   │                   │
+       └───────────────────┼───────────────────┘
+                           │
+                    Full Mesh Gossip
+```
+
+**Key Differences from Simple Multi-Node**:
+- ✅ **Data replication**: Messages appear on all nodes
+- ✅ **Source tracking**: Original node is preserved with indicators
+- ✅ **Gossip protocol**: Real HTTP-based peer communication
+- ✅ **Fault tolerance**: Network partition recovery
+- ✅ **Full mesh**: Each node knows about all other nodes
 
 ## Advanced Testing
 
@@ -225,9 +376,9 @@ tail -50 raw-node1.log
    docker-compose up
    ```
 
-2. **Test Gossip Protocol** (when debugged):
+2. **Test Gossip Protocol**:
    ```bash
-   ./start-multi-node.sh  # Uses cluster nodes
+   ./start-gossip-multi-node.sh  # Uses cluster nodes with replication
    ```
 
 3. **Deploy to Multiple Machines**:
@@ -237,10 +388,19 @@ tail -50 raw-node1.log
 
 ## Key Observations
 
+### Simple Multi-Node Mode
 - **No Gossip**: Messages stay on the node that received them
 - **Load Balancing**: Proxy distributes requests across nodes
 - **Failover**: Automatic redirect to healthy nodes
 - **TTL Enforcement**: Messages expire independently on each node
-- **Ephemeral Nature**: No persistence, everything expires
+- **Use Case**: Testing proxy logic, load balancing, and failover
 
-This demonstrates REPRAM's core distributed ephemeral storage capabilities!
+### Gossip-Enabled Cluster Mode
+- **Full Replication**: Messages appear on all nodes via gossip protocol
+- **Source Tracking**: Node indicators show original message source (`[node-1]`, `[node-2]`, etc.)
+- **Eventual Consistency**: Messages replicate within 30-60 seconds
+- **Network Partitions**: Cluster handles node failures gracefully
+- **Hardcoded Mesh**: Each node knows about all other nodes at startup
+- **Use Case**: Testing true distributed behavior and REPRAM's replication capabilities
+
+Both modes demonstrate REPRAM's distributed ephemeral storage capabilities, with gossip mode showing the full vision of the system!

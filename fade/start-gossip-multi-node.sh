@@ -46,48 +46,55 @@ wait_for_node() {
 # Start cluster nodes with gossip
 echo "Starting gossip-enabled cluster nodes..."
 
-# Node 1 - knows about nodes 2 and 3
+# Start all nodes simultaneously since they all know about each other
 echo "Starting cluster node 1 on port 8080..."
 REPRAM_NODE_ID=fade-node-1 REPRAM_PORT=8080 REPRAM_GOSSIP_PORT=7080 REPLICATION_FACTOR=1 REPRAM_BOOTSTRAP_PEERS=localhost:7081,localhost:7082 ../bin/repram-fade-cluster > cluster-node1.log 2>&1 &
 NODE1_PID=$!
-if wait_for_node 8080; then
-    echo "✓ Node 1 (bootstrap) started successfully"
-else
-    echo "❌ Node 1 failed to start. Check cluster-node1.log for details"
-    tail -10 cluster-node1.log
-    exit 1
-fi
 
-# Node 2 - knows about nodes 1 and 3
 echo "Starting cluster node 2 on port 8081..."
 REPRAM_NODE_ID=fade-node-2 REPRAM_PORT=8081 REPRAM_GOSSIP_PORT=7081 REPLICATION_FACTOR=1 REPRAM_BOOTSTRAP_PEERS=localhost:7080,localhost:7082 ../bin/repram-fade-cluster > cluster-node2.log 2>&1 &
 NODE2_PID=$!
+
+echo "Starting cluster node 3 on port 8082..."
+REPRAM_NODE_ID=fade-node-3 REPRAM_PORT=8082 REPRAM_GOSSIP_PORT=7082 REPLICATION_FACTOR=1 REPRAM_BOOTSTRAP_PEERS=localhost:7080,localhost:7081 ../bin/repram-fade-cluster > cluster-node3.log 2>&1 &
+NODE3_PID=$!
+
+# Wait for all nodes to be healthy
+echo "Waiting for nodes to start..."
+sleep 3
+
+# Check each node
+if wait_for_node 8080; then
+    echo "✓ Node 1 started successfully"
+else
+    echo "❌ Node 1 failed to start. Check cluster-node1.log for details"
+    tail -10 cluster-node1.log
+    kill $NODE1_PID $NODE2_PID $NODE3_PID 2>/dev/null || true
+    exit 1
+fi
+
 if wait_for_node 8081; then
     echo "✓ Node 2 started successfully"
 else
     echo "❌ Node 2 failed to start. Check cluster-node2.log for details"
     tail -10 cluster-node2.log
-    kill $NODE1_PID 2>/dev/null || true
+    kill $NODE1_PID $NODE2_PID $NODE3_PID 2>/dev/null || true
     exit 1
 fi
 
-# Node 3 - knows about nodes 1 and 2
-echo "Starting cluster node 3 on port 8082..."
-REPRAM_NODE_ID=fade-node-3 REPRAM_PORT=8082 REPRAM_GOSSIP_PORT=7082 REPLICATION_FACTOR=1 REPRAM_BOOTSTRAP_PEERS=localhost:7080,localhost:7081 ../bin/repram-fade-cluster > cluster-node3.log 2>&1 &
-NODE3_PID=$!
 if wait_for_node 8082; then
     echo "✓ Node 3 started successfully"
 else
     echo "❌ Node 3 failed to start. Check cluster-node3.log for details"
     tail -10 cluster-node3.log
-    kill $NODE1_PID $NODE2_PID 2>/dev/null || true
+    kill $NODE1_PID $NODE2_PID $NODE3_PID 2>/dev/null || true
     exit 1
 fi
 
-# Give gossip time to establish connections
+# Give gossip time to establish connections between all nodes
 echo
-echo "Waiting for gossip protocol to establish connections..."
-sleep 2
+echo "Waiting for gossip protocol to establish full mesh connections..."
+sleep 5
 
 # Double-check all nodes are healthy
 echo
