@@ -29,6 +29,19 @@ in the following directories and files:
 - cmd/node-raw/
 - internal/node/
 - internal/storage/
+- internal/cluster/
+- internal/gossip/
+- test/
+- scripts/
+- helm/
+- k8s/
+- docs/
+- Dockerfile
+- Dockerfile.fade
+- docker-compose.yml
+- Makefile
+- go.mod
+- go.sum
 - All Makefile targets for open-source functionality
 
 The following components are proprietary and NOT covered by this MIT License:
@@ -37,6 +50,9 @@ The following components are proprietary and NOT covered by this MIT License:
 - pkg/client/ directory and all contents
 - cmd/node/ (encrypted node implementation)
 - cmd/example/ (encrypted example client)
+- cmd/cluster-node/ (cluster node implementation)
+- cmd/fade-cluster-node/ (FADE cluster node implementation)
+- fade/ directory and all contents (demo application)
 
 The proprietary components are protected by copyright and available only under
 separate commercial licensing agreements. Unauthorized use, reproduction, or
