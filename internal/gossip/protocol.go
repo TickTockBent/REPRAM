@@ -52,6 +52,8 @@ type Protocol struct {
 	quorumSize     int
 	messageHandler func(*Message) error
 	transport      Transport
+	topologyTicker *time.Ticker
+	stopChan       chan struct{}
 }
 
 type Transport interface {
@@ -69,6 +71,7 @@ func NewProtocol(localNode *Node, replicationFactor int) *Protocol {
 		peers:            make(map[NodeID]*Node),
 		replicationFactor: replicationFactor,
 		quorumSize:       quorumSize,
+		stopChan:         make(chan struct{}),
 	}
 }
 
@@ -90,11 +93,20 @@ func (p *Protocol) Start(ctx context.Context) error {
 	// Start periodic health checks
 	go p.startHealthCheck(ctx)
 	
+	// Start periodic topology synchronization
+	go p.startTopologySync(ctx)
+	
 	fmt.Printf("[%s] Gossip protocol started\n", p.localNode.ID)
 	return nil
 }
 
 func (p *Protocol) Stop() error {
+	// Stop topology sync
+	close(p.stopChan)
+	if p.topologyTicker != nil {
+		p.topologyTicker.Stop()
+	}
+	
 	if p.transport != nil {
 		return p.transport.Stop()
 	}
@@ -267,4 +279,50 @@ func (p *Protocol) HandleMessage(msg *Message) error {
 
 func generateMessageID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// startTopologySync periodically exchanges peer lists to fix broken topology
+func (p *Protocol) startTopologySync(ctx context.Context) {
+	p.topologyTicker = time.NewTicker(30 * time.Second) // Sync every 30 seconds
+	defer p.topologyTicker.Stop()
+	
+	for {
+		select {
+		case <-p.topologyTicker.C:
+			p.performTopologySync(ctx)
+		case <-p.stopChan:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (p *Protocol) performTopologySync(ctx context.Context) {
+	p.peersMutex.RLock()
+	peerCount := len(p.peers)
+	expectedPeers := p.replicationFactor - 1 // Don't count ourselves
+	p.peersMutex.RUnlock()
+	
+	// Only sync if we have fewer peers than expected
+	if peerCount >= expectedPeers {
+		return
+	}
+	
+	fmt.Printf("[%s] Topology sync: have %d peers, expected %d - requesting peer lists\n", 
+		p.localNode.ID, peerCount, expectedPeers)
+	
+	// Send SYNC requests to all known peers to get their peer lists
+	msg := &Message{
+		Type:      MessageTypeSync,
+		From:      p.localNode.ID,
+		Timestamp: time.Now(),
+		MessageID: generateMessageID(),
+		NodeInfo:  p.localNode, // Include our own node info
+	}
+	
+	// Broadcast to all known peers
+	if err := p.Broadcast(ctx, msg); err != nil {
+		fmt.Printf("[%s] Failed to broadcast topology sync: %v\n", p.localNode.ID, err)
+	}
 }

@@ -118,3 +118,19 @@ func (m *MemoryStore) Range(fn func(key string, ttl int) bool) {
 		}
 	}
 }
+
+// Scan returns all non-expired keys
+func (m *MemoryStore) Scan() []string {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	
+	var keys []string
+	now := time.Now()
+	for key, entry := range m.data {
+		if !now.After(entry.ExpiresAt) { // Not expired
+			keys = append(keys, key)
+		}
+	}
+	
+	return keys
+}

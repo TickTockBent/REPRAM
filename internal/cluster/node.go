@@ -32,6 +32,7 @@ type WriteOperation struct {
 type Store interface {
 	Put(key string, data []byte, ttl time.Duration) error
 	Get(key string) ([]byte, bool)
+	Scan() []string
 }
 
 func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int, replicationFactor int) *ClusterNode {
@@ -139,7 +140,7 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		delete(cn.pendingWrites, key)
 		cn.writesMutex.Unlock()
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 		cn.writesMutex.Lock()
 		delete(cn.pendingWrites, key)
 		cn.writesMutex.Unlock()
@@ -237,6 +238,11 @@ func (cn *ClusterNode) handleAckMessage(msg *gossip.Message) error {
 	
 	return nil
 }
+
+func (cn *ClusterNode) Scan() []string {
+	return cn.store.Scan()
+}
+
 func (cn *ClusterNode) HandleBootstrap(req *gossip.BootstrapRequest) *gossip.BootstrapResponse {
 	return cn.protocol.HandleBootstrap(req)
 }

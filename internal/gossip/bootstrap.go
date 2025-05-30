@@ -140,13 +140,30 @@ func (p *Protocol) notifyPeersAboutNewNode(newNode *Node) {
 				NodeInfo:  newNode,
 			}
 			
-			if err := p.Send(context.Background(), peer, msg); err != nil {
-				fmt.Printf("[%s] Failed to notify %s about new node %s: %v\n", 
-					p.localNode.ID, peer.ID, newNode.ID, err)
+			// Retry SYNC messages with exponential backoff
+			go p.sendSyncWithRetry(peer, msg, newNode.ID, 3)
+		}
+	}
+}
+
+// sendSyncWithRetry attempts to send a SYNC message with exponential backoff retry
+func (p *Protocol) sendSyncWithRetry(peer *Node, msg *Message, newNodeID NodeID, maxRetries int) {
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if err := p.Send(context.Background(), peer, msg); err != nil {
+			if attempt == maxRetries-1 {
+				fmt.Printf("[%s] Failed to notify %s about new node %s after %d attempts: %v\n", 
+					p.localNode.ID, peer.ID, newNodeID, maxRetries, err)
 			} else {
-				fmt.Printf("[%s] Notified %s about new node %s\n", 
-					p.localNode.ID, peer.ID, newNode.ID)
+				// Exponential backoff: 1s, 2s, 4s
+				delay := time.Duration(1<<attempt) * time.Second
+				fmt.Printf("[%s] Failed to notify %s about new node %s (attempt %d/%d), retrying in %v: %v\n", 
+					p.localNode.ID, peer.ID, newNodeID, attempt+1, maxRetries, delay, err)
+				time.Sleep(delay)
 			}
+		} else {
+			fmt.Printf("[%s] Notified %s about new node %s (attempt %d)\n", 
+				p.localNode.ID, peer.ID, newNodeID, attempt+1)
+			return
 		}
 	}
 }
