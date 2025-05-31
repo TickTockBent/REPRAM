@@ -6,7 +6,7 @@ echo "Stopping REPRAM Fade multi-node cluster..."
 cd "$(dirname "$0")"
 
 # Kill by name first
-pkill -f repram-fade-cluster-node 2>/dev/null || true
+pkill -f repram-node-raw 2>/dev/null || true
 pkill -f fade-server 2>/dev/null || true
 
 # Kill by saved PIDs if available
