@@ -100,10 +100,6 @@ type HTTPServer struct {
 	clusterNode *cluster.ClusterNode
 }
 
-type PutRequest struct {
-	Data []byte `json:"data"`
-	TTL  int    `json:"ttl"` // TTL in seconds
-}
 
 func (s *HTTPServer) Router() *mux.Router {
 	r := mux.NewRouter()
@@ -132,25 +128,33 @@ func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
 	
+	// Read raw body data - no encoding assumptions
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
 	
-	var req PutRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
+	// Get TTL from query parameter or header
+	ttl := 60 // Default 60 seconds
+	if ttlStr := r.URL.Query().Get("ttl"); ttlStr != "" {
+		if parsedTTL, err := strconv.Atoi(ttlStr); err == nil && parsedTTL > 0 {
+			ttl = parsedTTL
+		}
+	} else if ttlHeader := r.Header.Get("X-TTL"); ttlHeader != "" {
+		if parsedTTL, err := strconv.Atoi(ttlHeader); err == nil && parsedTTL > 0 {
+			ttl = parsedTTL
+		}
 	}
 	
-	if req.TTL <= 0 {
-		req.TTL = 60 // Default 60 seconds
+	// Enforce minimum TTL per core principles (5 minutes for network propagation)
+	if ttl < 300 {
+		ttl = 300
 	}
 	
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	if err := s.clusterNode.Put(ctx, key, req.Data, time.Duration(req.TTL)*time.Second); err != nil {
+	if err := s.clusterNode.Put(ctx, key, body, time.Duration(ttl)*time.Second); err != nil {
 		http.Error(w, fmt.Sprintf("Write failed: %v", err), http.StatusInternalServerError)
 		return
 	}

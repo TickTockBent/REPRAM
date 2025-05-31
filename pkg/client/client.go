@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,10 +15,6 @@ type Client struct {
 	httpClient *http.Client
 }
 
-type PutRequest struct {
-	Data []byte `json:"data"`
-	TTL  int    `json:"ttl"`
-}
 
 func NewClient(baseURL string) *Client {
 	return &Client{
@@ -31,27 +26,19 @@ func NewClient(baseURL string) *Client {
 }
 
 func (c *Client) Put(key string, data []byte, ttl time.Duration, encryptionKey []byte) error {
+	// Encrypt data before sending
 	encryptedData, err := crypto.Encrypt(data, encryptionKey)
 	if err != nil {
 		return fmt.Errorf("encryption failed: %w", err)
 	}
 	
-	req := PutRequest{
-		Data: encryptedData,
-		TTL:  int(ttl.Seconds()),
-	}
-	
-	body, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-	
-	url := fmt.Sprintf("%s/data/%s", c.baseURL, key)
-	httpReq, err := http.NewRequest("PUT", url, bytes.NewReader(body))
+	// Send raw encrypted data as body
+	url := fmt.Sprintf("%s/data/%s?ttl=%d", c.baseURL, key, int(ttl.Seconds()))
+	httpReq, err := http.NewRequest("PUT", url, bytes.NewReader(encryptedData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	// Content-Type is application/octet-stream by default for raw binary data
 	
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {

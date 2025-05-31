@@ -156,9 +156,9 @@ class RepramFadeClient {
         }
         
         try {
-            // Using standard data endpoint (no encryption at node level)
+            // Using standard data endpoint with raw data
             const headers = {
-                'Content-Type': 'application/json'
+                'Content-Type': 'text/plain'
             };
             
             // Add preferred node header if selected
@@ -166,16 +166,11 @@ class RepramFadeClient {
                 headers['X-Preferred-Node'] = this.preferredNode;
             }
             
-            // Convert string to base64 bytes for the data endpoint
-            const dataBytes = btoa(formattedContent);
-            
-            const response = await fetch(`${this.baseURL}/api/data/${key}`, {
+            // Send raw text data with TTL in query parameter
+            const response = await fetch(`${this.baseURL}/api/data/${key}?ttl=${parseInt(ttl)}`, {
                 method: 'PUT',
                 headers: headers,
-                body: JSON.stringify({
-                    data: dataBytes,  // Base64 encoded string
-                    ttl: parseInt(ttl)
-                })
+                body: formattedContent  // Send raw text directly
             });
 
             if (response.ok) {
@@ -220,10 +215,8 @@ class RepramFadeClient {
             const response = await fetch(url);
             
             if (response.ok) {
-                // Response is raw bytes (base64 encoded in our case)
-                const data = await response.arrayBuffer();
-                const base64 = btoa(String.fromCharCode(...new Uint8Array(data)));
-                const content = atob(base64); // Decode back to string
+                // Response is raw text data
+                const content = await response.text();
                 
                 // Capture which node served this
                 const nodeId = response.headers.get('x-repram-node') || null;

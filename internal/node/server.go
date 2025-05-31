@@ -36,10 +36,6 @@ type Server struct {
 	securityMW      *SecurityMiddleware
 }
 
-type PutRequest struct {
-	Data []byte `json:"data"`
-	TTL  int    `json:"ttl"` // TTL in seconds
-}
 
 type ErrorResponse struct {
 	Error string `json:"error"`
@@ -201,25 +197,32 @@ func (s *Server) putHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
 	
+	// Read raw body data - no encoding assumptions
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		s.writeError(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
 	
-	var req PutRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		s.writeError(w, "Invalid JSON", http.StatusBadRequest)
-		return
+	// Get TTL from query parameter or header
+	ttl := 60 // Default 60 seconds
+	if ttlStr := r.URL.Query().Get("ttl"); ttlStr != "" {
+		if parsedTTL, err := strconv.Atoi(ttlStr); err == nil && parsedTTL > 0 {
+			ttl = parsedTTL
+		}
+	} else if ttlHeader := r.Header.Get("X-TTL"); ttlHeader != "" {
+		if parsedTTL, err := strconv.Atoi(ttlHeader); err == nil && parsedTTL > 0 {
+			ttl = parsedTTL
+		}
 	}
 	
-	if req.TTL <= 0 {
-		s.writeError(w, "TTL must be positive", http.StatusBadRequest)
-		return
+	// Enforce minimum TTL per core principles (5 minutes for network propagation)
+	if ttl < 300 {
+		ttl = 300
 	}
 	
-	ttl := time.Duration(req.TTL) * time.Second
-	if err := s.store.Put(key, req.Data, ttl); err != nil {
+	ttlDuration := time.Duration(ttl) * time.Second
+	if err := s.store.Put(key, body, ttlDuration); err != nil {
 		s.writeError(w, "Failed to store data", http.StatusInternalServerError)
 		return
 	}

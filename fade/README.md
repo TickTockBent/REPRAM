@@ -15,28 +15,19 @@ Fade demonstrates:
 
 ### Prerequisites
 
-1. Run at least one REPRAM node in raw mode:
+Use the consolidated script to run a 3-node gossip cluster:
 ```bash
-# From the main REPRAM directory
-make build-raw
-./bin/repram-node-raw
+# From the fade directory
+./start-gossip-multi-node.sh
 ```
 
-The node will start on port 8080 by default.
+This starts 3 baseline REPRAM cluster nodes with gossip replication.
 
-### Running the Fade UI
+### Using the Fade UI
 
-1. Navigate to the fade directory:
-```bash
-cd fade
-```
+The `start-gossip-multi-node.sh` script automatically starts both the cluster nodes and the Fade web UI on port 3000.
 
-2. Start the web server:
-```bash
-go run server.go
-```
-
-3. Open your browser to http://localhost:3000
+Simply open your browser to http://localhost:3000 after running the start script.
 
 ### Using Fade
 
