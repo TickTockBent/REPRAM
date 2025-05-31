@@ -7,56 +7,42 @@ echo
 cd "$(dirname "$0")"
 
 # Check if we need to build
-if [ ! -f "../bin/repram-fade-cluster-node" ]; then
-    echo "Building fade cluster node..."
+if [ ! -f "../bin/repram-node-raw" ]; then
+    echo "Building raw node..."
     cd ..
-    make build-fade-cluster
+    make build-raw
     cd fade
 fi
 
 # Kill any existing nodes
 echo "Cleaning up any existing nodes..."
-pkill -f repram-fade-cluster-node 2>/dev/null || true
+pkill -f repram-node-raw 2>/dev/null || true
 pkill -f fade-server 2>/dev/null || true
 sleep 1
 
 # Start the cluster nodes
 echo "Starting Fade cluster nodes..."
 
-# Node 1 (primary, no bootstrap)
-echo "Starting node 1 on ports 8080 (HTTP) and 9090 (gossip)..."
-REPRAM_PORT=8080 \
-REPRAM_GOSSIP_PORT=9090 \
-REPRAM_NODE_ID=fade-node-1 \
-NODE_ADDRESS=localhost \
-REPLICATION_FACTOR=1 \
-../bin/repram-fade-cluster-node > node1.log 2>&1 &
+# Node 1 (primary)
+echo "Starting node 1 on port 8080..."
+PORT=8080 \
+../bin/repram-node-raw > node1.log 2>&1 &
 NODE1_PID=$!
-sleep 3
+sleep 2
 
-# Node 2 (bootstraps from node 1)
-echo "Starting node 2 on ports 8081 (HTTP) and 9091 (gossip)..."
-REPRAM_PORT=8081 \
-REPRAM_GOSSIP_PORT=9091 \
-REPRAM_NODE_ID=fade-node-2 \
-NODE_ADDRESS=localhost \
-REPLICATION_FACTOR=1 \
-REPRAM_BOOTSTRAP_PEERS=localhost:9090 \
-../bin/repram-fade-cluster-node > node2.log 2>&1 &
+# Node 2
+echo "Starting node 2 on port 8081..."
+PORT=8081 \
+../bin/repram-node-raw > node2.log 2>&1 &
 NODE2_PID=$!
-sleep 3
+sleep 2
 
-# Node 3 (bootstraps from both)
-echo "Starting node 3 on ports 8082 (HTTP) and 9092 (gossip)..."
-REPRAM_PORT=8082 \
-REPRAM_GOSSIP_PORT=9092 \
-REPRAM_NODE_ID=fade-node-3 \
-NODE_ADDRESS=localhost \
-REPLICATION_FACTOR=1 \
-REPRAM_BOOTSTRAP_PEERS=localhost:9090,localhost:9091 \
-../bin/repram-fade-cluster-node > node3.log 2>&1 &
+# Node 3
+echo "Starting node 3 on port 8082..."
+PORT=8082 \
+../bin/repram-node-raw > node3.log 2>&1 &
 NODE3_PID=$!
-sleep 5
+sleep 2
 
 # Check health of all nodes
 echo "Checking node health..."
@@ -75,7 +61,7 @@ WEB_PID=$!
 sleep 2
 
 echo
-echo "✓ Multi-node Fade cluster is ready!"
+echo "✓ Multi-node Fade setup is ready!"
 echo
 echo "URLs:"
 echo "  - Fade UI: http://localhost:3000"
@@ -83,10 +69,8 @@ echo "  - Node 1 API: http://localhost:8080"
 echo "  - Node 2 API: http://localhost:8081" 
 echo "  - Node 3 API: http://localhost:8082"
 echo
-echo "To test gossip:"
-echo "  1. Open http://localhost:3000 in multiple browser windows"
-echo "  2. Send messages from different windows"
-echo "  3. Watch messages appear in all windows (gossip replication)"
+echo "Note: Raw nodes don't support gossip replication."
+echo "Messages are stored independently on each node."
 echo
 echo "To stop the cluster:"
 echo "  ./stop-multi-node.sh"

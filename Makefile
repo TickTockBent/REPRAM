@@ -1,11 +1,10 @@
 BINARY_NAME=repram-node
 RAW_BINARY=repram-node-raw
 CLUSTER_BINARY=repram-cluster-node
-FADE_CLUSTER_BINARY=repram-fade-cluster-node
 EXAMPLE_BINARY=repram-example
 SDK_EXAMPLE=repram-sdk-example
 
-.PHONY: build build-raw build-cluster build-fade-cluster build-example build-sdk-example run run-raw run-cluster run-fade-cluster test clean example sdk-example docker-build docker-run docker-compose-up docker-compose-down docker-compose-cluster load-test-build load-test load-test-ramp load-test-stress docker-scale-test-quick docker-scale-test-full docker-scale-test-stress docker-monitor docker-monitor-long
+.PHONY: build build-raw build-cluster build-example build-sdk-example run run-raw run-cluster test clean example sdk-example docker-build docker-run docker-compose-up docker-compose-down docker-compose-cluster load-test-build load-test load-test-ramp load-test-stress docker-scale-test-quick docker-scale-test-full docker-scale-test-stress docker-monitor docker-monitor-long
 
 build:
 	go build -o bin/$(BINARY_NAME) cmd/node/main.go
@@ -15,9 +14,6 @@ build-raw:
 
 build-cluster:
 	go build -o bin/$(CLUSTER_BINARY) cmd/cluster-node/main.go
-
-build-fade-cluster:
-	go build -o bin/$(FADE_CLUSTER_BINARY) cmd/fade-cluster-node/main.go
 
 build-example:
 	go build -o bin/$(EXAMPLE_BINARY) cmd/example/main.go
@@ -33,9 +29,6 @@ run-raw: build-raw
 
 run-cluster: build-cluster
 	./bin/$(CLUSTER_BINARY)
-
-run-fade-cluster: build-fade-cluster
-	./bin/$(FADE_CLUSTER_BINARY)
 
 example: build-example
 	./bin/$(EXAMPLE_BINARY)
