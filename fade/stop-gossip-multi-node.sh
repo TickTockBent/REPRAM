@@ -17,7 +17,8 @@ if [ -f gossip-cluster.pids ]; then
     rm gossip-cluster.pids
 else
     echo "No gossip-cluster.pids file found, searching for processes..."
-    pkill -f repram-fade-cluster 2>/dev/null || true
+    pkill -f cluster-node 2>/dev/null || true
+    pkill -f server.go 2>/dev/null || true
 fi
 
 # Also clean up fade server if it's ours
