@@ -1,7 +1,7 @@
 # Fade Flux Deployment Plan
 
 ## Overview
-This document outlines the deployment strategy for the Fade demonstration application on Kubernetes using Flux GitOps.
+This document outlines the deployment strategy for the Fade demonstration application on Flux. **Tested and verified** with 3 fade servers + 3 cluster nodes with gossip replication.
 
 ## Architecture Decisions
 
@@ -33,18 +33,22 @@ fade.repram.io/cluster-node:v1.0.0
 
 ```
 ┌─────────────────┐
-│   Ingress       │
+│   Flux Load     │
+│   Balancer      │
 │ (fade.demo.com) │
 └────────┬────────┘
          │
-┌────────▼────────┐
-│  Fade Server    │ (1 replica, could scale for HA)
-│  - Web UI       │
-│  - Proxy Logic  │
-│  - Load Balance │
-└────────┬────────┘
-         │
-    ┌────┴────┬─────────┐
+    ┌────┴─────┬──────────┐
+    │          │          │
+┌───▼───┐  ┌──▼───┐  ┌───▼───┐
+│Fade   │  │Fade  │  │Fade   │  (3 replicas - Flux minimum)
+│Server │  │Server│  │Server │  
+│:3000  │  │:3000 │  │:3000  │  All have same config
+└───┬───┘  └──┬───┘  └───┬───┘
+    │         │          │
+    └─────────┼──────────┘
+              │
+    ┌─────────┼─────────┐
     │         │         │
 ┌───▼──┐  ┌──▼───┐  ┌──▼───┐
 │Cluster│  │Cluster│  │Cluster│  (3+ replicas with gossip)
@@ -53,6 +57,21 @@ fade.repram.io/cluster-node:v1.0.0
 │:9090  │  │:9090  │  │:9090  │  ← Gossip ports
 └──────┘  └──────┘  └──────┘
 ```
+
+### Multi-Fade-Server Architecture
+
+**Key Insight**: Flux requires a minimum of 3 replicas, which means 3 fade servers will run simultaneously. This has been **tested and verified** to work correctly:
+
+- **All fade servers use identical configuration** pointing to the same cluster nodes
+- **Flux load balancer distributes users** across the 3 fade server instances
+- **Users get consistent experience** regardless of which fade server they hit
+- **Gossip protocol ensures data consistency** across all cluster nodes
+- **No coordination needed** between fade servers - they're stateless proxies
+
+**Tested scenarios**:
+✅ Message written through fade server 1 appears on all nodes  
+✅ Same message readable through fade servers 2 and 3  
+✅ Direct cluster node access shows proper gossip replication  
 
 ## GitOps Repository Structure
 
