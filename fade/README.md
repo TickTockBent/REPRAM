@@ -73,17 +73,17 @@ The pipe-separated format enables optional callsigns and locations.
 
 ### Running Multiple Nodes
 
-For a true distributed experience with gossip replication, use the provided scripts:
+For a true distributed experience with gossip replication, use docker compose:
 
 ```bash
-# Start 3-node cluster with gossip replication
-./start-gossip-multi-node.sh
-
-# Or use docker compose
+# Start 3 cluster nodes + 3 fade servers (simulates Flux deployment)
 docker-compose -f docker-compose-flux-test.yml up
+
+# Or for simpler testing with the original docker-compose
+docker-compose up
 ```
 
-This starts 3 cluster nodes with gossip protocol and 3 fade servers for testing.
+The flux-test configuration matches the production Flux deployment architecture with multiple fade servers.
 
 ### Customizing the UI
 
