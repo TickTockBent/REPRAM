@@ -1,450 +1,234 @@
 # How to Run REPRAM Fade Multi-Node Test
 
-This guide walks you through running a multi-node REPRAM setup to test distributed ephemeral storage and see the Fade demo working across multiple nodes.
+This guide walks you through running a multi-node REPRAM setup using Docker Compose to test distributed ephemeral storage with the Fade demo.
 
 ## Prerequisites
 
-- Go 1.22+ installed
-- Terminal access
-- Web browser (Chrome/Firefox recommended)
-- Ports 8080-8082 and 3000 available
+- Docker and Docker Compose installed
+- Web browser (Chrome/Firefox recommended)  
+- Ports 3000, 3010, 3020, 8080-8082, and 9090-9092 available
 
-## Multi-Node Testing Options
+## Quick Start (5 minutes)
 
-REPRAM Fade supports two types of multi-node setups:
-
-1. **Simple Multi-Node**: Independent nodes (no replication) - Good for testing load balancing
-2. **Gossip-Enabled Cluster**: Real distributed replication - Good for testing full REPRAM behavior
-
-## Option 1: Quick Start - Simple Multi-Node (5 minutes)
-
-### Step 1: Build the Project
-
-```bash
-cd /path/to/REPRAM
-make build-raw
-```
-
-### Step 2: Start the Simple Multi-Node Cluster
+### Step 1: Start the Multi-Node Cluster
 
 ```bash
 cd fade
-./start-simple-multi-node.sh
+docker-compose -f docker-compose-flux-test.yml up
 ```
 
-The script will now verify each node starts successfully:
-```
-Starting raw nodes...
-Starting raw node 1 on port 8080...
-✓ Node 1 started successfully
-Starting raw node 2 on port 8081...
-✓ Node 2 started successfully
-Starting raw node 3 on port 8082...
-✓ Node 3 started successfully
-
-Verifying all nodes are healthy...
-✓ Raw node on port 8080 is healthy
-✓ Raw node on port 8081 is healthy
-✓ Raw node on port 8082 is healthy
-
-✓ Simple multi-node Fade setup is ready!
-
-URLs:
-  - Fade UI: http://localhost:3000
-  - Raw Node 1: http://localhost:8080
-  - Raw Node 2: http://localhost:8081
-  - Raw Node 3: http://localhost:8082
-```
-
-### Step 3: Open Multiple Browser Windows
-
-1. Open **2-3 browser windows** or tabs
-2. Navigate each to **http://localhost:3000**
-3. You'll see the Fade ephemeral message board
-
-### Step 4: Test Multi-Node Behavior
-
-#### Test 1: Basic Message Distribution
-1. In Window 1: Send a message "Hello from window 1"
-2. In Window 2: Watch it appear (within 3 seconds)
-3. Notice the message key - each node generates unique keys
-
-#### Test 2: Load Balancing
-1. Send multiple messages rapidly
-2. Check the browser console (F12) to see which node responds
-3. The proxy server distributes requests across nodes
-
-#### Test 3: Node Isolation
-1. Send a message and copy its key
-2. Check each node directly:
-   ```bash
-   # Replace MSG_KEY with your actual message key
-   curl http://localhost:8080/raw/get/MSG_KEY
-   curl http://localhost:8081/raw/get/MSG_KEY
-   curl http://localhost:8082/raw/get/MSG_KEY
-   ```
-3. Only one node will have the message (no gossip in simple mode)
-
-### Step 5: Test Node Failure
-
-1. Stop one node:
-   ```bash
-   # Find and kill node 2
-   lsof -i :8081 | grep repram | awk '{print $2}' | xargs kill
-   ```
-
-2. Continue using the UI - it automatically failovers to healthy nodes
-
-3. Verify node is down:
-   ```bash
-   curl http://localhost:8081/health
-   # Should fail
-   ```
-
-4. The UI continues working with remaining nodes!
-
-## Option 2: Gossip-Enabled Cluster (Recommended for Full Testing)
-
-### Step 1: Build Cluster Components
-
-```bash
-cd /path/to/REPRAM
-go build -o bin/repram-fade-cluster ./cmd/fade-cluster-node
-```
-
-### Step 2: Start the Gossip Cluster
-
-```bash
-cd fade
-./start-gossip-multi-node.sh
-```
+This starts:
+- **3 cluster nodes** with gossip replication (ports 8080-8082)
+- **3 fade servers** for load balancing (ports 3000, 3010, 3020)
 
 You'll see output like:
 ```
-Starting REPRAM Fade multi-node setup with GOSSIP replication...
-This uses cluster nodes that replicate data between each other
-
-Starting cluster node 1 on port 8080 (seed node)...
-✓ Node 1 started successfully
-Starting cluster node 2 on port 8081 (bootstrapping from node 1)...
-✓ Node 2 started and bootstrapped successfully
-Starting cluster node 3 on port 8082 (bootstrapping from node 1)...
-✓ Node 3 started and bootstrapped successfully
-
-Waiting for bootstrap and gossip protocol to establish connections...
-
-✓ Multi-node Fade setup with GOSSIP is ready!
-
-URLs:
-  - Fade UI: http://localhost:3000
-  - Cluster Node 1: http://localhost:8080 (gossip port: 7080)
-  - Cluster Node 2: http://localhost:8081 (gossip port: 7081)
-  - Cluster Node 3: http://localhost:8082 (gossip port: 7082)
+✓ Node 1 started successfully (healthy)
+✓ Node 2 started and bootstrapped successfully (healthy)  
+✓ Node 3 started and bootstrapped successfully (healthy)
+✓ Fade servers started successfully (healthy)
 ```
 
-### Step 2a: Monitor Cluster Health (Optional)
+### Step 2: Access the Fade UI
 
-In a new terminal, monitor the health of all nodes:
-```bash
-./monitor-health.sh
-```
+Open your browser to any of these URLs:
+- **http://localhost:3000** (Fade server 1)
+- **http://localhost:3010** (Fade server 2) 
+- **http://localhost:3020** (Fade server 3)
 
-This shows:
-- Real-time node status (✓ healthy, ✗ down)
-- Process information and PIDs
-- Automatic replication tests every 5 seconds
-- Web server status
-
-### Step 2b: Monitor Gossip Activity (Optional)
-
-In another terminal, watch gossip messages in real-time:
-```bash
-./monitor-gossip.sh
-```
-
-This displays:
-- Color-coded gossip messages from all nodes
-- Bootstrap events and peer discovery
-- PUT broadcasts and ACK acknowledgments
-- SYNC messages for topology updates
-- PING/PONG health checks
+All fade servers show the same data thanks to gossip replication!
 
 ### Step 3: Test Gossip Replication
 
-#### Test 1: Message Replication Across Nodes
+#### Test 1: Cross-Server Consistency
 
-1. **Open 2 browser windows** to http://localhost:3000
+1. **Open 3 browser windows**:
+   - Window 1: http://localhost:3000
+   - Window 2: http://localhost:3010  
+   - Window 3: http://localhost:3020
 
-2. **Window 1 - Send to Node 1**:
-   - Select "Node 1 (8080)" in the node selector
-   - Send message: "Hello from Node 1"
-   - Note the message shows `[node-1]` indicator
+2. **Send a message** in Window 1: "Hello from server 1"
 
-3. **Window 2 - Check Node 2**:
-   - Select "Node 2 (8081)" in the node selector
-   - The message should appear within 1-3 seconds
-   - It will show `[node-1]` indicator (showing original source)
+3. **Verify replication**: The message appears in Windows 2 and 3 within 1-3 seconds
 
-4. **Verify Full Replication**:
-   - Select "Node 3 (8082)" in either window
-   - The same message should appear here too with `[node-1]` indicator
-   - Use `./monitor-gossip.sh` to see the replication happening in real-time
+4. **Key insight**: All fade servers access the same replicated data
 
-#### Test 2: Node Source Tracking
+#### Test 2: Node-Level Replication
 
-1. Send messages from different nodes:
-   ```
-   Node 1: "Message from first node"  → Shows [node-1]
-   Node 2: "Message from second node" → Shows [node-2]
-   Node 3: "Message from third node"  → Shows [node-3]
-   ```
-
-2. **Verify all messages appear on all nodes** with correct source indicators
-
-3. **Key insight**: Each message retains its original node indicator even after replication
-
-#### Test 3: Real-Time Gossip Monitoring
-
-Use the monitoring scripts to observe the cluster:
-
-1. **Health Monitor** (in a new terminal):
+1. **Direct node access** - verify all cluster nodes have the data:
    ```bash
-   ./monitor-health.sh
-   ```
-   Shows node status and runs automatic replication tests every 5 seconds.
-
-2. **Gossip Monitor** (in another terminal):
-   ```bash
-   ./monitor-gossip.sh
-   ```
-   Shows color-coded gossip messages:
-   - Yellow `[PUT-BROADCAST]` when a node sends data
-   - Green `[PUT-RECEIVED]` when nodes receive replicated data
-   - Cyan `[ACK-SEND]` for acknowledgments
-   - Blue `[SYNC]` for peer discovery
-
-3. **Manual Log Inspection**:
-   ```bash
-   # Watch raw logs if needed
-   tail -f cluster-node*.log | grep -E "Broadcasting|Received|SYNC"
+   # Check each cluster node directly
+   curl http://localhost:8080/data/test-key
+   curl http://localhost:8081/data/test-key  
+   curl http://localhost:8082/data/test-key
    ```
 
-### Step 4: Test Network Partition Tolerance
+2. **All nodes return the same data** - proving gossip replication works
 
-1. **Stop Node 2**:
-   ```bash
-   kill $(lsof -ti:8081)
-   ```
-
-2. **Continue sending messages** on Nodes 1 and 3
-   - Messages should still replicate between active nodes
-   - Node selector shows Node 2 as unhealthy
-
-3. **Restart Node 2**:
-   ```bash
-   # The cluster will auto-restart Node 2 or you can restart manually
-   ./start-gossip-multi-node.sh
-   ```
-
-4. **Verify catchup**: Node 2 should sync with the cluster
-
-### Stopping Gossip Cluster
-
-```bash
-./stop-gossip-multi-node.sh
-```
-
-### Understanding Gossip Architecture
+## Architecture Overview
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Browser 1  │     │  Browser 2  │     │  Browser 3  │
-└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
-       │                   │                   │
-       └───────────────────┴───────────────────┘
-                           │
-                    ┌──────▼──────┐
-                    │ Fade Proxy  │
-                    │  Port 3000  │ (Node Preference Routing)
-                    └──────┬──────┘
-                           │
-       ┌───────────────────┼───────────────────┐
-       │                   │                   │
-┌──────▼──────┐     ┌──────▼──────┐     ┌──────▼──────┐
-│ Cluster 1   │◄───►│ Cluster 2   │◄───►│ Cluster 3   │
-│ HTTP: 8080  │     │ HTTP: 8081  │     │ HTTP: 8082  │
-│ Gossip:7080 │     │ Gossip:7081 │     │ Gossip:7082 │
-└─────────────┘     └─────────────┘     └─────────────┘
-       ▲                   ▲                   ▲
-       │                   │                   │
-       └───────────────────┼───────────────────┘
-                           │
-                    Full Mesh Gossip
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│ Browser :3000│  │ Browser :3010│  │ Browser :3020│
+└──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+       │                │                │
+┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
+│ Fade Server │  │ Fade Server │  │ Fade Server │
+│   :3000     │  │   :3010     │  │   :3020     │
+└──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+       │                │                │
+       └────────────────┼────────────────┘
+                        │
+       ┌────────────────┼────────────────┐
+       │                │                │
+┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
+│ Cluster     │◄─┤ Cluster     │◄─┤ Cluster     │
+│ Node :8080  │  │ Node :8081  │  │ Node :8082  │
+│ Gossip:9090 │  │ Gossip:9091 │  │ Gossip:9092 │
+└─────────────┘  └─────────────┘  └─────────────┘
+       ▲                │                ▲
+       └────────────────┼────────────────┘
+                        │
+                 Gossip Replication
 ```
 
-**Key Differences from Simple Multi-Node**:
-- ✅ **Data replication**: Messages appear on all nodes within 1-3 seconds
-- ✅ **Source tracking**: Original node is preserved with indicators
-- ✅ **Bootstrap protocol**: Initial peer discovery via HTTP endpoints
-- ✅ **Gossip protocol**: Real-time data replication between peers
-- ✅ **Fault tolerance**: Quorum-based writes (2/3 nodes must acknowledge)
-- ✅ **Full mesh**: Nodes discover each other via bootstrap, then maintain connections
+### Key Features
+
+- **Multiple Fade Servers**: Simulates Flux deployment with 3+ instances
+- **Gossip Replication**: Messages automatically replicate across all cluster nodes
+- **Load Balancing**: Each fade server can handle user requests independently
+- **Fault Tolerance**: System continues working if individual components fail
+- **Consistent Data**: All users see the same messages regardless of entry point
 
 ## Advanced Testing
 
-### Monitor Node Activity
+### Monitor Cluster Health
 
-Watch logs in real-time:
-```bash
-# In separate terminals:
-tail -f raw-node1.log
-tail -f raw-node2.log  
-tail -f raw-node3.log
-tail -f web.log
-```
-
-### Direct Node Testing
+In a new terminal, use the monitoring scripts:
 
 ```bash
-# Store on specific nodes
-curl -X POST http://localhost:8080/raw/put \
-  -H "Content-Type: application/json" \
-  -d '{"data":"Node 1 exclusive message","ttl":300}'
+# Real-time cluster health monitoring
+./monitor-health.sh
 
-curl -X POST http://localhost:8081/raw/put \
-  -H "Content-Type: application/json" \
-  -d '{"data":"Node 2 exclusive message","ttl":300}'
-
-# Scan each node's contents
-curl http://localhost:8080/raw/scan | jq .
-curl http://localhost:8081/raw/scan | jq .
-curl http://localhost:8082/raw/scan | jq .
+# Real-time gossip protocol monitoring  
+./monitor-gossip.sh
 ```
+
+### Test Fault Tolerance
+
+1. **Stop a cluster node**:
+   ```bash
+   docker-compose -f docker-compose-flux-test.yml stop fade-node-2
+   ```
+
+2. **Continue using the UI** - messages still work with remaining nodes
+
+3. **Restart the node**:
+   ```bash
+   docker-compose -f docker-compose-flux-test.yml start fade-node-2
+   ```
+
+4. **Verify recovery** - the node rejoins and syncs data
+
+### Test Fade Server Failover
+
+1. **Stop a fade server**:
+   ```bash
+   docker-compose -f docker-compose-flux-test.yml stop fade-web-2
+   ```
+
+2. **Users on port 3010** would be redirected by load balancer in production
+
+3. **Other fade servers continue working** on ports 3000 and 3020
 
 ### Performance Testing
 
 ```bash
-# Send 100 messages across nodes
-for i in {1..100}; do
-  curl -s -X POST http://localhost:3000/api/raw/put \
-    -H "Content-Type: application/json" \
-    -d "{\"data\":\"Test message $i\",\"ttl\":60}" &
+# Send multiple messages to test load distribution
+for i in {1..10}; do
+  curl -X PUT "http://localhost:3000/api/data/test-$i?ttl=300" \
+    -d "Test message $i" -H "Content-Type: text/plain"
 done
-wait
 
-# Check distribution
-echo "Node 1 messages: $(curl -s http://localhost:8080/raw/scan | jq '.count')"
-echo "Node 2 messages: $(curl -s http://localhost:8081/raw/scan | jq '.count')"
-echo "Node 3 messages: $(curl -s http://localhost:8082/raw/scan | jq '.count')"
+# Verify all messages replicated to all nodes
+curl http://localhost:8080/scan | jq .
+curl http://localhost:8081/scan | jq .  
+curl http://localhost:8082/scan | jq .
 ```
 
-## Understanding the Architecture
+## Alternative: Simple Testing Setup
 
+For basic testing without multiple fade servers:
+
+```bash
+# Use the simpler docker-compose setup
+docker-compose up
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Browser 1  │     │  Browser 2  │     │  Browser 3  │
-└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
-       │                   │                   │
-       └───────────────────┴───────────────────┘
-                           │
-                    ┌──────▼──────┐
-                    │ Fade Proxy  │
-                    │  Port 3000  │
-                    └──────┬──────┘
-                           │ Load Balances
-       ┌───────────────────┼───────────────────┐
-       │                   │                   │
-┌──────▼──────┐     ┌──────▼──────┐     ┌──────▼──────┐
-│   Node 1    │     │   Node 2    │     │   Node 3    │
-│  Port 8080  │     │  Port 8081  │     │  Port 8082  │
-└─────────────┘     └─────────────┘     └─────────────┘
-```
+
+This runs the original configuration for basic development.
 
 ## Stopping the Cluster
 
 ```bash
-./stop-simple-multi-node.sh
+# Stop everything and clean up
+docker-compose -f docker-compose-flux-test.yml down
 
-# With log cleanup
-./stop-simple-multi-node.sh --clean
+# With volume cleanup (removes any persistent data)
+docker-compose -f docker-compose-flux-test.yml down -v
 ```
 
 ## Troubleshooting
 
-### If Nodes Fail to Start
-
-The improved script will now show you exactly what went wrong:
-- **Build failures**: Script exits if build fails
-- **Port conflicts**: Shows which node failed and displays log tail
-- **Health check failures**: Automatically cleans up and exits
-
-If you see an error like:
-```
-❌ Node 2 failed to start. Check raw-node2.log for details
-2025/05/29 18:16:35 listen tcp :8080: bind: address already in use
-```
-
-This means the node wasn't using the correct port. The script now uses environment variables correctly.
-
-### Port Already in Use
+### Port Conflicts
 ```bash
-# Find what's using the port
+# Check what's using a port
 lsof -i :3000
 
-# Kill it
-kill -9 <PID>
+# Stop conflicting processes
+docker-compose -f docker-compose-flux-test.yml down
 ```
 
-The script now handles this gracefully - if port 3000 is already in use by a Fade server, it will reuse it.
-
-### Node Not Responding
+### Container Health Issues
 ```bash
-# Check if node is running
-ps aux | grep repram-node-raw
+# Check container status
+docker-compose -f docker-compose-flux-test.yml ps
 
-# Check node logs
-tail -50 raw-node1.log
+# View logs for specific service
+docker-compose -f docker-compose-flux-test.yml logs fade-web-1
+docker-compose -f docker-compose-flux-test.yml logs fade-node-1
 ```
 
-### Messages Not Appearing
-- Ensure 3-second polling is working (check browser console)
-- Verify nodes are healthy: `curl http://localhost:808X/health`
-- Check CORS is enabled (browser console for errors)
+### Gossip Not Working
+```bash
+# Check cluster node logs for bootstrap issues
+docker-compose -f docker-compose-flux-test.yml logs fade-node-2
+docker-compose -f docker-compose-flux-test.yml logs fade-node-3
+
+# Verify nodes can reach each other
+docker-compose -f docker-compose-flux-test.yml exec fade-node-1 wget -qO- fade-node-2:8080/health
+```
 
 ## Next Steps
 
-1. **Try Docker Compose Setup**:
-   ```bash
-   cd fade
-   docker-compose up
-   ```
+1. **Deploy to Production**: Use the same container architecture on Flux
+2. **Test Load Balancing**: Deploy behind a real load balancer  
+3. **Scale Testing**: Add more cluster nodes and fade servers
+4. **Geographic Distribution**: Deploy nodes across multiple regions
 
-2. **Test Gossip Protocol**:
-   ```bash
-   ./start-gossip-multi-node.sh  # Uses cluster nodes with replication
-   ```
+## Key Insights
 
-3. **Deploy to Multiple Machines**:
-   - Run nodes on different servers
-   - Update proxy configuration
-   - Test true distributed behavior
+### Why This Architecture Works for Flux
 
-## Key Observations
+- **Flux Requirement**: Minimum 3 replicas per service
+- **Solution**: 3 fade servers + 3 cluster nodes
+- **Result**: Users get consistent experience regardless of which fade server they hit
+- **Reliability**: Gossip protocol ensures data consistency across all nodes
 
-### Simple Multi-Node Mode
-- **No Gossip**: Messages stay on the node that received them
-- **Load Balancing**: Proxy distributes requests across nodes
-- **Failover**: Automatic redirect to healthy nodes
-- **TTL Enforcement**: Messages expire independently on each node
-- **Use Case**: Testing proxy logic, load balancing, and failover
+### Tested Scenarios
 
-### Gossip-Enabled Cluster Mode
-- **Full Replication**: Messages appear on all nodes within 1-3 seconds
-- **Source Tracking**: Node indicators show original message source (`[node-1]`, `[node-2]`, etc.)
-- **Immediate Consistency**: Quorum-based writes ensure data durability
-- **Network Partitions**: Cluster handles node failures gracefully
-- **Dynamic Topology**: Bootstrap protocol for discovery, SYNC messages for updates
-- **Monitoring Tools**: Real-time health and gossip message monitoring scripts
-- **Use Case**: Testing true distributed behavior and REPRAM's replication capabilities
+✅ **Multi-fade-server access** - All servers show same data  
+✅ **Gossip replication** - Messages appear on all cluster nodes  
+✅ **Load balancing** - Multiple entry points work correctly  
+✅ **Fault tolerance** - System survives individual component failures  
 
-Both modes demonstrate REPRAM's distributed ephemeral storage capabilities, with gossip mode showing the full vision of the system!
+This configuration exactly matches what will run in production on Flux!
