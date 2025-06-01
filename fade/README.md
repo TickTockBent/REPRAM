@@ -89,8 +89,8 @@ The flux-test configuration matches the production Flux deployment architecture 
 
 The web interface is in the `web/` directory:
 - `index.html` - Main HTML structure
-- `styles.css` - Dark theme styling
-- `client.js` - REPRAM client implementation
+- `styles.css` - Dark theme styling  
+- `client.js` - Fade client that communicates via fade server proxy
 
 ### Configuration
 
