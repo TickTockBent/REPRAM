@@ -1,0 +1,144 @@
+version: '3.8'
+
+services:
+  # All nodes will auto-discover their ports
+  # They share the same domain but claim different ports
+  
+  node-1:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-auto-1
+    environment:
+      - REPRAM_NODE_ID=auto-node-1
+      - NODE_ADDRESS=localhost
+      - USE_AUTO_DISCOVERY=true
+      - DISCOVERY_DOMAIN=localhost  # In Flux, this would be fade.repram.io
+      - BASE_PORT=8081             # Starting port
+      - MAX_PORTS=5                # Allow up to 5 nodes
+      - REPLICATION_FACTOR=3
+    ports:
+      # Map all possible ports that nodes might claim
+      - "8081:8081"  # HTTP
+      - "9081:9081"  # Gossip (8081 + 1000)
+    networks:
+      - repram-network
+    volumes:
+      - /tmp/repram-auto-1:/tmp/repram
+
+  node-2:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-auto-2
+    environment:
+      - REPRAM_NODE_ID=auto-node-2
+      - NODE_ADDRESS=localhost
+      - USE_AUTO_DISCOVERY=true
+      - DISCOVERY_DOMAIN=localhost
+      - BASE_PORT=8081
+      - MAX_PORTS=5
+      - REPLICATION_FACTOR=3
+    ports:
+      - "8082:8082"  # HTTP
+      - "9082:9082"  # Gossip
+    networks:
+      - repram-network
+    volumes:
+      - /tmp/repram-auto-2:/tmp/repram
+    depends_on:
+      - node-1
+    # Add a small delay to ensure node-1 starts first
+    command: sh -c "sleep 2 && /repram-cluster-node"
+
+  node-3:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-auto-3
+    environment:
+      - REPRAM_NODE_ID=auto-node-3
+      - NODE_ADDRESS=localhost
+      - USE_AUTO_DISCOVERY=true
+      - DISCOVERY_DOMAIN=localhost
+      - BASE_PORT=8081
+      - MAX_PORTS=5
+      - REPLICATION_FACTOR=3
+    ports:
+      - "8083:8083"  # HTTP
+      - "9083:9083"  # Gossip
+    networks:
+      - repram-network
+    volumes:
+      - /tmp/repram-auto-3:/tmp/repram
+    depends_on:
+      - node-1
+      - node-2
+    command: sh -c "sleep 4 && /repram-cluster-node"
+
+  # Optional: Add more nodes to test scaling
+  node-4:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-auto-4
+    environment:
+      - REPRAM_NODE_ID=auto-node-4
+      - NODE_ADDRESS=localhost
+      - USE_AUTO_DISCOVERY=true
+      - DISCOVERY_DOMAIN=localhost
+      - BASE_PORT=8081
+      - MAX_PORTS=5
+      - REPLICATION_FACTOR=3
+    ports:
+      - "8084:8084"  # HTTP
+      - "9084:9084"  # Gossip
+    networks:
+      - repram-network
+    volumes:
+      - /tmp/repram-auto-4:/tmp/repram
+    depends_on:
+      - node-1
+      - node-2
+      - node-3
+    command: sh -c "sleep 6 && /repram-cluster-node"
+    profiles:
+      - scale
+
+  node-5:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-auto-5
+    environment:
+      - REPRAM_NODE_ID=auto-node-5
+      - NODE_ADDRESS=localhost
+      - USE_AUTO_DISCOVERY=true
+      - DISCOVERY_DOMAIN=localhost
+      - BASE_PORT=8081
+      - MAX_PORTS=5
+      - REPLICATION_FACTOR=3
+    ports:
+      - "8085:8085"  # HTTP
+      - "9085:9085"  # Gossip
+    networks:
+      - repram-network
+    volumes:
+      - /tmp/repram-auto-5:/tmp/repram
+    depends_on:
+      - node-1
+      - node-2
+      - node-3
+      - node-4
+    command: sh -c "sleep 8 && /repram-cluster-node"
+    profiles:
+      - scale
+
+networks:
+  repram-network:
+    driver: bridge
