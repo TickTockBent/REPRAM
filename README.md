@@ -201,7 +201,7 @@ curl http://localhost:8080/metrics
 
 ### 🚧 Phase 3: Production Ready (In Progress)
 - **Docker containerization** with security hardening
-- **Kubernetes manifests** and Helm charts
+- **Flux deployment** with auto-discovery
 - **Prometheus monitoring** with comprehensive metrics
 - **Security features**: rate limiting, request validation, DDoS protection
 - **Load testing framework** with multiple test patterns
