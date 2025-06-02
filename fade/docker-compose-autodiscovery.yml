@@ -14,7 +14,7 @@ services:
       - REPRAM_NODE_ID=auto-node-1
       - NODE_ADDRESS=localhost
       - USE_AUTO_DISCOVERY=true
-      - DISCOVERY_DOMAIN=localhost  # In Flux, this would be fade.repram.io
+      - DISCOVERY_DOMAIN=host.docker.internal  # Use Docker's host reference
       - BASE_PORT=8081             # Starting port
       - MAX_PORTS=5                # Allow up to 5 nodes
       - REPLICATION_FACTOR=3
@@ -51,7 +51,7 @@ services:
     depends_on:
       - node-1
     # Add a small delay to ensure node-1 starts first
-    command: sh -c "sleep 2 && /repram-cluster-node"
+    command: sh -c "sleep 2 && ./repram-cluster-node"
 
   node-3:
     build:
@@ -77,7 +77,7 @@ services:
     depends_on:
       - node-1
       - node-2
-    command: sh -c "sleep 4 && /repram-cluster-node"
+    command: sh -c "sleep 4 && ./repram-cluster-node"
 
   # Optional: Add more nodes to test scaling
   node-4:
@@ -105,7 +105,7 @@ services:
       - node-1
       - node-2
       - node-3
-    command: sh -c "sleep 6 && /repram-cluster-node"
+    command: sh -c "sleep 6 && ./repram-cluster-node"
     profiles:
       - scale
 
@@ -135,7 +135,7 @@ services:
       - node-2
       - node-3
       - node-4
-    command: sh -c "sleep 8 && /repram-cluster-node"
+    command: sh -c "sleep 8 && ./repram-cluster-node"
     profiles:
       - scale
 
