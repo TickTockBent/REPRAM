@@ -13,13 +13,20 @@ This document outlines the environment variable configuration strategy for deplo
 REPRAM_NODE_ID=fade-node-1              # Unique identifier for this node
 NODE_ADDRESS=fade-node-1.example.com    # Externally reachable address
 
-# Port Configuration
+# Port Configuration (Traditional Mode)
 REPRAM_PORT=8080                        # HTTP API port
 REPRAM_GOSSIP_PORT=9090                 # Gossip protocol port
+
+# Auto-Discovery Mode (Alternative to manual port configuration)
+USE_AUTO_DISCOVERY=true                 # Enable automatic port discovery
+DISCOVERY_DOMAIN=fade.repram.io         # Shared domain for all nodes
+BASE_PORT=8081                          # Starting port to try
+MAX_PORTS=5                             # Number of ports in the range
 
 # Cluster Configuration
 REPLICATION_FACTOR=3                    # Number of replicas for each message
 REPRAM_BOOTSTRAP_PEERS=fade-node-1.example.com:8080,fade-node-2.example.com:8080  # Bootstrap nodes (comma-separated)
+# Note: REPRAM_BOOTSTRAP_PEERS is ignored when USE_AUTO_DISCOVERY=true
 ```
 
 **Optional Environment Variables:**
@@ -97,6 +104,34 @@ Multiple nodes can act as bootstrap seeds:
 # All nodes bootstrap from multiple peers
 REPRAM_BOOTSTRAP_PEERS=fade-node-1.example.com:8080,fade-node-2.example.com:8080
 ```
+
+## Auto-Discovery Mode (Flux Deployment)
+
+When deploying to platforms like Flux where all containers share the same domain, use auto-discovery mode:
+
+```bash
+# Enable auto-discovery for all nodes
+USE_AUTO_DISCOVERY=true
+DISCOVERY_DOMAIN=fade.repram.io
+BASE_PORT=8081
+MAX_PORTS=5
+
+# Each node will automatically:
+# 1. Find an available port (8081-8085)
+# 2. Discover other nodes on the same domain
+# 3. Form the gossip network automatically
+```
+
+**Port Allocation:**
+- Node 1: `fade.repram.io:8081` (HTTP), `:9081` (Gossip)
+- Node 2: `fade.repram.io:8082` (HTTP), `:9082` (Gossip)
+- Node 3: `fade.repram.io:8083` (HTTP), `:9083` (Gossip)
+
+**Benefits:**
+- No manual bootstrap configuration needed
+- Nodes self-organize into a cluster
+- Automatic peer discovery and failover
+- Works with Flux's single-domain model
 
 ## Deployment Scenarios
 
