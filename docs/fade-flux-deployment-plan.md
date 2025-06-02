@@ -36,7 +36,7 @@ We use **automatic port discovery** instead of manual service coordination:
 │         ┌────────▼────────┐             │
 │         │   flux-node-3   │             │
 │         │   port: 8083    │             │
-│         │   └─────────────┘             │
+│         └─────────────────┘             │
 │                                         │
 │  All nodes share fade.repram.io         │
 │  and auto-discover ports 8081-8090      │
