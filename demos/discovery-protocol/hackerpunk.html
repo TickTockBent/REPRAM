@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>REPRAM Discovery Protocol - Neural Network Simulation</title>
+    <title>SYNAPTIC MESH PROTOCOL - Neural Network Simulation</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -129,7 +129,7 @@
 
         h1::before,
         h1::after {
-            content: 'DISCOVERY PROTOCOL';
+            content: 'SYNAPTIC MESH';
             position: absolute;
             top: 0;
             left: 0;
@@ -403,7 +403,13 @@
             transition: all 0.3s ease;
             border: 2px solid #fff;
             font-family: 'Orbitron', monospace;
-            text-shadow: none;
+            text-shadow: 
+                0 0 3px #fff,
+                0 0 6px #fff,
+                1px 1px 0px #000,
+                -1px -1px 0px #000,
+                1px -1px 0px #000,
+                -1px 1px 0px #000;
         }
 
         .node:hover {
@@ -473,43 +479,67 @@
         /* Discovery Messages */
         .discovery-message {
             position: absolute;
-            width: 6px;
-            height: 6px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             pointer-events: none;
-            animation: messagePulse 1s infinite;
+            animation: messagePulse 0.8s infinite;
             z-index: 5;
+            border: 1px solid rgba(255, 255, 255, 0.3);
         }
 
         @keyframes messagePulse {
-            0% { opacity: 0.8; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.5); }
-            100% { opacity: 0.8; transform: scale(1); }
+            0% { opacity: 0.9; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.8); }
+            100% { opacity: 0.9; transform: scale(1); }
         }
 
         .discovery-message.topology-request {
-            background: #8b5cf6;
-            box-shadow: 0 0 10px #8b5cf6;
+            background: #bb86fc;
+            box-shadow: 
+                0 0 15px #bb86fc,
+                0 0 25px rgba(187, 134, 252, 0.6),
+                inset 0 0 5px rgba(255, 255, 255, 0.3);
         }
 
         .discovery-message.topology-response {
-            background: #a78bfa;
-            box-shadow: 0 0 10px #a78bfa;
+            background: #cf6fff;
+            box-shadow: 
+                0 0 15px #cf6fff,
+                0 0 25px rgba(207, 111, 255, 0.6),
+                inset 0 0 5px rgba(255, 255, 255, 0.3);
         }
 
         .discovery-message.attach {
-            background: #48bb78;
-            box-shadow: 0 0 10px #48bb78;
+            background: #4ade80;
+            box-shadow: 
+                0 0 15px #4ade80,
+                0 0 25px rgba(74, 222, 128, 0.6),
+                inset 0 0 5px rgba(255, 255, 255, 0.3);
         }
 
         .discovery-message.confirm {
-            background: #ed8936;
-            box-shadow: 0 0 10px #ed8936;
+            background: #fb923c;
+            box-shadow: 
+                0 0 15px #fb923c,
+                0 0 25px rgba(251, 146, 60, 0.6),
+                inset 0 0 5px rgba(255, 255, 255, 0.3);
         }
 
         .discovery-message.migrate {
-            background: #f6ad55;
-            box-shadow: 0 0 10px #f6ad55;
+            background: #fbbf24;
+            box-shadow: 
+                0 0 15px #fbbf24,
+                0 0 25px rgba(251, 191, 36, 0.6),
+                inset 0 0 5px rgba(255, 255, 255, 0.3);
+        }
+
+        .discovery-message.discovery {
+            background: #06d6a0;
+            box-shadow: 
+                0 0 15px #06d6a0,
+                0 0 25px rgba(6, 214, 160, 0.6),
+                inset 0 0 5px rgba(255, 255, 255, 0.3);
         }
 
         /* Event Log */
@@ -726,16 +756,23 @@
             <pre class="ascii-art">
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
-║    ██████╗ ██╗███████╗ ██████╗ ██████╗ ██╗   ██╗███████╗██████╗ ██╗   ██╗    ║
-║    ██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██║   ██║██╔════╝██╔══██╗╚██╗ ██╔╝    ║
-║    ██║  ██║██║███████╗██║     ██║   ██║██║   ██║█████╗  ██████╔╝ ╚████╔╝     ║
-║    ██║  ██║██║╚════██║██║     ██║   ██║╚██╗ ██╔╝██╔══╝  ██╔══██╗  ╚██╔╝      ║
-║    ██████╔╝██║███████║╚██████╗╚██████╔╝ ╚████╔╝ ███████╗██║  ██║   ██║       ║
-║    ╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝   ╚═══╝  ╚══════╝╚═╝  ╚═╝   ╚═╝       ║
+║    ███████╗██╗   ██╗███╗   ██╗ █████╗ ██████╗ ████████╗██╗ ██████╗    ║
+║    ██╔════╝╚██╗ ██╔╝████╗  ██║██╔══██╗██╔══██╗╚══██╔══╝██║██╔════╝    ║
+║    ███████╗ ╚████╔╝ ██╔██╗ ██║███████║██████╔╝   ██║   ██║██║         ║
+║    ╚════██║  ╚██╔╝  ██║╚██╗██║██╔══██║██╔═══╝    ██║   ██║██║         ║
+║    ███████║   ██║   ██║ ╚████║██║  ██║██║        ██║   ██║╚██████╗    ║
+║    ╚══════╝   ╚═╝   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝        ╚═╝   ╚═╝ ╚═════╝    ║
+║                                                               ║
+║                    ███╗   ███╗███████╗███████╗██╗  ██╗               ║
+║                    ████╗ ████║██╔════╝██╔════╝██║  ██║               ║
+║                    ██╔████╔██║█████╗  ███████╗███████║               ║
+║                    ██║╚██╔╝██║██╔══╝  ╚════██║██╔══██║               ║
+║                    ██║ ╚═╝ ██║███████╗███████║██║  ██║               ║
+║                    ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝               ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
             </pre>
-            <h1>DISCOVERY PROTOCOL</h1>
+            <h1>SYNAPTIC MESH</h1>
             <p class="tagline">[ NEURAL NETWORK SIMULATION // SELF-ORGANIZING TREE ]</p>
         </header>
 
@@ -801,13 +838,13 @@
             <div id="eventLog" class="log-content"></div>
         </div>
         
-        <div class="footer-version">DISCOVERY v0.1 "Neural-Matrix" // REPRAM.io</div>
+        <div class="footer-version">SYNAPTIC-MESH v0.1 "Neural-Matrix" // REPRAM.io</div>
     </div>
 
     <script>
         class DiscoverySimulation {
             constructor() {
-                console.log('DISCOVERY PROTOCOL NEURAL MATRIX INITIALIZING...');
+                console.log('SYNAPTIC MESH PROTOCOL NEURAL MATRIX INITIALIZING...');
                 
                 this.nodes = new Map();
                 this.nodeIdCounter = 1;
@@ -1491,7 +1528,7 @@
 
         // Initialize simulation when page loads
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('NEURAL MATRIX BOOTSTRAP SEQUENCE INITIATED...');
+            console.log('SYNAPTIC MESH NEURAL MATRIX BOOTSTRAP SEQUENCE INITIATED...');
             window.simulation = new DiscoverySimulation();
         });
     </script>
