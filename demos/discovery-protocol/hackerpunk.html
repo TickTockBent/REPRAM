@@ -452,6 +452,14 @@
         .network-container.dragging {
             cursor: grabbing;
         }
+        
+        .node-draggable {
+            cursor: grab;
+        }
+        
+        .node-draggable:hover {
+            cursor: grab;
+        }
 
         /* Node Styles */
         .node {
@@ -1004,6 +1012,9 @@
                 this.dragStart = { x: 0, y: 0 };
                 this.zoom = 1.0;
                 this.viewMode = 'free'; // free, geographic, radial, tree
+                this.isDraggingNode = false;
+                this.draggedNode = null;
+                this.nodeDragStart = { x: 0, y: 0 };
                 
                 this.initializeMainframes();
                 this.setupEventHandlers();
@@ -1082,10 +1093,15 @@
                 
                 container.addEventListener('mousedown', (e) => {
                     if (e.target.classList.contains('node')) {
+                        // Node dragging in free-form mode only
+                        if (this.viewMode === 'free') {
+                            this.startNodeDrag(e);
+                        }
                         e.stopPropagation();
                         return;
                     }
                     
+                    // Pan dragging
                     this.isDragging = true;
                     this.dragStart = { x: e.clientX - this.viewOffset.x, y: e.clientY - this.viewOffset.y };
                     container.classList.add('dragging');
@@ -1093,8 +1109,23 @@
                 });
                 
                 document.addEventListener('mousemove', (e) => {
+                    if (this.isDraggingNode && this.draggedNode && this.viewMode === 'free') {
+                        // Node dragging
+                        const rect = container.getBoundingClientRect();
+                        const mouseX = (e.clientX - rect.left - this.viewOffset.x) / this.zoom;
+                        const mouseY = (e.clientY - rect.top - this.viewOffset.y) / this.zoom;
+                        
+                        this.draggedNode.x = mouseX;
+                        this.draggedNode.y = mouseY;
+                        
+                        this.updateVisualization();
+                        e.preventDefault();
+                        return;
+                    }
+                    
                     if (!this.isDragging) return;
                     
+                    // Pan dragging
                     this.viewOffset.x = e.clientX - this.dragStart.x;
                     this.viewOffset.y = e.clientY - this.dragStart.y;
                     
@@ -1103,6 +1134,12 @@
                 });
                 
                 document.addEventListener('mouseup', () => {
+                    if (this.isDraggingNode) {
+                        this.isDraggingNode = false;
+                        this.draggedNode = null;
+                        container.style.cursor = 'grab';
+                    }
+                    
                     if (this.isDragging) {
                         this.isDragging = false;
                         container.classList.remove('dragging');
@@ -1115,6 +1152,31 @@
                     const delta = e.deltaY > 0 ? -0.1 : 0.1;
                     this.adjustZoom(delta);
                 });
+            }
+            
+            startNodeDrag(e) {
+                const nodeId = e.target.textContent;
+                let targetNode = null;
+                
+                // Find the node by its label
+                for (const [id, node] of this.nodes) {
+                    if (node.label === nodeId || node.id.includes(nodeId)) {
+                        targetNode = node;
+                        break;
+                    }
+                }
+                
+                if (targetNode && targetNode.type !== 'mainframe') {
+                    this.isDraggingNode = true;
+                    this.draggedNode = targetNode;
+                    this.container.style.cursor = 'grabbing';
+                    
+                    const rect = this.container.getBoundingClientRect();
+                    this.nodeDragStart = {
+                        x: e.clientX - rect.left,
+                        y: e.clientY - rect.top
+                    };
+                }
             }
             
             startDiscoveryAnimation() {
@@ -1814,15 +1876,159 @@
                     this.logEvent('AUTO-EVOLUTION DISABLED', 'warning');
                 } else {
                     this.autoRunInterval = setInterval(() => {
-                        if (Math.random() < 0.7) {
-                            this.addNode();
-                        } else {
-                            this.runDiscoveryRound();
-                        }
-                    }, 3000);
+                        this.performAutoRunAction();
+                    }, 2500);
                     btn.textContent = 'STOP AUTO';
-                    this.logEvent('AUTO-EVOLUTION ENABLED - NETWORK WILL SELF-EXPAND', 'success');
+                    this.logEvent('AUTO-EVOLUTION ENABLED - CHAOTIC NETWORK DYNAMICS ACTIVE', 'success');
                 }
+            }
+            
+            performAutoRunAction() {
+                const activeNodes = Array.from(this.nodes.values()).filter(n => n.isAlive && n.type !== 'discovering');
+                const nonMainframeNodes = activeNodes.filter(n => n.type !== 'mainframe');
+                
+                const rand = Math.random();
+                
+                if (rand < 0.15 && nonMainframeNodes.length > 3) {
+                    // 15% chance: Random node failure
+                    this.simulateNodeFailure();
+                } else if (rand < 0.35) {
+                    // 20% chance: Spawn cluster of nodes (2-4 nodes)
+                    this.spawnNodeCluster();
+                } else if (rand < 0.65) {
+                    // 30% chance: Add single node
+                    this.addNode();
+                } else if (rand < 0.85) {
+                    // 20% chance: Run discovery optimization
+                    this.runDiscoveryRound();
+                } else {
+                    // 15% chance: Multiple simultaneous failures (chaos mode)
+                    if (nonMainframeNodes.length > 6) {
+                        this.simulateCascadeFailure();
+                    } else {
+                        this.addNode();
+                    }
+                }
+            }
+            
+            simulateNodeFailure() {
+                const nonMainframeNodes = Array.from(this.nodes.values()).filter(n => 
+                    n.isAlive && n.type !== 'mainframe' && n.type !== 'discovering'
+                );
+                
+                if (nonMainframeNodes.length === 0) return;
+                
+                const victimNode = nonMainframeNodes[Math.floor(Math.random() * nonMainframeNodes.length)];
+                this.logEvent(`${victimNode.id} CRITICAL FAILURE - NODE GOING OFFLINE`, 'error');
+                
+                // Add some visual drama
+                const nodeElement = this.container.querySelector(`[data-node-id="${victimNode.id}"]`);
+                if (nodeElement) {
+                    nodeElement.style.animation = 'nodeFailure 1s ease-out';
+                }
+                
+                // Remove after visual effect
+                setTimeout(() => {
+                    this.removeNode(victimNode.id);
+                }, 1000);
+            }
+            
+            spawnNodeCluster() {
+                const clusterSize = Math.floor(Math.random() * 3) + 2; // 2-4 nodes
+                const clusterNames = ['ALPHA', 'BETA', 'GAMMA', 'DELTA', 'EPSILON', 'ZETA', 'ETA', 'THETA'];
+                const clusterName = clusterNames[Math.floor(Math.random() * clusterNames.length)];
+                
+                this.logEvent(`CLUSTER SPAWN DETECTED - ${clusterSize} ${clusterName} UNITS MATERIALIZING`, 'success');
+                
+                // Spawn nodes in close proximity
+                const baseLocation = {
+                    lat: (Math.random() * 160) - 80,
+                    lon: (Math.random() * 340) - 170
+                };
+                
+                for (let i = 0; i < clusterSize; i++) {
+                    setTimeout(() => {
+                        const nodeId = `${clusterName}-${String.fromCharCode(65 + i)}-${this.nodeIdCounter.toString().padStart(3, '0')}`;
+                        this.nodeIdCounter++;
+                        
+                        // Cluster nodes spawn near each other
+                        const clusterLocation = {
+                            lat: baseLocation.lat + (Math.random() * 20 - 10),
+                            lon: baseLocation.lon + (Math.random() * 20 - 10)
+                        };
+                        
+                        const node = {
+                            id: nodeId,
+                            type: 'discovering',
+                            location: clusterLocation,
+                            label: nodeId.split('-')[1] + i,
+                            parent: null,
+                            children: [],
+                            capacity: 0,
+                            depth: 0,
+                            isAlive: true,
+                            x: this.getClusterNodePosition(baseLocation, i).x,
+                            y: this.getClusterNodePosition(baseLocation, i).y,
+                            discoveryState: 'probing',
+                            discoveryResponses: [],
+                            discoveryStartTime: Date.now()
+                        };
+                        
+                        this.nodes.set(nodeId, node);
+                        this.logEvent(`${nodeId} CLUSTER UNIT ONLINE - INITIATING DISCOVERY`, 'warning');
+                        
+                        // Start discovery process
+                        this.startNodeDiscovery(node);
+                        
+                        this.updateVisualization();
+                        this.updateStats();
+                    }, i * 300); // Stagger cluster spawning
+                }
+            }
+            
+            getClusterNodePosition(baseLocation, index) {
+                if (this.viewMode === 'free') {
+                    // Spawn in a small circle pattern
+                    const angle = (index / 4) * Math.PI * 2;
+                    const radius = 60 + Math.random() * 30;
+                    const centerX = 300 + Math.random() * 200;
+                    const centerY = 200 + Math.random() * 200;
+                    
+                    return {
+                        x: centerX + Math.cos(angle) * radius,
+                        y: centerY + Math.sin(angle) * radius
+                    };
+                } else {
+                    return this.getInitialNodePosition();
+                }
+            }
+            
+            simulateCascadeFailure() {
+                const nonMainframeNodes = Array.from(this.nodes.values()).filter(n => 
+                    n.isAlive && n.type !== 'mainframe' && n.type !== 'discovering'
+                );
+                
+                if (nonMainframeNodes.length < 3) return;
+                
+                const failureCount = Math.min(3, Math.floor(nonMainframeNodes.length * 0.3));
+                this.logEvent(`CASCADE FAILURE DETECTED - ${failureCount} NODES COMPROMISED`, 'error');
+                
+                // Select random nodes for failure
+                const victims = [];
+                for (let i = 0; i < failureCount; i++) {
+                    const remaining = nonMainframeNodes.filter(n => !victims.includes(n));
+                    if (remaining.length > 0) {
+                        victims.push(remaining[Math.floor(Math.random() * remaining.length)]);
+                    }
+                }
+                
+                // Stagger the failures for dramatic effect
+                victims.forEach((victim, index) => {
+                    setTimeout(() => {
+                        this.logEvent(`${victim.id} CASCADE VICTIM - SYSTEM FAILURE`, 'error');
+                        this.removeNode(victim.id);
+                    }, index * 500);
+                });
             }
             
             resetNetwork() {
@@ -1942,11 +2148,22 @@
                     element.style.top = scaledY + 'px';
                     element.style.transform = `scale(${this.zoom})`;
                     
+                    // Add click to remove and dragging cursor
                     if (node.type !== 'mainframe') {
-                        element.addEventListener('click', () => {
-                            this.removeNode(node.id);
+                        element.addEventListener('click', (e) => {
+                            if (!this.isDraggingNode) {
+                                this.removeNode(node.id);
+                            }
                         });
+                        
+                        if (this.viewMode === 'free') {
+                            element.classList.add('node-draggable');
+                            element.style.cursor = 'grab';
+                        }
                     }
+                    
+                    // Add data attribute for easier node identification
+                    element.setAttribute('data-node-id', node.id);
                     
                     container.appendChild(element);
                 });
