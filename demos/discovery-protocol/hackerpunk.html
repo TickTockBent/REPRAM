@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SYNAPTIC MESH PROTOCOL - Neural Network Simulation</title>
+    <title>SYNTH TREE PROTOCOL - Self-Organizing Network Simulation</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -129,7 +129,7 @@
 
         h1::before,
         h1::after {
-            content: 'SYNAPTIC MESH';
+            content: 'SYNTH TREE';
             position: absolute;
             top: 0;
             left: 0;
@@ -363,7 +363,7 @@
         }
 
         .visualization-panel::before {
-            content: 'NEURAL_NET://TOPOLOGY_MAP';
+            content: 'SYNTH_TREE://TOPOLOGY_MAP';
             position: absolute;
             top: -2px;
             left: -2px;
@@ -396,20 +396,20 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #000;
-            font-size: 8px;
+            color: #ffff00;
+            font-size: 11px;
             font-weight: bold;
             cursor: pointer;
             transition: all 0.3s ease;
             border: 2px solid #fff;
             font-family: 'Orbitron', monospace;
             text-shadow: 
-                0 0 3px #fff,
-                0 0 6px #fff,
-                1px 1px 0px #000,
-                -1px -1px 0px #000,
-                1px -1px 0px #000,
-                -1px 1px 0px #000;
+                0 0 8px #ffff00,
+                0 0 12px #ffff00,
+                2px 2px 0px #000,
+                -2px -2px 0px #000,
+                2px -2px 0px #000,
+                -2px 2px 0px #000;
         }
 
         .node:hover {
@@ -419,8 +419,8 @@
 
         .node-root {
             background: #ff0000;
-            width: 24px;
-            height: 24px;
+            width: 32px;
+            height: 32px;
             box-shadow: 0 0 15px #ff0000;
             animation: rootPulse 2s ease-in-out infinite;
         }
@@ -432,29 +432,45 @@
 
         .node-trunk {
             background: #ff8800;
-            width: 20px;
-            height: 20px;
+            width: 28px;
+            height: 28px;
             box-shadow: 0 0 12px #ff8800;
         }
 
         .node-branch {
             background: #00ff00;
-            width: 16px;
-            height: 16px;
+            width: 24px;
+            height: 24px;
             box-shadow: 0 0 10px #00ff00;
+            color: #000;
+            text-shadow: 
+                0 0 8px #000,
+                0 0 12px #000,
+                2px 2px 0px #00ff00,
+                -2px -2px 0px #00ff00,
+                2px -2px 0px #00ff00,
+                -2px 2px 0px #00ff00;
         }
 
         .node-leaf {
             background: #00ffff;
-            width: 12px;
-            height: 12px;
+            width: 20px;
+            height: 20px;
             box-shadow: 0 0 8px #00ffff;
+            color: #000;
+            text-shadow: 
+                0 0 8px #000,
+                0 0 12px #000,
+                2px 2px 0px #00ffff,
+                -2px -2px 0px #00ffff,
+                2px -2px 0px #00ffff,
+                -2px 2px 0px #00ffff;
         }
 
         .node-discovering {
             background: #ff00ff;
-            width: 14px;
-            height: 14px;
+            width: 22px;
+            height: 22px;
             animation: discoveringPulse 1s infinite;
             box-shadow: 0 0 15px #ff00ff;
         }
@@ -756,24 +772,24 @@
             <pre class="ascii-art">
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
-║    ███████╗██╗   ██╗███╗   ██╗ █████╗ ██████╗ ████████╗██╗ ██████╗    ║
-║    ██╔════╝╚██╗ ██╔╝████╗  ██║██╔══██╗██╔══██╗╚══██╔══╝██║██╔════╝    ║
-║    ███████╗ ╚████╔╝ ██╔██╗ ██║███████║██████╔╝   ██║   ██║██║         ║
-║    ╚════██║  ╚██╔╝  ██║╚██╗██║██╔══██║██╔═══╝    ██║   ██║██║         ║
-║    ███████║   ██║   ██║ ╚████║██║  ██║██║        ██║   ██║╚██████╗    ║
-║    ╚══════╝   ╚═╝   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝        ╚═╝   ╚═╝ ╚═════╝    ║
+║      ███████╗██╗   ██╗███╗   ██╗████████╗██╗  ██╗             ║
+║      ██╔════╝╚██╗ ██╔╝████╗  ██║╚══██╔══╝██║  ██║             ║
+║      ███████╗ ╚████╔╝ ██╔██╗ ██║   ██║   ███████║             ║
+║      ╚════██║  ╚██╔╝  ██║╚██╗██║   ██║   ██╔══██║             ║
+║      ███████║   ██║   ██║ ╚████║   ██║   ██║  ██║             ║
+║      ╚══════╝   ╚═╝   ╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝             ║
 ║                                                               ║
-║                    ███╗   ███╗███████╗███████╗██╗  ██╗               ║
-║                    ████╗ ████║██╔════╝██╔════╝██║  ██║               ║
-║                    ██╔████╔██║█████╗  ███████╗███████║               ║
-║                    ██║╚██╔╝██║██╔══╝  ╚════██║██╔══██║               ║
-║                    ██║ ╚═╝ ██║███████╗███████║██║  ██║               ║
-║                    ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝               ║
+║           ████████╗██████╗ ███████╗███████╗                  ║
+║           ╚══██╔══╝██╔══██╗██╔════╝██╔════╝                  ║
+║              ██║   ██████╔╝█████╗  █████╗                    ║
+║              ██║   ██╔══██╗██╔══╝  ██╔══╝                    ║
+║              ██║   ██║  ██║███████╗███████╗                  ║
+║              ╚═╝   ╚═╝  ╚═╝╚══════╝╚══════╝                  ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
             </pre>
-            <h1>SYNAPTIC MESH</h1>
-            <p class="tagline">[ NEURAL NETWORK SIMULATION // SELF-ORGANIZING TREE ]</p>
+            <h1>SYNTH TREE</h1>
+            <p class="tagline">[ SELF-ORGANIZING NETWORK PROTOCOL // CYBERPUNK TREE ]</p>
         </header>
 
         <div class="main-content">
@@ -838,13 +854,13 @@
             <div id="eventLog" class="log-content"></div>
         </div>
         
-        <div class="footer-version">SYNAPTIC-MESH v0.1 "Neural-Matrix" // REPRAM.io</div>
+        <div class="footer-version">SYNTH-TREE v0.1 "Cyberpunk-Matrix" // REPRAM.io</div>
     </div>
 
     <script>
         class DiscoverySimulation {
             constructor() {
-                console.log('SYNAPTIC MESH PROTOCOL NEURAL MATRIX INITIALIZING...');
+                console.log('SYNTH TREE PROTOCOL MATRIX INITIALIZING...');
                 
                 this.nodes = new Map();
                 this.nodeIdCounter = 1;
@@ -875,8 +891,8 @@
                 this.updateVisualization();
                 this.updateStats();
                 
-                console.log('NEURAL MATRIX ONLINE - READY FOR NODE INJECTION');
-                this.logEvent('NEURAL MATRIX INITIALIZED - 3 ROOT NODES ACTIVE', 'success');
+                console.log('SYNTH TREE MATRIX ONLINE - READY FOR NODE INJECTION');
+                this.logEvent('SYNTH TREE MATRIX INITIALIZED - 3 ROOT NODES ACTIVE', 'success');
             }
             
             initializeRootNodes() {
@@ -1366,7 +1382,7 @@
                 
                 this.updateVisualization();
                 this.updateStats();
-                this.logEvent('NEURAL MATRIX RESET - ALL NODES PURGED', 'warning');
+                this.logEvent('SYNTH TREE MATRIX RESET - ALL NODES PURGED', 'warning');
             }
             
             addDiscoveryMessage(source, target, type, callback = null) {
@@ -1441,8 +1457,8 @@
                     const element = document.createElement('div');
                     element.className = `node node-${node.type}`;
                     element.textContent = node.label;
-                    element.style.left = (node.x - 12 + this.viewOffset.x) + 'px';
-                    element.style.top = (node.y - 12 + this.viewOffset.y) + 'px';
+                    element.style.left = (node.x - 16 + this.viewOffset.x) + 'px';
+                    element.style.top = (node.y - 16 + this.viewOffset.y) + 'px';
                     
                     if (node.type !== 'root') {
                         element.addEventListener('click', () => {
@@ -1528,7 +1544,7 @@
 
         // Initialize simulation when page loads
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('SYNAPTIC MESH NEURAL MATRIX BOOTSTRAP SEQUENCE INITIATED...');
+            console.log('SYNTH TREE MATRIX BOOTSTRAP SEQUENCE INITIATED...');
             window.simulation = new DiscoverySimulation();
         });
     </script>
