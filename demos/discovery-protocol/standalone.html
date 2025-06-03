@@ -230,12 +230,21 @@
             background: #00d2ff;
             animation: pulse 1s infinite;
             pointer-events: none;
+            transition: all 0.1s linear;
         }
 
         @keyframes pulse {
             0% { opacity: 0.8; transform: scale(1); }
             50% { opacity: 1; transform: scale(1.5); }
             100% { opacity: 0.8; transform: scale(1); }
+        }
+
+        .network-container.dragging {
+            cursor: grabbing;
+        }
+
+        .network-container {
+            cursor: grab;
         }
     </style>
 </head>
@@ -327,6 +336,9 @@
                 };
                 
                 this.container = document.getElementById('networkContainer');
+                this.viewOffset = { x: 0, y: 0 };
+                this.isDragging = false;
+                this.dragStart = { x: 0, y: 0 };
                 
                 this.initializeRootNodes();
                 this.setupEventHandlers();
@@ -385,11 +397,49 @@
                 document.getElementById('resetBtn').addEventListener('click', () => {
                     this.resetNetwork();
                 });
+                
+                // Add drag functionality
+                this.setupDragHandlers();
+            }
+            
+            setupDragHandlers() {
+                const container = this.container;
+                
+                container.addEventListener('mousedown', (e) => {
+                    this.isDragging = true;
+                    this.dragStart = { x: e.clientX - this.viewOffset.x, y: e.clientY - this.viewOffset.y };
+                    container.classList.add('dragging');
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (!this.isDragging) return;
+                    
+                    this.viewOffset.x = e.clientX - this.dragStart.x;
+                    this.viewOffset.y = e.clientY - this.dragStart.y;
+                    
+                    this.updateVisualization();
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    if (this.isDragging) {
+                        this.isDragging = false;
+                        container.classList.remove('dragging');
+                    }
+                });
+                
+                // Prevent dragging when clicking on nodes
+                container.addEventListener('mousedown', (e) => {
+                    if (e.target.classList.contains('node')) {
+                        e.stopPropagation();
+                    }
+                });
             }
             
             startDiscoveryAnimation() {
+                // Clean up and add new messages
                 setInterval(() => {
-                    // Clean up old messages
                     this.discoveryMessages = this.discoveryMessages.filter(msg => 
                         Date.now() - msg.startTime < msg.duration
                     );
@@ -404,9 +454,14 @@
                             this.addDiscoveryMessage(source, target, 'discovery');
                         }
                     }
-                    
-                    this.updateDiscoveryMessages();
                 }, 800);
+                
+                // Smooth animation loop
+                const animateMessages = () => {
+                    this.updateDiscoveryMessages();
+                    requestAnimationFrame(animateMessages);
+                };
+                animateMessages();
             }
             
             addNode() {
@@ -638,8 +693,8 @@
                     
                     const element = document.createElement('div');
                     element.className = 'discovery-message';
-                    element.style.left = x + 'px';
-                    element.style.top = y + 'px';
+                    element.style.left = (x + this.viewOffset.x) + 'px';
+                    element.style.top = (y + this.viewOffset.y) + 'px';
                     element.style.opacity = 1 - progress * 0.5;
                     
                     if (msg.type === 'attach') element.style.background = '#48bb78';
@@ -669,8 +724,8 @@
                         const length = Math.sqrt(dx*dx + dy*dy);
                         const angle = Math.atan2(dy, dx) * 180 / Math.PI;
                         
-                        connection.style.left = node.parent.x + 'px';
-                        connection.style.top = node.parent.y + 'px';
+                        connection.style.left = (node.parent.x + this.viewOffset.x) + 'px';
+                        connection.style.top = (node.parent.y + this.viewOffset.y) + 'px';
                         connection.style.width = length + 'px';
                         connection.style.transform = `rotate(${angle}deg)`;
                         
@@ -683,8 +738,8 @@
                     const element = document.createElement('div');
                     element.className = `node node-${node.type}`;
                     element.textContent = node.label;
-                    element.style.left = (node.x - 12) + 'px';
-                    element.style.top = (node.y - 12) + 'px';
+                    element.style.left = (node.x - 12 + this.viewOffset.x) + 'px';
+                    element.style.top = (node.y - 12 + this.viewOffset.y) + 'px';
                     
                     if (node.type !== 'root') {
                         element.addEventListener('click', () => {
