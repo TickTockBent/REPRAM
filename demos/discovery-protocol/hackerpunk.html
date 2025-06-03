@@ -278,6 +278,70 @@
             position: relative;
             overflow: hidden;
         }
+        
+        .btn-small {
+            width: 48%;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            display: inline-block;
+        }
+        
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .view-controls {
+            margin-bottom: 15px;
+        }
+        
+        .view-controls select {
+            width: 100%;
+            padding: 8px 12px;
+            background: #000;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        
+        .view-controls select:focus {
+            outline: none;
+            border-color: #00ffff;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+        
+        .view-controls option {
+            background: #000;
+            color: #00ff00;
+        }
+        
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .zoom-label {
+            color: #00ffff;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            flex: 1;
+        }
+        
+        .zoom-value {
+            color: #ffff00;
+            font-family: 'Orbitron', monospace;
+            font-weight: bold;
+            min-width: 50px;
+            text-align: center;
+        }
 
         .btn::before {
             content: '';
@@ -796,6 +860,20 @@
             <div class="left-panel">
                 <div class="control-panel">
                     <h3>NETWORK CONTROL</h3>
+                    <div class="view-controls">
+                        <select id="viewSelect">
+                            <option value="free">Free Form View</option>
+                            <option value="geographic">Geographic View</option>
+                            <option value="radial">Radial View</option>
+                            <option value="tree">Tree View</option>
+                        </select>
+                        <div class="zoom-controls">
+                            <span class="zoom-label">Zoom:</span>
+                            <button id="zoomOutBtn" class="btn btn-small">-</button>
+                            <span id="zoomValue" class="zoom-value">100%</span>
+                            <button id="zoomInBtn" class="btn btn-small">+</button>
+                        </div>
+                    </div>
                     <button id="addNodeBtn" class="btn">ADD NODE</button>
                     <button id="addMultipleBtn" class="btn">ADD 5 NODES</button>
                     <button id="stepBtn" class="btn">RUN DISCOVERY ROUND</button>
@@ -884,6 +962,8 @@
                 this.viewOffset = { x: 0, y: 0 };
                 this.isDragging = false;
                 this.dragStart = { x: 0, y: 0 };
+                this.zoom = 1.0;
+                this.viewMode = 'free'; // free, geographic, radial, tree
                 
                 this.initializeRootNodes();
                 this.setupEventHandlers();
@@ -941,6 +1021,18 @@
                     this.resetNetwork();
                 });
                 
+                document.getElementById('viewSelect').addEventListener('change', (e) => {
+                    this.setViewMode(e.target.value);
+                });
+                
+                document.getElementById('zoomInBtn').addEventListener('click', () => {
+                    this.adjustZoom(0.2);
+                });
+                
+                document.getElementById('zoomOutBtn').addEventListener('click', () => {
+                    this.adjustZoom(-0.2);
+                });
+                
                 // Add drag functionality
                 this.setupDragHandlers();
             }
@@ -975,6 +1067,13 @@
                         this.isDragging = false;
                         container.classList.remove('dragging');
                     }
+                });
+                
+                // Add wheel zoom
+                container.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                    this.adjustZoom(delta);
                 });
             }
             
@@ -1024,8 +1123,8 @@
                     capacity: 0,
                     depth: 0,
                     isAlive: true,
-                    x: Math.random() * 500 + 100,
-                    y: Math.random() * 300 + 200,
+                    x: this.getInitialNodePosition().x,
+                    y: this.getInitialNodePosition().y,
                     discoveryState: 'probing',
                     discoveryResponses: [],
                     discoveryStartTime: Date.now()
@@ -1232,11 +1331,16 @@
                 node.depth = parent.depth + 1;
                 node.discoveryState = 'connected';
                 
-                // Position near parent with some spread
-                const angle = Math.random() * Math.PI * 2;
-                const distance = 80 + Math.random() * 40;
-                node.x = parent.x + Math.cos(angle) * distance;
-                node.y = parent.y + Math.sin(angle) * distance;
+                // Position near parent with some spread (only for free-form view)
+                if (this.viewMode === 'free') {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 80 + Math.random() * 40;
+                    node.x = parent.x + Math.cos(angle) * distance;
+                    node.y = parent.y + Math.sin(angle) * distance;
+                } else {
+                    // For other views, layout will be handled by layoutNodes()
+                    this.layoutNodes();
+                }
             }
             
             calculateLatency(loc1, loc2) {
@@ -1325,11 +1429,16 @@
                 
                 this.updateNodeDepth(node);
                 
-                // Smooth repositioning
-                const angle = Math.random() * Math.PI * 2;
-                const distance = 80 + Math.random() * 40;
-                node.x = newParent.x + Math.cos(angle) * distance;
-                node.y = newParent.y + Math.sin(angle) * distance;
+                // Smooth repositioning (only for free-form view)
+                if (this.viewMode === 'free') {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 80 + Math.random() * 40;
+                    node.x = newParent.x + Math.cos(angle) * distance;
+                    node.y = newParent.y + Math.sin(angle) * distance;
+                } else {
+                    // For other views, layout will be handled by layoutNodes()
+                    this.layoutNodes();
+                }
             }
             
             updateNodeDepth(node) {
@@ -1348,6 +1457,148 @@
                     current = current.parent;
                 }
                 return false;
+            }
+            
+            setViewMode(mode) {
+                this.viewMode = mode;
+                this.logEvent(`VIEW MODE CHANGED TO ${mode.toUpperCase()}`, 'info');
+                this.layoutNodes();
+                this.updateVisualization();
+            }
+            
+            adjustZoom(delta) {
+                const newZoom = Math.max(0.2, Math.min(3.0, this.zoom + delta));
+                if (newZoom !== this.zoom) {
+                    this.zoom = newZoom;
+                    document.getElementById('zoomValue').textContent = Math.round(this.zoom * 100) + '%';
+                    this.updateVisualization();
+                }
+            }
+            
+            layoutNodes() {
+                const nodes = Array.from(this.nodes.values());
+                const containerWidth = 800;
+                const containerHeight = 600;
+                
+                switch (this.viewMode) {
+                    case 'geographic':
+                        this.layoutGeographic(nodes, containerWidth, containerHeight);
+                        break;
+                    case 'radial':
+                        this.layoutRadial(nodes, containerWidth, containerHeight);
+                        break;
+                    case 'tree':
+                        this.layoutTree(nodes, containerWidth, containerHeight);
+                        break;
+                    case 'free':
+                    default:
+                        // Keep existing positions for free form
+                        break;
+                }
+            }
+            
+            layoutGeographic(nodes, width, height) {
+                // Map lat/lon to screen coordinates
+                const latRange = { min: -90, max: 90 };
+                const lonRange = { min: -180, max: 180 };
+                
+                nodes.forEach(node => {
+                    const x = ((node.location.lon - lonRange.min) / (lonRange.max - lonRange.min)) * (width - 100) + 50;
+                    const y = ((latRange.max - node.location.lat) / (latRange.max - latRange.min)) * (height - 100) + 50;
+                    
+                    node.x = x;
+                    node.y = y;
+                });
+            }
+            
+            layoutRadial(nodes, width, height) {
+                const centerX = width / 2;
+                const centerY = height / 2;
+                const rootNodes = nodes.filter(n => n.type === 'root');
+                
+                // Place roots in center circle
+                rootNodes.forEach((root, index) => {
+                    const angle = (index / rootNodes.length) * Math.PI * 2;
+                    const radius = 60;
+                    root.x = centerX + Math.cos(angle) * radius;
+                    root.y = centerY + Math.sin(angle) * radius;
+                });
+                
+                // Place other nodes in concentric circles by depth
+                const nonRootNodes = nodes.filter(n => n.type !== 'root');
+                const maxDepth = Math.max(...nonRootNodes.map(n => n.depth), 0);
+                
+                for (let depth = 1; depth <= maxDepth; depth++) {
+                    const depthNodes = nonRootNodes.filter(n => n.depth === depth);
+                    const radius = 60 + depth * 80;
+                    
+                    depthNodes.forEach((node, index) => {
+                        const angle = (index / depthNodes.length) * Math.PI * 2;
+                        node.x = centerX + Math.cos(angle) * radius;
+                        node.y = centerY + Math.sin(angle) * radius;
+                    });
+                }
+            }
+            
+            layoutTree(nodes, width, height) {
+                const rootNodes = nodes.filter(n => n.type === 'root');
+                const rootSpacing = width / (rootNodes.length + 1);
+                
+                // Place roots at bottom
+                rootNodes.forEach((root, index) => {
+                    root.x = rootSpacing * (index + 1);
+                    root.y = height - 80;
+                    this.layoutTreeRecursive(root, root.x, root.y, 150, height - 80);
+                });
+            }
+            
+            layoutTreeRecursive(node, centerX, baseY, availableWidth, maxY) {
+                if (node.children.length === 0) return;
+                
+                const childSpacing = availableWidth / (node.children.length + 1);
+                const childY = Math.max(baseY - 100, 50);
+                
+                node.children.forEach((child, index) => {
+                    const childX = centerX - availableWidth/2 + childSpacing * (index + 1);
+                    child.x = childX;
+                    child.y = childY;
+                    
+                    // Recursively layout child's children
+                    this.layoutTreeRecursive(child, childX, childY, childSpacing * 0.8, maxY);
+                });
+            }
+            
+            getInitialNodePosition() {
+                switch (this.viewMode) {
+                    case 'geographic':
+                        // Random position based on location coordinates
+                        return {
+                            x: Math.random() * 700 + 50,
+                            y: Math.random() * 500 + 50
+                        };
+                    case 'radial':
+                        // Random position in outer ring
+                        const centerX = 400;
+                        const centerY = 300;
+                        const angle = Math.random() * Math.PI * 2;
+                        const radius = 250 + Math.random() * 50;
+                        return {
+                            x: centerX + Math.cos(angle) * radius,
+                            y: centerY + Math.sin(angle) * radius
+                        };
+                    case 'tree':
+                        // Random position at top (will be repositioned during layout)
+                        return {
+                            x: Math.random() * 600 + 100,
+                            y: 50 + Math.random() * 50
+                        };
+                    case 'free':
+                    default:
+                        return {
+                            x: Math.random() * 500 + 100,
+                            y: Math.random() * 300 + 200
+                        };
+                }
             }
             
             toggleAutoRun() {
@@ -1417,8 +1668,11 @@
                     
                     const element = document.createElement('div');
                     element.className = `discovery-message ${msg.type}`;
-                    element.style.left = (x + this.viewOffset.x) + 'px';
-                    element.style.top = (y + this.viewOffset.y) + 'px';
+                    const scaledX = (x * this.zoom) + this.viewOffset.x;
+                    const scaledY = (y * this.zoom) + this.viewOffset.y;
+                    element.style.left = scaledX + 'px';
+                    element.style.top = scaledY + 'px';
+                    element.style.transform = `scale(${this.zoom})`;
                     element.style.opacity = 1 - progress * 0.5;
                     
                     container.appendChild(element);
@@ -1443,10 +1697,14 @@
                         const length = Math.sqrt(dx*dx + dy*dy);
                         const angle = Math.atan2(dy, dx) * 180 / Math.PI;
                         
-                        connection.style.left = (node.parent.x + this.viewOffset.x) + 'px';
-                        connection.style.top = (node.parent.y + this.viewOffset.y) + 'px';
-                        connection.style.width = length + 'px';
-                        connection.style.transform = `rotate(${angle}deg)`;
+                        const scaledParentX = (node.parent.x * this.zoom) + this.viewOffset.x;
+                        const scaledParentY = (node.parent.y * this.zoom) + this.viewOffset.y;
+                        const scaledLength = length * this.zoom;
+                        
+                        connection.style.left = scaledParentX + 'px';
+                        connection.style.top = scaledParentY + 'px';
+                        connection.style.width = scaledLength + 'px';
+                        connection.style.transform = `rotate(${angle}deg) scaleY(${this.zoom})`;
                         
                         container.appendChild(connection);
                     }
@@ -1457,8 +1715,11 @@
                     const element = document.createElement('div');
                     element.className = `node node-${node.type}`;
                     element.textContent = node.label;
-                    element.style.left = (node.x - 16 + this.viewOffset.x) + 'px';
-                    element.style.top = (node.y - 16 + this.viewOffset.y) + 'px';
+                    const scaledX = (node.x * this.zoom) - 16 + this.viewOffset.x;
+                    const scaledY = (node.y * this.zoom) - 16 + this.viewOffset.y;
+                    element.style.left = scaledX + 'px';
+                    element.style.top = scaledY + 'px';
+                    element.style.transform = `scale(${this.zoom})`;
                     
                     if (node.type !== 'root') {
                         element.addEventListener('click', () => {
