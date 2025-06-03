@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -155,6 +156,12 @@ func (ps *ProxyServer) nodeStatusHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (ps *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Handle health endpoint
+	if r.URL.Path == "/health" {
+		ps.healthHandler(w, r)
+		return
+	}
+	
 	// Handle special node status endpoint
 	if r.URL.Path == "/api/nodes/status" {
 		ps.nodeStatusHandler(w, r)
@@ -187,12 +194,44 @@ func (ps *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// healthHandler provides a health check endpoint
+func (ps *ProxyServer) healthHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	
+	w.Header().Set("Content-Type", "application/json")
+	
+	// Simple health check - just return that the server is running
+	response := map[string]interface{}{
+		"status": "healthy",
+		"service": "fade-server",
+		"nodes": ps.nodes,
+		"timestamp": time.Now().Format(time.RFC3339),
+	}
+	
+	json.NewEncoder(w).Encode(response)
+}
+
 func main() {
 	// Command line flags
 	port := flag.String("port", "3000", "Port to serve on")
 	dir := flag.String("dir", "web", "Directory to serve files from")
-	nodes := flag.String("nodes", "http://localhost:8080,http://localhost:8081,http://localhost:8082", "Comma-separated list of REPRAM node URLs")
+	nodes := flag.String("nodes", "", "Comma-separated list of REPRAM node URLs")
 	flag.Parse()
+
+	// Use environment variable as fallback for nodes if not provided via command line
+	nodeConfig := *nodes
+	if nodeConfig == "" {
+		if envNodes := os.Getenv("FADE_NODES"); envNodes != "" {
+			nodeConfig = envNodes
+		} else {
+			nodeConfig = "http://localhost:8080,http://localhost:8081,http://localhost:8082"
+		}
+	}
+
+	// Override port from environment if PORT is set (common in containers)
+	if envPort := os.Getenv("PORT"); envPort != "" && *port == "3000" {
+		*port = envPort
+	}
 
 	// Get absolute path
 	absDir, err := filepath.Abs(*dir)
@@ -201,7 +240,7 @@ func main() {
 	}
 
 	// Parse node URLs
-	nodeList := strings.Split(*nodes, ",")
+	nodeList := strings.Split(nodeConfig, ",")
 	for i, node := range nodeList {
 		nodeList[i] = strings.TrimSpace(node)
 	}

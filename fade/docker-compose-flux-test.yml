@@ -1,11 +1,15 @@
 version: '3.8'
 
+# This simulates what would happen in Flux:
+# - 3 cluster nodes with gossip replication  
+# - 3 fade servers all proxying to the same nodes
+# We need to test if this configuration works properly
+
 services:
+  # === CLUSTER NODES ===
   # Fade cluster node 1 (seed node)
   fade-node-1:
-    build: 
-      context: ..
-      target: cluster-node
+    image: repram-cluster-node:local
     ports:
       - "8080:8080"  # HTTP API
       - "9090:9090"  # Gossip protocol
@@ -26,9 +30,7 @@ services:
 
   # Fade cluster node 2 (bootstrap from node 1)
   fade-node-2:
-    build: 
-      context: ..
-      target: cluster-node
+    image: repram-cluster-node:local
     ports:
       - "8081:8080"  # HTTP API
       - "9091:9090"  # Gossip protocol
@@ -53,9 +55,7 @@ services:
 
   # Fade cluster node 3 (bootstrap from node 1)
   fade-node-3:
-    build: 
-      context: ..
-      target: cluster-node
+    image: repram-cluster-node:local
     ports:
       - "8082:8080"  # HTTP API
       - "9092:9090"  # Gossip protocol
@@ -80,15 +80,15 @@ services:
     networks:
       - fade-network
 
-  # Fade web UI proxy server
-  fade-web:
-    build: 
-      context: ..
-      dockerfile: Dockerfile.fade
-    ports:
-      - "3000:3000"  # Web UI
+  # === FADE SERVERS (simulating Flux scenario) ===
+  # Fade web server 1 - all point to same nodes
+  fade-web-1:
+    image: fade-server:local
     environment:
       - FADE_NODES=http://fade-node-1:8080,http://fade-node-2:8080,http://fade-node-3:8080
+      - PORT=3000
+    ports:
+      - "3000:3000"  # Web UI
     depends_on:
       fade-node-1:
         condition: service_healthy
@@ -96,6 +96,60 @@ services:
         condition: service_healthy
       fade-node-3:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - fade-network
+
+  # Fade web server 2 - same configuration as server 1
+  fade-web-2:
+    image: fade-server:local
+    environment:
+      - FADE_NODES=http://fade-node-1:8080,http://fade-node-2:8080,http://fade-node-3:8080
+      - PORT=3000
+    ports:
+      - "3010:3000"  # Different external port
+    depends_on:
+      fade-node-1:
+        condition: service_healthy
+      fade-node-2:
+        condition: service_healthy
+      fade-node-3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - fade-network
+
+  # Fade web server 3 - same configuration as server 1 & 2
+  fade-web-3:
+    image: fade-server:local
+    environment:
+      - FADE_NODES=http://fade-node-1:8080,http://fade-node-2:8080,http://fade-node-3:8080
+      - PORT=3000
+    ports:
+      - "3020:3000"  # Different external port
+    depends_on:
+      fade-node-1:
+        condition: service_healthy
+      fade-node-2:
+        condition: service_healthy
+      fade-node-3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - fade-network
 

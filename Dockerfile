@@ -25,10 +25,63 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram-cluster-no
 # Build the raw node binary
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram-node-raw ./cmd/node-raw
 
-# Build the fade cluster node binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram-fade-cluster-node ./cmd/fade-cluster-node
+# Note: fade-cluster-node removed as cmd/fade-cluster-node doesn't exist
 
-# Final stage - minimal runtime image
+# Cluster node target
+FROM alpine:latest AS cluster-node
+
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates tzdata
+
+# Create non-root user
+RUN adduser -D -s /bin/sh repram
+
+# Set working directory
+WORKDIR /app
+
+# Copy cluster node binary only
+COPY --from=builder /app/repram-cluster-node .
+
+# Change ownership to non-root user
+RUN chown -R repram:repram /app
+
+# Switch to non-root user
+USER repram
+
+# Expose ports for HTTP API and gossip
+EXPOSE 8080 9090
+
+# Run cluster node
+CMD ["./repram-cluster-node"]
+
+# Raw node target
+FROM alpine:latest AS raw-node
+
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates tzdata
+
+# Create non-root user
+RUN adduser -D -s /bin/sh repram
+
+# Set working directory
+WORKDIR /app
+
+# Copy raw node binary only
+COPY --from=builder /app/repram-node-raw .
+
+# Change ownership to non-root user
+RUN chown -R repram:repram /app
+
+# Switch to non-root user
+USER repram
+
+# Expose default port
+EXPOSE 8080
+
+# Run raw node
+CMD ["./repram-node-raw"]
+
+# Default target - main node
 FROM alpine:latest
 
 # Install runtime dependencies
@@ -40,11 +93,8 @@ RUN adduser -D -s /bin/sh repram
 # Set working directory
 WORKDIR /app
 
-# Copy binaries from builder
+# Copy main node binary
 COPY --from=builder /app/repram-node .
-COPY --from=builder /app/repram-cluster-node .
-COPY --from=builder /app/repram-node-raw .
-COPY --from=builder /app/repram-fade-cluster-node .
 
 # Change ownership to non-root user
 RUN chown -R repram:repram /app
@@ -55,5 +105,5 @@ USER repram
 # Expose default ports
 EXPOSE 8080 8081
 
-# Default command (can be overridden)
+# Default command
 CMD ["./repram-node"]

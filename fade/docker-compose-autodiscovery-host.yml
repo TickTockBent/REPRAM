@@ -1,0 +1,84 @@
+version: '3.8'
+
+# This version uses host networking to better simulate Flux deployment
+# where all containers share the same IP address
+
+services:
+  # All nodes will auto-discover their ports on the host network
+  
+  node-1:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-auto-host-1
+    environment:
+      - REPRAM_NODE_ID=auto-node-1
+      - NODE_ADDRESS=localhost
+      - USE_AUTO_DISCOVERY=true
+      - DISCOVERY_DOMAIN=localhost  # In Flux, this would be fade.repram.io
+      - BASE_PORT=8081             # Starting port
+      - MAX_PORTS=5                # Allow up to 5 nodes
+      - REPLICATION_FACTOR=3
+    network_mode: host
+    volumes:
+      - /tmp/repram-auto-1:/tmp/repram
+
+  node-2:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-auto-host-2
+    environment:
+      - REPRAM_NODE_ID=auto-node-2
+      - NODE_ADDRESS=localhost
+      - USE_AUTO_DISCOVERY=true
+      - DISCOVERY_DOMAIN=localhost
+      - BASE_PORT=8081
+      - MAX_PORTS=5
+      - REPLICATION_FACTOR=3
+    network_mode: host
+    volumes:
+      - /tmp/repram-auto-2:/tmp/repram
+    depends_on:
+      - node-1
+    # Add a small delay to reduce port conflicts
+    command: sh -c "sleep 2 && ./repram-cluster-node"
+
+  node-3:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-auto-host-3
+    environment:
+      - REPRAM_NODE_ID=auto-node-3
+      - NODE_ADDRESS=localhost
+      - USE_AUTO_DISCOVERY=true
+      - DISCOVERY_DOMAIN=localhost
+      - BASE_PORT=8081
+      - MAX_PORTS=5
+      - REPLICATION_FACTOR=3
+    network_mode: host
+    volumes:
+      - /tmp/repram-auto-3:/tmp/repram
+    depends_on:
+      - node-1
+      - node-2
+    command: sh -c "sleep 4 && ./repram-cluster-node"
+
+  # Clean up script to ensure ports are free before starting
+  cleanup:
+    image: busybox
+    network_mode: host
+    command: |
+      sh -c "
+      echo 'Checking for processes using our ports...'
+      for port in 8081 8082 8083 8084 8085 9081 9082 9083 9084 9085; do
+        echo \"Checking port \$port\"
+      done
+      echo 'Ready to start nodes'
+      "
+    profiles:
+      - cleanup

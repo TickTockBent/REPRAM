@@ -70,12 +70,8 @@ docker run -p 8080:8080 repram:latest
 # Docker Compose (3 nodes)
 make docker-compose-cluster
 
-# Kubernetes with Helm
-helm install repram ./helm/repram \
-  --namespace repram \
-  --create-namespace \
-  --set mode=cluster \
-  --set replicaCount=3
+# Flux deployment with auto-discovery
+# See docs/flux-auto-discovery-deployment.md
 ```
 
 ### Testing
@@ -112,9 +108,9 @@ make demo-sdk              # End-to-end encrypted demo
 
 ### Deployment Options
 - **Docker**: Single and multi-container setups
-- **Kubernetes**: StatefulSets, Services, Ingress
-- **Helm Charts**: Flexible configuration and scaling
-- **Monitoring**: ServiceMonitor, NetworkPolicy integration
+- **Docker Compose**: Local development and testing
+- **Flux**: Auto-discovery deployment for distributed apps
+- **Load Testing**: Comprehensive performance testing framework
 
 ## 📋 Available Commands
 
@@ -203,13 +199,13 @@ curl http://localhost:8080/metrics
 - **Health monitoring** with ping/pong heartbeats
 - **Symmetric architecture** with no coordinator nodes
 
-### ✅ Phase 3: Production Ready (Completed)
+### 🚧 Phase 3: Production Ready (In Progress)
 - **Docker containerization** with security hardening
-- **Kubernetes manifests** and Helm charts
+- **Flux deployment** with auto-discovery
 - **Prometheus monitoring** with comprehensive metrics
 - **Security features**: rate limiting, request validation, DDoS protection
 - **Load testing framework** with multiple test patterns
-- **Operational documentation** and deployment guides
+- **Auto-discovery deployment** for platforms like Flux
 
 ### 📋 Phase 4: Extensions (Future)
 - Long-term storage integration
@@ -291,7 +287,3 @@ See [LICENSE](LICENSE) for details.
 For issues with the open-source node software, please open an issue in this repository.
 
 For commercial SDK support, please contact our commercial support team.
-
----
-
-**REPRAM is now production-ready** with comprehensive monitoring, security hardening, and deployment automation. Ready for enterprise scale testing and phase 2 development! 🚀

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REPRAM Discovery Protocol Demo</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>REPRAM Discovery Protocol Simulation</h1>
+            <p>Interactive demonstration of self-organizing tree-based peer discovery</p>
+        </header>
+
+        <div class="main-content">
+            <div class="left-panel">
+                <div class="controls">
+                    <h3>Network Controls</h3>
+                    <button id="addNodeBtn" class="btn btn-primary">Add Node</button>
+                    <button id="addMultipleBtn" class="btn btn-primary">Add 5 Nodes</button>
+                    <button id="stepBtn" class="btn btn-secondary">Run Discovery Round</button>
+                    <button id="autoRunBtn" class="btn btn-secondary">Auto Run</button>
+                    <button id="resetBtn" class="btn btn-danger">Reset Network</button>
+                </div>
+
+                <div class="stats">
+                    <h3>Network Statistics</h3>
+                    <div class="stat-item">
+                        <span class="stat-label">Total Nodes:</span>
+                        <span id="totalNodes" class="stat-value">3</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Root Nodes:</span>
+                        <span id="rootNodes" class="stat-value">3</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Trunk Nodes:</span>
+                        <span id="trunkNodes" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Branch Nodes:</span>
+                        <span id="branchNodes" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Leaf Nodes:</span>
+                        <span id="leafNodes" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Average Depth:</span>
+                        <span id="avgDepth" class="stat-value">0.00</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Network Utilization:</span>
+                        <span id="utilization" class="stat-value">0%</span>
+                    </div>
+                </div>
+
+                <div class="info">
+                    <h3>Protocol Features</h3>
+                    <ul>
+                        <li><strong>Self-Organization:</strong> Nodes automatically find optimal positions</li>
+                        <li><strong>Latency-Based:</strong> Geographic clustering emerges naturally</li>
+                        <li><strong>Dynamic Rebalancing:</strong> Network optimizes over time</li>
+                        <li><strong>Failure Recovery:</strong> Orphaned nodes automatically reattach</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="visualization-panel">
+                <div class="view-controls">
+                    <label>View Mode:</label>
+                    <select id="viewMode">
+                        <option value="tree">Tree Structure</option>
+                        <option value="geographic">Geographic</option>
+                        <option value="radial">Radial Layout</option>
+                    </select>
+                    <label>
+                        <input type="checkbox" id="showLatency" checked>
+                        Show Latency
+                    </label>
+                    <label>
+                        <input type="checkbox" id="animateChanges" checked>
+                        Animate Changes
+                    </label>
+                </div>
+                <svg id="networkVisualization" width="100%" height="600"></svg>
+            </div>
+        </div>
+
+        <div class="event-log">
+            <h3>Event Log</h3>
+            <div id="eventLog" class="log-content"></div>
+        </div>
+    </div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="discovery-sim.js"></script>
+</body>
+</html>
