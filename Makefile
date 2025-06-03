@@ -108,3 +108,9 @@ docker-monitor:
 
 docker-monitor-long:
 	./scripts/docker-monitoring.sh --duration 1800
+
+# Synaptic Mesh Protocol Demo
+synaptic-mesh-demo:
+	@echo "Starting SYNAPTIC MESH PROTOCOL demo..."
+	@echo "Open http://localhost:8000/demos/discovery-protocol/hackerpunk.html in your browser"
+	@cd . && python3 -m http.server 8000
