@@ -1,0 +1,1499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REPRAM Discovery Protocol - Neural Network Simulation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        /* Global Styles - 80's Hackerpunk Theme */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Share Tech Mono', monospace;
+            background-color: #000;
+            background-image: 
+                repeating-linear-gradient(
+                    0deg,
+                    rgba(0, 255, 0, 0.03) 0px,
+                    transparent 1px,
+                    transparent 2px,
+                    rgba(0, 255, 0, 0.03) 3px
+                );
+            color: #00ff00;
+            line-height: 1.6;
+            min-height: 100vh;
+            text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+            animation: textFlicker 0.01s infinite;
+        }
+
+        @keyframes textFlicker {
+            0% { opacity: 1; }
+            50% { opacity: 0.99; }
+            100% { opacity: 1; }
+        }
+
+        /* CRT screen effect */
+        body::before {
+            content: " ";
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+            animation: scanline 8s linear infinite;
+        }
+
+        @keyframes scanline {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(100vh); }
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            position: relative;
+            z-index: 3;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 30px 0 20px;
+            border: 2px solid #00ff00;
+            border-left: none;
+            border-right: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.4), transparent);
+            animation: headerScan 3s linear infinite;
+        }
+
+        @keyframes headerScan {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .ascii-art {
+            color: #00ff00;
+            font-size: 0.6rem;
+            line-height: 1;
+            margin-bottom: 15px;
+            text-align: center;
+            font-family: 'Courier New', monospace;
+            animation: asciiGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes asciiGlow {
+            0%, 100% { 
+                text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+            }
+            50% { 
+                text-shadow: 0 0 20px rgba(0, 255, 0, 1), 0 0 30px rgba(0, 255, 0, 0.6);
+            }
+        }
+
+        h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: 3rem;
+            font-weight: 900;
+            letter-spacing: 0.2em;
+            color: #00ff00;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            animation: glitch 2s infinite;
+            position: relative;
+        }
+
+        h1::before,
+        h1::after {
+            content: 'DISCOVERY PROTOCOL';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        h1::before {
+            animation: glitch-1 0.5s infinite;
+            color: #ff00ff;
+            z-index: -1;
+        }
+
+        h1::after {
+            animation: glitch-2 0.5s infinite;
+            color: #00ffff;
+            z-index: -2;
+        }
+
+        @keyframes glitch {
+            0%, 100% { text-shadow: 0 0 10px rgba(0, 255, 0, 0.8); }
+            20% { text-shadow: 3px 0 10px rgba(255, 0, 255, 0.8); }
+            40% { text-shadow: -3px 0 10px rgba(0, 255, 255, 0.8); }
+            60% { text-shadow: 0 0 10px rgba(0, 255, 0, 0.8); }
+        }
+
+        @keyframes glitch-1 {
+            0%, 100% { clip-path: inset(0 0 0 0); transform: translate(0); }
+            20% { clip-path: inset(20% 0 60% 0); transform: translate(-2px); }
+            40% { clip-path: inset(50% 0 20% 0); transform: translate(2px); }
+            60% { clip-path: inset(10% 0 80% 0); transform: translate(0); }
+            80% { clip-path: inset(80% 0 10% 0); transform: translate(1px); }
+        }
+
+        @keyframes glitch-2 {
+            0%, 100% { clip-path: inset(0 0 0 0); transform: translate(0); }
+            20% { clip-path: inset(60% 0 20% 0); transform: translate(2px); }
+            40% { clip-path: inset(20% 0 50% 0); transform: translate(-2px); }
+            60% { clip-path: inset(80% 0 10% 0); transform: translate(1px); }
+            80% { clip-path: inset(10% 0 80% 0); transform: translate(-1px); }
+        }
+
+        .tagline {
+            font-size: 1rem;
+            color: #ff00ff;
+            text-transform: uppercase;
+            letter-spacing: 0.3em;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; }
+        }
+
+        /* Main Layout */
+        .main-content {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .left-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Control Panels */
+        .control-panel {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #ff00ff;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(255, 0, 255, 0.3);
+        }
+
+        .control-panel::before {
+            content: 'SYSTEM://';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            background: #ff00ff;
+            color: #000;
+            padding: 2px 10px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .control-panel h3 {
+            color: #ff00ff;
+            margin-bottom: 15px;
+            margin-top: 10px;
+            font-size: 1.2em;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .stats-panel {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #00ffff;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+
+        .stats-panel::before {
+            content: 'TELEMETRY://';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            background: #00ffff;
+            color: #000;
+            padding: 2px 10px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .stats-panel h3 {
+            color: #00ffff;
+            margin-bottom: 15px;
+            margin-top: 10px;
+            font-size: 1.2em;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        /* Buttons */
+        .btn {
+            width: 100%;
+            padding: 12px 20px;
+            margin-bottom: 10px;
+            border: 2px solid #00ff00;
+            background: #000;
+            color: #00ff00;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-family: 'Share Tech Mono', monospace;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 255, 0, 0.3);
+            transition: left 0.3s ease;
+        }
+
+        .btn:hover {
+            color: #000;
+            background: #00ff00;
+            box-shadow: 0 0 20px #00ff00;
+            text-shadow: none;
+        }
+
+        .btn:hover::before {
+            left: 0;
+        }
+
+        .btn-danger {
+            border-color: #ff0000;
+            color: #ff0000;
+        }
+
+        .btn-danger:hover {
+            background: #ff0000;
+            box-shadow: 0 0 20px #ff0000;
+        }
+
+        /* Stat Items */
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+            position: relative;
+        }
+
+        .stat-item::before {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #00ffff, transparent);
+            animation: statScan 3s linear infinite;
+        }
+
+        @keyframes statScan {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .stat-label {
+            color: #ff00ff;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            color: #00ff00;
+            font-weight: bold;
+            font-family: 'Orbitron', monospace;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+        }
+
+        /* Visualization Panel */
+        .visualization-panel {
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #00ff00;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 
+                0 0 20px rgba(0, 255, 0, 0.5),
+                inset 0 0 20px rgba(0, 255, 0, 0.1);
+        }
+
+        .visualization-panel::before {
+            content: 'NEURAL_NET://TOPOLOGY_MAP';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            background: #00ff00;
+            color: #000;
+            padding: 2px 10px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            z-index: 1;
+        }
+
+        .network-container {
+            width: 100%;
+            height: 600px;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+            cursor: grab;
+            border: 1px solid rgba(0, 255, 0, 0.3);
+        }
+
+        .network-container.dragging {
+            cursor: grabbing;
+        }
+
+        /* Node Styles */
+        .node {
+            position: absolute;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-size: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid #fff;
+            font-family: 'Orbitron', monospace;
+            text-shadow: none;
+        }
+
+        .node:hover {
+            transform: scale(1.3);
+            z-index: 10;
+        }
+
+        .node-root {
+            background: #ff0000;
+            width: 24px;
+            height: 24px;
+            box-shadow: 0 0 15px #ff0000;
+            animation: rootPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes rootPulse {
+            0%, 100% { box-shadow: 0 0 15px #ff0000; }
+            50% { box-shadow: 0 0 25px #ff0000, 0 0 35px rgba(255, 0, 0, 0.5); }
+        }
+
+        .node-trunk {
+            background: #ff8800;
+            width: 20px;
+            height: 20px;
+            box-shadow: 0 0 12px #ff8800;
+        }
+
+        .node-branch {
+            background: #00ff00;
+            width: 16px;
+            height: 16px;
+            box-shadow: 0 0 10px #00ff00;
+        }
+
+        .node-leaf {
+            background: #00ffff;
+            width: 12px;
+            height: 12px;
+            box-shadow: 0 0 8px #00ffff;
+        }
+
+        .node-discovering {
+            background: #ff00ff;
+            width: 14px;
+            height: 14px;
+            animation: discoveringPulse 1s infinite;
+            box-shadow: 0 0 15px #ff00ff;
+        }
+
+        @keyframes discoveringPulse {
+            0% { opacity: 0.6; transform: scale(1); box-shadow: 0 0 10px #ff00ff; }
+            50% { opacity: 1; transform: scale(1.2); box-shadow: 0 0 20px #ff00ff, 0 0 30px rgba(255, 0, 255, 0.5); }
+            100% { opacity: 0.6; transform: scale(1); box-shadow: 0 0 10px #ff00ff; }
+        }
+
+        /* Connection Lines */
+        .connection {
+            position: absolute;
+            height: 2px;
+            background: linear-gradient(90deg, #00ff00, #00ffff);
+            opacity: 0.6;
+            pointer-events: none;
+            transform-origin: left center;
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        /* Discovery Messages */
+        .discovery-message {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            pointer-events: none;
+            animation: messagePulse 1s infinite;
+            z-index: 5;
+        }
+
+        @keyframes messagePulse {
+            0% { opacity: 0.8; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.5); }
+            100% { opacity: 0.8; transform: scale(1); }
+        }
+
+        .discovery-message.topology-request {
+            background: #8b5cf6;
+            box-shadow: 0 0 10px #8b5cf6;
+        }
+
+        .discovery-message.topology-response {
+            background: #a78bfa;
+            box-shadow: 0 0 10px #a78bfa;
+        }
+
+        .discovery-message.attach {
+            background: #48bb78;
+            box-shadow: 0 0 10px #48bb78;
+        }
+
+        .discovery-message.confirm {
+            background: #ed8936;
+            box-shadow: 0 0 10px #ed8936;
+        }
+
+        .discovery-message.migrate {
+            background: #f6ad55;
+            box-shadow: 0 0 10px #f6ad55;
+        }
+
+        /* Event Log */
+        .event-log {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #ffff00;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(255, 255, 0, 0.3);
+        }
+
+        .event-log::before {
+            content: 'CONSOLE://EVENT_STREAM';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            background: #ffff00;
+            color: #000;
+            padding: 2px 10px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .event-log h3 {
+            color: #ffff00;
+            margin-bottom: 15px;
+            margin-top: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .log-content {
+            height: 150px;
+            overflow-y: auto;
+            padding: 10px;
+            background: #000;
+            border: 1px solid rgba(255, 255, 0, 0.3);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.85rem;
+        }
+
+        .log-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .log-content::-webkit-scrollbar-track {
+            background: #000;
+            border: 1px solid #ffff00;
+        }
+
+        .log-content::-webkit-scrollbar-thumb {
+            background: #ffff00;
+            border: 1px solid #000;
+        }
+
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255, 255, 0, 0.2);
+            animation: logSlide 0.5s ease;
+        }
+
+        @keyframes logSlide {
+            from { 
+                opacity: 0; 
+                transform: translateX(-20px);
+            }
+            to { 
+                opacity: 1; 
+                transform: translateX(0);
+            }
+        }
+
+        .log-time {
+            color: #666;
+            margin-right: 8px;
+            font-size: 0.75rem;
+        }
+
+        .log-message {
+            color: #ffff00;
+        }
+
+        .log-message.success {
+            color: #00ff00;
+        }
+
+        .log-message.warning {
+            color: #ff8800;
+        }
+
+        .log-message.error {
+            color: #ff0000;
+            animation: errorBlink 1s ease-in-out infinite;
+        }
+
+        @keyframes errorBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .log-message.info {
+            color: #00ffff;
+        }
+
+        /* Protocol Info */
+        .protocol-info {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #00ffff;
+            padding: 15px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .protocol-info::before {
+            content: 'PROTOCOL://INFO';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            background: #00ffff;
+            color: #000;
+            padding: 2px 10px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .protocol-info h4 {
+            color: #00ffff;
+            margin-bottom: 10px;
+            margin-top: 5px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+        }
+
+        .protocol-info ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .protocol-info li {
+            padding: 4px 0;
+            padding-left: 15px;
+            position: relative;
+            color: #00ff00;
+            font-size: 0.8rem;
+        }
+
+        .protocol-info li:before {
+            content: "▶";
+            position: absolute;
+            left: 0;
+            color: #ff00ff;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        /* Footer */
+        .footer-version {
+            font-size: 0.7rem;
+            color: #333;
+            text-align: center;
+            margin: 20px 0 10px 0;
+            opacity: 0.6;
+            font-family: 'Share Tech Mono', monospace;
+            text-shadow: none;
+            letter-spacing: 1px;
+            border-top: 1px solid #222;
+            padding-top: 15px;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 300px 1fr;
+            }
+        }
+
+        @media (max-width: 992px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .left-panel {
+                order: 2;
+            }
+            
+            .visualization-panel {
+                order: 1;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .network-container {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <pre class="ascii-art">
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║    ██████╗ ██╗███████╗ ██████╗ ██████╗ ██╗   ██╗███████╗██████╗ ██╗   ██╗    ║
+║    ██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██║   ██║██╔════╝██╔══██╗╚██╗ ██╔╝    ║
+║    ██║  ██║██║███████╗██║     ██║   ██║██║   ██║█████╗  ██████╔╝ ╚████╔╝     ║
+║    ██║  ██║██║╚════██║██║     ██║   ██║╚██╗ ██╔╝██╔══╝  ██╔══██╗  ╚██╔╝      ║
+║    ██████╔╝██║███████║╚██████╗╚██████╔╝ ╚████╔╝ ███████╗██║  ██║   ██║       ║
+║    ╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝   ╚═══╝  ╚══════╝╚═╝  ╚═╝   ╚═╝       ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+            </pre>
+            <h1>DISCOVERY PROTOCOL</h1>
+            <p class="tagline">[ NEURAL NETWORK SIMULATION // SELF-ORGANIZING TREE ]</p>
+        </header>
+
+        <div class="main-content">
+            <div class="left-panel">
+                <div class="control-panel">
+                    <h3>NETWORK CONTROL</h3>
+                    <button id="addNodeBtn" class="btn">ADD NODE</button>
+                    <button id="addMultipleBtn" class="btn">ADD 5 NODES</button>
+                    <button id="stepBtn" class="btn">RUN DISCOVERY ROUND</button>
+                    <button id="autoRunBtn" class="btn">AUTO RUN</button>
+                    <button id="resetBtn" class="btn btn-danger">RESET NETWORK</button>
+                </div>
+
+                <div class="stats-panel">
+                    <h3>NETWORK TELEMETRY</h3>
+                    <div class="stat-item">
+                        <span class="stat-label">Total Nodes:</span>
+                        <span id="totalNodes" class="stat-value">3</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Root Nodes:</span>
+                        <span id="rootNodes" class="stat-value">3</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Trunk Nodes:</span>
+                        <span id="trunkNodes" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Branch Nodes:</span>
+                        <span id="branchNodes" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Leaf Nodes:</span>
+                        <span id="leafNodes" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Average Depth:</span>
+                        <span id="avgDepth" class="stat-value">0.00</span>
+                    </div>
+                </div>
+
+                <div class="protocol-info">
+                    <h4>PROTOCOL FEATURES</h4>
+                    <ul>
+                        <li>Self-organizing tree structure</li>
+                        <li>Latency-based node attachment</li>
+                        <li>Real-time network optimization</li>
+                        <li>Automatic failure recovery</li>
+                        <li>Geographic clustering emergence</li>
+                        <li>Capacity-driven promotion</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="visualization-panel">
+                <div id="networkContainer" class="network-container"></div>
+            </div>
+        </div>
+
+        <div class="event-log">
+            <h3>EVENT STREAM</h3>
+            <div id="eventLog" class="log-content"></div>
+        </div>
+        
+        <div class="footer-version">DISCOVERY v0.1 "Neural-Matrix" // REPRAM.io</div>
+    </div>
+
+    <script>
+        class DiscoverySimulation {
+            constructor() {
+                console.log('DISCOVERY PROTOCOL NEURAL MATRIX INITIALIZING...');
+                
+                this.nodes = new Map();
+                this.nodeIdCounter = 1;
+                this.autoRunInterval = null;
+                this.discoveryMessages = [];
+                
+                // Realistic capacity limits based on protocol
+                this.capacities = {
+                    root: 15,    // Roots can handle more direct connections
+                    trunk: 8,    // Trunks: 5-15 per protocol
+                    branch: 15,  // Branches: 10-25 per protocol  
+                    leaf: 0      // Leaves cannot have children
+                };
+                
+                // Protocol parameters
+                this.migrationThreshold = 0.25; // 25% improvement needed
+                this.migrationCooldown = 10000;  // 10 seconds between migrations
+                this.discoveryTimeout = 8000;    // 8 seconds for discovery
+                
+                this.container = document.getElementById('networkContainer');
+                this.viewOffset = { x: 0, y: 0 };
+                this.isDragging = false;
+                this.dragStart = { x: 0, y: 0 };
+                
+                this.initializeRootNodes();
+                this.setupEventHandlers();
+                this.startDiscoveryAnimation();
+                this.updateVisualization();
+                this.updateStats();
+                
+                console.log('NEURAL MATRIX ONLINE - READY FOR NODE INJECTION');
+                this.logEvent('NEURAL MATRIX INITIALIZED - 3 ROOT NODES ACTIVE', 'success');
+            }
+            
+            initializeRootNodes() {
+                const rootLocations = [
+                    { name: 'ROOT-ALPHA', lat: 40.7128, lon: -74.0060, label: 'α' },
+                    { name: 'ROOT-BETA', lat: 51.5074, lon: -0.1278, label: 'β' },
+                    { name: 'ROOT-GAMMA', lat: 35.6762, lon: 139.6503, label: 'γ' }
+                ];
+                
+                rootLocations.forEach((loc, index) => {
+                    const node = {
+                        id: loc.name,
+                        type: 'root',
+                        location: { lat: loc.lat, lon: loc.lon },
+                        label: loc.label,
+                        parent: null,
+                        children: [],
+                        capacity: this.capacities.root,
+                        depth: 0,
+                        isAlive: true,
+                        x: 150 + index * 250,
+                        y: 100
+                    };
+                    this.nodes.set(loc.name, node);
+                });
+            }
+            
+            setupEventHandlers() {
+                document.getElementById('addNodeBtn').addEventListener('click', () => {
+                    this.addNode();
+                });
+                
+                document.getElementById('addMultipleBtn').addEventListener('click', () => {
+                    this.addMultipleNodes(5);
+                });
+                
+                document.getElementById('stepBtn').addEventListener('click', () => {
+                    this.runDiscoveryRound();
+                });
+                
+                document.getElementById('autoRunBtn').addEventListener('click', () => {
+                    this.toggleAutoRun();
+                });
+                
+                document.getElementById('resetBtn').addEventListener('click', () => {
+                    this.resetNetwork();
+                });
+                
+                // Add drag functionality
+                this.setupDragHandlers();
+            }
+            
+            setupDragHandlers() {
+                const container = this.container;
+                
+                container.addEventListener('mousedown', (e) => {
+                    if (e.target.classList.contains('node')) {
+                        e.stopPropagation();
+                        return;
+                    }
+                    
+                    this.isDragging = true;
+                    this.dragStart = { x: e.clientX - this.viewOffset.x, y: e.clientY - this.viewOffset.y };
+                    container.classList.add('dragging');
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (!this.isDragging) return;
+                    
+                    this.viewOffset.x = e.clientX - this.dragStart.x;
+                    this.viewOffset.y = e.clientY - this.dragStart.y;
+                    
+                    this.updateVisualization();
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    if (this.isDragging) {
+                        this.isDragging = false;
+                        container.classList.remove('dragging');
+                    }
+                });
+            }
+            
+            startDiscoveryAnimation() {
+                // Clean up and add new messages
+                setInterval(() => {
+                    this.discoveryMessages = this.discoveryMessages.filter(msg => 
+                        Date.now() - msg.startTime < msg.duration
+                    );
+                    
+                    // Add random discovery messages between existing nodes
+                    const activeNodes = Array.from(this.nodes.values()).filter(n => n.isAlive && n.type !== 'discovering');
+                    if (activeNodes.length > 1 && Math.random() < 0.15) {
+                        const source = activeNodes[Math.floor(Math.random() * activeNodes.length)];
+                        const target = activeNodes[Math.floor(Math.random() * activeNodes.length)];
+                        
+                        if (source !== target) {
+                            this.addDiscoveryMessage(source, target, 'discovery');
+                        }
+                    }
+                }, 1200);
+                
+                // Smooth animation loop
+                const animateMessages = () => {
+                    this.updateDiscoveryMessages();
+                    requestAnimationFrame(animateMessages);
+                };
+                animateMessages();
+            }
+            
+            addNode() {
+                const nodeId = `NODE-${this.nodeIdCounter.toString().padStart(3, '0')}`;
+                this.nodeIdCounter++;
+                
+                const location = {
+                    lat: (Math.random() * 160) - 80,
+                    lon: (Math.random() * 340) - 170
+                };
+                
+                const node = {
+                    id: nodeId,
+                    type: 'discovering',
+                    location: location,
+                    label: nodeId.replace('NODE-', ''),
+                    parent: null,
+                    children: [],
+                    capacity: 0,
+                    depth: 0,
+                    isAlive: true,
+                    x: Math.random() * 500 + 100,
+                    y: Math.random() * 300 + 200,
+                    discoveryState: 'probing',
+                    discoveryResponses: [],
+                    discoveryStartTime: Date.now()
+                };
+                
+                this.nodes.set(nodeId, node);
+                this.logEvent(`${nodeId} MATERIALIZED - INITIATING DISCOVERY SEQUENCE`, 'warning');
+                
+                // Start discovery process
+                this.startNodeDiscovery(node);
+                
+                this.updateVisualization();
+                this.updateStats();
+            }
+            
+            addMultipleNodes(count) {
+                this.logEvent(`MASS NODE INJECTION INITIATED - ${count} UNITS`, 'info');
+                for (let i = 0; i < count; i++) {
+                    setTimeout(() => this.addNode(), i * 400);
+                }
+            }
+            
+            startNodeDiscovery(node) {
+                // Step 1: Contact all root nodes for topology information
+                const rootNodes = Array.from(this.nodes.values()).filter(n => n.type === 'root' && n.isAlive);
+                
+                if (rootNodes.length === 0) {
+                    this.logEvent(`${node.id} DISCOVERY ABORT - NO ROOT NODES DETECTED`, 'error');
+                    this.nodes.delete(node.id);
+                    return;
+                }
+                
+                this.logEvent(`${node.id} SCANNING ${rootNodes.length} ROOT NODES FOR TOPOLOGY DATA`, 'info');
+                
+                let rootResponses = [];
+                rootNodes.forEach((root, index) => {
+                    setTimeout(() => {
+                        this.addDiscoveryMessage(node, root, 'topology-request', () => {
+                            const latency = this.calculateLatency(node.location, root.location);
+                            const responseDelay = latency + Math.random() * 30;
+                            
+                            setTimeout(() => {
+                                this.addDiscoveryMessage(root, node, 'topology-response', () => {
+                                    rootResponses.push({
+                                        root: root,
+                                        latency: latency,
+                                        topology: this.getNetworkTopology(root)
+                                    });
+                                    
+                                    this.logEvent(`${node.id} RX TOPOLOGY FROM ${root.id} (${latency}ms)`, 'info');
+                                    
+                                    if (rootResponses.length === rootNodes.length) {
+                                        this.processTopologyResponses(node, rootResponses);
+                                    }
+                                });
+                            }, responseDelay);
+                        });
+                    }, index * 200);
+                });
+                
+                // Timeout for topology discovery
+                setTimeout(() => {
+                    if (node.discoveryState === 'probing' && rootResponses.length > 0) {
+                        this.processTopologyResponses(node, rootResponses);
+                    } else if (rootResponses.length === 0) {
+                        this.logEvent(`${node.id} DISCOVERY TIMEOUT - NO TOPOLOGY RESPONSES`, 'error');
+                        this.nodes.delete(node.id);
+                        this.updateVisualization();
+                        this.updateStats();
+                    }
+                }, this.discoveryTimeout);
+            }
+            
+            getNetworkTopology(root) {
+                const topology = {
+                    trunks: [],
+                    branches: [],
+                    capacityInfo: {}
+                };
+                
+                const getAllDescendants = (node) => {
+                    let descendants = [node];
+                    node.children.forEach(child => {
+                        descendants = descendants.concat(getAllDescendants(child));
+                    });
+                    return descendants;
+                };
+                
+                const descendants = getAllDescendants(root);
+                
+                descendants.forEach(node => {
+                    if (node.type === 'trunk') {
+                        topology.trunks.push({
+                            id: node.id,
+                            latency: this.calculateLatency(root.location, node.location),
+                            capacity: node.capacity,
+                            used: node.children.length
+                        });
+                    } else if (node.type === 'branch') {
+                        topology.branches.push({
+                            id: node.id,
+                            parentId: node.parent.id,
+                            latency: this.calculateLatency(root.location, node.location),
+                            capacity: node.capacity,
+                            used: node.children.length
+                        });
+                    }
+                    
+                    topology.capacityInfo[node.id] = {
+                        capacity: node.capacity,
+                        used: node.children.length,
+                        available: node.capacity - node.children.length
+                    };
+                });
+                
+                return topology;
+            }
+            
+            processTopologyResponses(node, rootResponses) {
+                rootResponses.sort((a, b) => a.latency - b.latency);
+                const bestRoot = rootResponses[0];
+                
+                this.logEvent(`${node.id} SELECTED ${bestRoot.root.id} AS PRIMARY ROOT (${bestRoot.latency}ms)`, 'success');
+                
+                const topology = bestRoot.topology;
+                let candidates = [];
+                
+                // 1. Try to become a Leaf (attach to available branches)
+                topology.branches.forEach(branch => {
+                    const branchNode = this.nodes.get(branch.id);
+                    if (branchNode && branchNode.children.length < branchNode.capacity) {
+                        candidates.push({
+                            node: branchNode,
+                            newType: 'leaf',
+                            priority: 1,
+                            latency: this.calculateLatency(node.location, branchNode.location)
+                        });
+                    }
+                });
+                
+                // 2. Try to become a Branch (attach to available trunks)
+                if (candidates.length === 0) {
+                    topology.trunks.forEach(trunk => {
+                        const trunkNode = this.nodes.get(trunk.id);
+                        if (trunkNode && trunkNode.children.length < trunkNode.capacity) {
+                            candidates.push({
+                                node: trunkNode,
+                                newType: 'branch',
+                                priority: 2,
+                                latency: this.calculateLatency(node.location, trunkNode.location)
+                            });
+                        }
+                    });
+                }
+                
+                // 3. Try to become a Trunk (attach to root)
+                if (candidates.length === 0) {
+                    if (bestRoot.root.children.length < bestRoot.root.capacity) {
+                        candidates.push({
+                            node: bestRoot.root,
+                            newType: 'trunk',
+                            priority: 3,
+                            latency: bestRoot.latency
+                        });
+                    }
+                }
+                
+                if (candidates.length === 0) {
+                    this.logEvent(`${node.id} ATTACHMENT FAILED - NETWORK AT CAPACITY`, 'error');
+                    this.nodes.delete(node.id);
+                    this.updateVisualization();
+                    this.updateStats();
+                    return;
+                }
+                
+                candidates.sort((a, b) => {
+                    if (a.priority !== b.priority) return a.priority - b.priority;
+                    return a.latency - b.latency;
+                });
+                
+                const bestCandidate = candidates[0];
+                this.attachNodeToParent(node, bestCandidate.node);
+                node.type = bestCandidate.newType;
+                
+                if (node.type === 'trunk') node.capacity = this.capacities.trunk;
+                else if (node.type === 'branch') node.capacity = this.capacities.branch;
+                else node.capacity = 0;
+                
+                this.logEvent(`${node.id} INTEGRATED AS ${node.type.toUpperCase()} → ${bestCandidate.node.id} (${bestCandidate.latency}ms)`, 'success');
+                
+                // Send final attachment messages
+                this.addDiscoveryMessage(node, bestCandidate.node, 'attach');
+                setTimeout(() => {
+                    this.addDiscoveryMessage(bestCandidate.node, node, 'confirm');
+                }, 300);
+                
+                this.updateVisualization();
+                this.updateStats();
+            }
+            
+            attachNodeToParent(node, parent) {
+                node.parent = parent;
+                parent.children.push(node);
+                node.depth = parent.depth + 1;
+                node.discoveryState = 'connected';
+                
+                // Position near parent with some spread
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 80 + Math.random() * 40;
+                node.x = parent.x + Math.cos(angle) * distance;
+                node.y = parent.y + Math.sin(angle) * distance;
+            }
+            
+            calculateLatency(loc1, loc2) {
+                const R = 6371;
+                const dLat = (loc2.lat - loc1.lat) * Math.PI / 180;
+                const dLon = (loc2.lon - loc1.lon) * Math.PI / 180;
+                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                          Math.cos(loc1.lat * Math.PI / 180) * Math.cos(loc2.lat * Math.PI / 180) *
+                          Math.sin(dLon/2) * Math.sin(dLon/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                const distance = R * c;
+                return Math.floor(distance / 100);
+            }
+            
+            runDiscoveryRound() {
+                this.logEvent('INITIATING NETWORK OPTIMIZATION SEQUENCE...', 'warning');
+                let migrations = 0;
+                const currentTime = Date.now();
+                
+                const eligibleNodes = Array.from(this.nodes.values()).filter(n => 
+                    n.isAlive && 
+                    n.type !== 'root' && 
+                    n.type !== 'discovering' && 
+                    n.parent &&
+                    (!n.lastMigration || currentTime - n.lastMigration > this.migrationCooldown)
+                );
+                
+                this.logEvent(`SCANNING ${eligibleNodes.length} NODES FOR OPTIMIZATION POTENTIAL`, 'info');
+                
+                for (const node of eligibleNodes) {
+                    const currentLatency = this.calculateLatency(node.location, node.parent.location);
+                    const candidates = [];
+                    
+                    for (const [id, potential] of this.nodes) {
+                        if (!potential.isAlive || potential === node || potential === node.parent) continue;
+                        if (potential.type === 'leaf' || potential.type === 'discovering') continue;
+                        if (potential.children.length >= potential.capacity) continue;
+                        if (this.wouldCreateCycle(node, potential)) continue;
+                        
+                        const newLatency = this.calculateLatency(node.location, potential.location);
+                        
+                        if (newLatency < currentLatency * (1 - this.migrationThreshold)) {
+                            candidates.push({
+                                parent: potential,
+                                latency: newLatency,
+                                improvement: (currentLatency - newLatency) / currentLatency
+                            });
+                        }
+                    }
+                    
+                    if (candidates.length > 0) {
+                        candidates.sort((a, b) => b.improvement - a.improvement);
+                        const bestCandidate = candidates[0];
+                        
+                        this.migrateNode(node, bestCandidate.parent);
+                        node.lastMigration = currentTime;
+                        migrations++;
+                        
+                        const improvementPercent = (bestCandidate.improvement * 100).toFixed(1);
+                        this.logEvent(`${node.id} MIGRATED → ${bestCandidate.parent.id} (+${improvementPercent}% EFFICIENCY)`, 'success');
+                        
+                        this.addDiscoveryMessage(node, bestCandidate.parent, 'migrate');
+                        setTimeout(() => {
+                            this.addDiscoveryMessage(bestCandidate.parent, node, 'confirm');
+                        }, 200);
+                    }
+                }
+                
+                if (migrations === 0) {
+                    this.logEvent('OPTIMIZATION COMPLETE - NETWORK AT OPTIMAL EFFICIENCY', 'success');
+                } else {
+                    this.logEvent(`OPTIMIZATION COMPLETE - ${migrations} NODES REPOSITIONED`, 'success');
+                }
+                
+                this.updateVisualization();
+                this.updateStats();
+            }
+            
+            migrateNode(node, newParent) {
+                if (node.parent) {
+                    node.parent.children = node.parent.children.filter(c => c !== node);
+                }
+                
+                node.parent = newParent;
+                newParent.children.push(node);
+                
+                this.updateNodeDepth(node);
+                
+                // Smooth repositioning
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 80 + Math.random() * 40;
+                node.x = newParent.x + Math.cos(angle) * distance;
+                node.y = newParent.y + Math.sin(angle) * distance;
+            }
+            
+            updateNodeDepth(node) {
+                if (node.parent) {
+                    node.depth = node.parent.depth + 1;
+                }
+                node.children.forEach(child => {
+                    this.updateNodeDepth(child);
+                });
+            }
+            
+            wouldCreateCycle(node, potentialParent) {
+                let current = potentialParent;
+                while (current) {
+                    if (current === node) return true;
+                    current = current.parent;
+                }
+                return false;
+            }
+            
+            toggleAutoRun() {
+                const btn = document.getElementById('autoRunBtn');
+                if (this.autoRunInterval) {
+                    clearInterval(this.autoRunInterval);
+                    this.autoRunInterval = null;
+                    btn.textContent = 'AUTO RUN';
+                    this.logEvent('AUTO-EVOLUTION DISABLED', 'warning');
+                } else {
+                    this.autoRunInterval = setInterval(() => {
+                        if (Math.random() < 0.7) {
+                            this.addNode();
+                        } else {
+                            this.runDiscoveryRound();
+                        }
+                    }, 3000);
+                    btn.textContent = 'STOP AUTO';
+                    this.logEvent('AUTO-EVOLUTION ENABLED - NETWORK WILL SELF-EXPAND', 'success');
+                }
+            }
+            
+            resetNetwork() {
+                if (this.autoRunInterval) {
+                    this.toggleAutoRun();
+                }
+                
+                this.nodes.clear();
+                this.nodeIdCounter = 1;
+                this.discoveryMessages = [];
+                this.initializeRootNodes();
+                
+                this.updateVisualization();
+                this.updateStats();
+                this.logEvent('NEURAL MATRIX RESET - ALL NODES PURGED', 'warning');
+            }
+            
+            addDiscoveryMessage(source, target, type, callback = null) {
+                const message = {
+                    id: Math.random(),
+                    source: source,
+                    target: target,
+                    startTime: Date.now(),
+                    duration: type === 'topology-request' ? 1500 : type === 'topology-response' ? 1000 : 2000,
+                    type: type,
+                    callback: callback
+                };
+                
+                this.discoveryMessages.push(message);
+                
+                if (callback) {
+                    setTimeout(callback, message.duration);
+                }
+            }
+            
+            updateDiscoveryMessages() {
+                const container = this.container;
+                
+                container.querySelectorAll('.discovery-message').forEach(el => el.remove());
+                
+                this.discoveryMessages.forEach(msg => {
+                    const progress = (Date.now() - msg.startTime) / msg.duration;
+                    if (progress >= 1) return;
+                    
+                    const x = msg.source.x + (msg.target.x - msg.source.x) * progress;
+                    const y = msg.source.y + (msg.target.y - msg.source.y) * progress;
+                    
+                    const element = document.createElement('div');
+                    element.className = `discovery-message ${msg.type}`;
+                    element.style.left = (x + this.viewOffset.x) + 'px';
+                    element.style.top = (y + this.viewOffset.y) + 'px';
+                    element.style.opacity = 1 - progress * 0.5;
+                    
+                    container.appendChild(element);
+                });
+            }
+            
+            updateVisualization() {
+                const container = this.container;
+                
+                container.querySelectorAll('.node, .connection').forEach(el => el.remove());
+                
+                const nodes = Array.from(this.nodes.values()).filter(n => n.isAlive);
+                
+                // Draw connections first
+                nodes.forEach(node => {
+                    if (node.parent) {
+                        const connection = document.createElement('div');
+                        connection.className = 'connection';
+                        
+                        const dx = node.x - node.parent.x;
+                        const dy = node.y - node.parent.y;
+                        const length = Math.sqrt(dx*dx + dy*dy);
+                        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                        
+                        connection.style.left = (node.parent.x + this.viewOffset.x) + 'px';
+                        connection.style.top = (node.parent.y + this.viewOffset.y) + 'px';
+                        connection.style.width = length + 'px';
+                        connection.style.transform = `rotate(${angle}deg)`;
+                        
+                        container.appendChild(connection);
+                    }
+                });
+                
+                // Draw nodes
+                nodes.forEach(node => {
+                    const element = document.createElement('div');
+                    element.className = `node node-${node.type}`;
+                    element.textContent = node.label;
+                    element.style.left = (node.x - 12 + this.viewOffset.x) + 'px';
+                    element.style.top = (node.y - 12 + this.viewOffset.y) + 'px';
+                    
+                    if (node.type !== 'root') {
+                        element.addEventListener('click', () => {
+                            this.removeNode(node.id);
+                        });
+                    }
+                    
+                    container.appendChild(element);
+                });
+            }
+            
+            removeNode(nodeId) {
+                const node = this.nodes.get(nodeId);
+                if (!node || node.type === 'root') return;
+                
+                const orphans = [...node.children];
+                
+                if (node.parent) {
+                    node.parent.children = node.parent.children.filter(c => c !== node);
+                }
+                
+                this.nodes.delete(nodeId);
+                
+                // Reattach orphans using discovery process
+                orphans.forEach(orphan => {
+                    orphan.parent = null;
+                    orphan.type = 'discovering';
+                    orphan.discoveryState = 'probing';
+                    orphan.discoveryResponses = [];
+                    orphan.discoveryStartTime = Date.now();
+                    this.startNodeDiscovery(orphan);
+                });
+                
+                this.logEvent(`${nodeId} TERMINATED - ${orphans.length} ORPHANS REASSIGNING`, 'warning');
+                this.updateVisualization();
+                this.updateStats();
+            }
+            
+            updateStats() {
+                const stats = { total: 0, root: 0, trunk: 0, branch: 0, leaf: 0, discovering: 0, depths: [] };
+                
+                for (const [id, node] of this.nodes) {
+                    if (!node.isAlive) continue;
+                    stats.total++;
+                    if (node.type === 'discovering') {
+                        stats.discovering++;
+                    } else {
+                        stats[node.type]++;
+                        if (node.type !== 'root') stats.depths.push(node.depth);
+                    }
+                }
+                
+                const avgDepth = stats.depths.length > 0 
+                    ? (stats.depths.reduce((a, b) => a + b, 0) / stats.depths.length).toFixed(2)
+                    : '0.00';
+                
+                document.getElementById('totalNodes').textContent = stats.total;
+                document.getElementById('rootNodes').textContent = stats.root;
+                document.getElementById('trunkNodes').textContent = stats.trunk;
+                document.getElementById('branchNodes').textContent = stats.branch;
+                document.getElementById('leafNodes').textContent = stats.leaf;
+                document.getElementById('avgDepth').textContent = avgDepth;
+            }
+            
+            logEvent(message, type = 'info') {
+                const log = document.getElementById('eventLog');
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                
+                const time = new Date().toLocaleTimeString();
+                entry.innerHTML = `
+                    <span class="log-time">${time}</span>
+                    <span class="log-message ${type}">${message}</span>
+                `;
+                
+                log.insertBefore(entry, log.firstChild);
+                
+                while (log.children.length > 20) {
+                    log.removeChild(log.lastChild);
+                }
+            }
+        }
+
+        // Initialize simulation when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('NEURAL MATRIX BOOTSTRAP SEQUENCE INITIATED...');
+            window.simulation = new DiscoverySimulation();
+        });
+    </script>
+</body>
+</html>
