@@ -828,6 +828,117 @@
             51%, 100% { opacity: 0; }
         }
 
+        /* Developer Documentation */
+        .developer-docs {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #00ffff;
+            padding: 25px;
+            margin: 30px 0 20px 0;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+        
+        .developer-docs::before {
+            content: 'DEVELOPER://DOCUMENTATION';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            background: #00ffff;
+            color: #000;
+            padding: 2px 10px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        
+        .developer-docs h3 {
+            color: #00ffff;
+            margin-bottom: 20px;
+            margin-top: 10px;
+            font-size: 1.3rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            text-align: center;
+        }
+        
+        .doc-section {
+            margin-bottom: 25px;
+            padding: 15px;
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            background: rgba(0, 255, 255, 0.05);
+        }
+        
+        .doc-section h4 {
+            color: #ffff00;
+            margin-bottom: 12px;
+            font-size: 1.1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .doc-section p {
+            color: #00ff00;
+            line-height: 1.6;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+        
+        .doc-section em {
+            color: #ff00ff;
+            font-style: italic;
+        }
+        
+        .doc-section strong {
+            color: #ffff00;
+            font-weight: bold;
+        }
+        
+        .doc-section ul, .doc-section ol {
+            margin-left: 20px;
+            color: #00ff00;
+        }
+        
+        .doc-section li {
+            margin-bottom: 5px;
+            line-height: 1.5;
+        }
+        
+        .traffic-legend {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .traffic-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            animation: dotPulse 2s infinite;
+        }
+        
+        @keyframes dotPulse {
+            0%, 100% { opacity: 0.7; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+        
+        .traffic-purple { background: #bb86fc; box-shadow: 0 0 8px #bb86fc; }
+        .traffic-pink { background: #cf6fff; box-shadow: 0 0 8px #cf6fff; }
+        .traffic-green { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+        .traffic-yellow { background: #eab308; box-shadow: 0 0 8px #eab308; }
+        .traffic-orange { background: #fb923c; box-shadow: 0 0 8px #fb923c; }
+        .traffic-cyan { background: #06d6a0; box-shadow: 0 0 8px #06d6a0; }
+        
         /* Footer */
         .footer-version {
             font-size: 0.7rem;
@@ -978,6 +1089,58 @@
         <div class="event-log">
             <h3>EVENT STREAM</h3>
             <div id="eventLog" class="log-content"></div>
+        </div>
+        
+        <!-- Developer Documentation -->
+        <div class="developer-docs">
+            <h3>PROTOCOL DOCUMENTATION</h3>
+            
+            <div class="doc-section">
+                <h4>🏗️ TOPOLOGY vs DATA FLOW</h4>
+                <p>The tree connections you see represent the <strong>discovery topology</strong>, not data transmission paths. Nodes use this hierarchy purely for service discovery - to learn who exists in the network. Once discovered, <strong>data flows directly</strong> between any two nodes via standard internet routing, regardless of tree position.</p>
+                <p><em>Example:</em> A Terminal in Tokyo can send data directly to a Terminal in London, even though they're under different Relays. The tree just told them about each other's existence.</p>
+            </div>
+            
+            <div class="doc-section">
+                <h4>🎯 PROTOCOL PURPOSE</h4>
+                <p>SYNTH TREE solves the <strong>peer discovery problem</strong> for distributed applications. Instead of hardcoding server lists or requiring external coordination, nodes automatically:</p>
+                <ul>
+                    <li>Find the optimal attachment point based on network latency</li>
+                    <li>Learn about all other nodes in the network</li>
+                    <li>Self-organize into efficient geographic clusters</li>
+                    <li>Adapt when nodes join, leave, or fail</li>
+                </ul>
+            </div>
+            
+            <div class="doc-section">
+                <h4>🔮 DISCOVERY ROUNDS</h4>
+                <p>Discovery rounds are periodic optimization cycles where nodes probe the network for better positions. Each round involves:</p>
+                <ol>
+                    <li><span class="traffic-purple">Purple packets</span> - Topology requests to mainframes</li>
+                    <li><span class="traffic-pink">Pink packets</span> - Network topology responses</li>
+                    <li><span class="traffic-yellow">Yellow packets</span> - Migration requests to better parents</li>
+                    <li><span class="traffic-orange">Orange packets</span> - Attachment confirmations</li>
+                </ol>
+                <p>This creates a self-optimizing network that continuously improves its structure.</p>
+            </div>
+            
+            <div class="doc-section">
+                <h4>📡 NETWORK TRAFFIC TYPES</h4>
+                <div class="traffic-legend">
+                    <div class="traffic-item"><span class="dot traffic-purple"></span> Topology Discovery</div>
+                    <div class="traffic-item"><span class="dot traffic-pink"></span> Network Responses</div>
+                    <div class="traffic-item"><span class="dot traffic-green"></span> Health Checks</div>
+                    <div class="traffic-item"><span class="dot traffic-yellow"></span> Status Broadcasts</div>
+                    <div class="traffic-item"><span class="dot traffic-orange"></span> Migration Traffic</div>
+                    <div class="traffic-item"><span class="dot traffic-cyan"></span> Peer Keepalives</div>
+                </div>
+                <p>The animated data packets represent control plane traffic for network coordination, not user data transmission.</p>
+            </div>
+            
+            <div class="doc-section">
+                <h4>🌍 REAL-WORLD APPLICATION</h4>
+                <p>In production, this protocol enables applications like REPRAM to deploy globally without complex configuration. Nodes automatically discover each other, form efficient clusters, and maintain network health - perfect for distributed databases, CDNs, or any system requiring dynamic peer discovery.</p>
+            </div>
         </div>
         
         <div class="footer-version">SYNTH-TREE v0.1 "Cyberpunk-Matrix" // REPRAM.io</div>
