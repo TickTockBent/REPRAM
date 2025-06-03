@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # Remote nodes - bootstrap from home node
+  remote-node-1:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-remote-1
+    ports:
+      - "8081:8080"  # HTTP API
+      - "9091:9090"  # Gossip protocol
+    environment:
+      - REPRAM_NODE_ID=remote-node-1
+      - NODE_ADDRESS=remote-node-1
+      - REPRAM_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPLICATION_FACTOR=3
+      # Bootstrap from home node - can list multiple peers comma-separated
+      - REPRAM_BOOTSTRAP_PEERS=home-node:8080
+    networks:
+      - repram-network
+    volumes:
+      - /tmp/repram-remote-1:/tmp/repram
+    depends_on:
+      - check-home-node
+
+  remote-node-2:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-remote-2
+    ports:
+      - "8082:8080"  # HTTP API
+      - "9092:9090"  # Gossip protocol
+    environment:
+      - REPRAM_NODE_ID=remote-node-2
+      - NODE_ADDRESS=remote-node-2
+      - REPRAM_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPLICATION_FACTOR=3
+      # Bootstrap from home node - can list multiple peers comma-separated
+      - REPRAM_BOOTSTRAP_PEERS=home-node:8080
+    networks:
+      - repram-network
+    volumes:
+      - /tmp/repram-remote-2:/tmp/repram
+    depends_on:
+      - check-home-node
+
+  remote-node-3:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: cluster-node
+    container_name: repram-remote-3
+    ports:
+      - "8083:8080"  # HTTP API
+      - "9093:9090"  # Gossip protocol
+    environment:
+      - REPRAM_NODE_ID=remote-node-3
+      - NODE_ADDRESS=remote-node-3
+      - REPRAM_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPLICATION_FACTOR=3
+      # Bootstrap from home node - could also bootstrap from multiple peers
+      # Example: REPRAM_BOOTSTRAP_PEERS=home-node:8080,remote-node-1:8080
+      - REPRAM_BOOTSTRAP_PEERS=home-node:8080
+    networks:
+      - repram-network
+    volumes:
+      - /tmp/repram-remote-3:/tmp/repram
+    depends_on:
+      - check-home-node
+
+  # Helper service to ensure home node is reachable
+  check-home-node:
+    image: busybox
+    command: sh -c "until nc -z home-node 8080; do echo 'Waiting for home node...'; sleep 2; done; echo 'Home node is ready!'"
+    networks:
+      - repram-network
+
+networks:
+  repram-network:
+    external: true
+    name: repram-global-network

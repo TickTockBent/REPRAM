@@ -8,12 +8,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
 	"repram/internal/cluster"
+	"repram/internal/discovery"
 	"repram/internal/gossip"
 )
 
@@ -24,7 +27,8 @@ func main() {
 		nodeID = os.Getenv("NODE_ID")
 	}
 	if nodeID == "" {
-		nodeID = "node-1"
+		// Generate a unique node ID if not provided
+		nodeID = fmt.Sprintf("node-%d", time.Now().UnixNano())
 	}
 	
 	address := os.Getenv("NODE_ADDRESS")
@@ -32,27 +36,79 @@ func main() {
 		address = "localhost"
 	}
 	
-	// Use REPRAM_GOSSIP_PORT or fallback to NODE_PORT
-	portStr := os.Getenv("REPRAM_GOSSIP_PORT")
-	if portStr == "" {
-		portStr = os.Getenv("NODE_PORT")
-	}
-	port := 9090
-	if portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			port = p
-		}
-	}
+	// Check if we should use auto-discovery
+	useAutoDiscovery := os.Getenv("USE_AUTO_DISCOVERY") == "true"
 	
-	// Use REPRAM_PORT or HTTP_PORT
-	httpPortStr := os.Getenv("REPRAM_PORT")
-	if httpPortStr == "" {
-		httpPortStr = os.Getenv("HTTP_PORT")
-	}
-	httpPort := 8080
-	if httpPortStr != "" {
-		if p, err := strconv.Atoi(httpPortStr); err == nil {
-			httpPort = p
+	var httpPort, gossipPort int
+	var bootstrapNodes []string
+	
+	if useAutoDiscovery {
+		// Use port auto-discovery
+		log.Printf("Starting auto-discovery for node %s", nodeID)
+		allocator := discovery.NewPortAllocator(nodeID)
+		
+		// Allocate ports
+		allocatedHTTP, allocatedGossip, err := allocator.AllocatePort()
+		if err != nil {
+			log.Fatalf("Failed to allocate port: %v", err)
+		}
+		
+		httpPort = allocatedHTTP
+		gossipPort = allocatedGossip
+		
+		// Clean up the temporary claim server
+		allocator.Cleanup()
+		
+		// Discover peers
+		peers := allocator.DiscoverPeers()
+		bootstrapNodes = peers
+		
+		// Set up graceful shutdown
+		defer allocator.NotifyShutdown()
+		
+		// Store allocator for use in HTTP handlers
+		httpServer := &HTTPServer{allocator: allocator}
+		defer func() {
+			httpServer.allocator = nil
+		}()
+	} else {
+		// Use traditional configuration
+		
+		// Use REPRAM_GOSSIP_PORT or fallback to NODE_PORT
+		portStr := os.Getenv("REPRAM_GOSSIP_PORT")
+		if portStr == "" {
+			portStr = os.Getenv("NODE_PORT")
+		}
+		gossipPort = 9090
+		if portStr != "" {
+			if p, err := strconv.Atoi(portStr); err == nil {
+				gossipPort = p
+			}
+		}
+		
+		// Use REPRAM_PORT or HTTP_PORT
+		httpPortStr := os.Getenv("REPRAM_PORT")
+		if httpPortStr == "" {
+			httpPortStr = os.Getenv("HTTP_PORT")
+		}
+		httpPort = 8080
+		if httpPortStr != "" {
+			if p, err := strconv.Atoi(httpPortStr); err == nil {
+				httpPort = p
+			}
+		}
+		
+		// Use REPRAM_BOOTSTRAP_PEERS or BOOTSTRAP_NODES
+		bootstrapStr := os.Getenv("REPRAM_BOOTSTRAP_PEERS")
+		if bootstrapStr == "" {
+			bootstrapStr = os.Getenv("BOOTSTRAP_NODES")
+		}
+		if bootstrapStr != "" {
+			bootstrapNodes = strings.Split(bootstrapStr, ",")
+			// Clean up any whitespace
+			for i, node := range bootstrapNodes {
+				bootstrapNodes[i] = strings.TrimSpace(node)
+			}
 		}
 	}
 	
@@ -64,40 +120,55 @@ func main() {
 		}
 	}
 	
-	// Use REPRAM_BOOTSTRAP_PEERS or BOOTSTRAP_NODES
-	bootstrapStr := os.Getenv("REPRAM_BOOTSTRAP_PEERS")
-	if bootstrapStr == "" {
-		bootstrapStr = os.Getenv("BOOTSTRAP_NODES")
-	}
-	var bootstrapNodes []string
-	if bootstrapStr != "" {
-		bootstrapNodes = strings.Split(bootstrapStr, ",")
-		// Clean up any whitespace
-		for i, node := range bootstrapNodes {
-			bootstrapNodes[i] = strings.TrimSpace(node)
-		}
-	}
-	
-	clusterNode := cluster.NewClusterNode(nodeID, address, port, httpPort, replicationFactor)
+	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor)
 	
 	ctx := context.Background()
 	if err := clusterNode.Start(ctx, bootstrapNodes); err != nil {
 		log.Fatalf("Failed to start cluster node: %v", err)
 	}
 	
-	server := &HTTPServer{clusterNode: clusterNode}
+	var allocator *discovery.PortAllocator
+	if useAutoDiscovery {
+		allocator = discovery.NewPortAllocator(nodeID)
+		// Re-populate the active peers list
+		allocator.DiscoverPeers()
+	}
+	
+	server := &HTTPServer{
+		clusterNode: clusterNode,
+		allocator:   allocator,
+		nodeID:      nodeID,
+	}
 	
 	fmt.Printf("REPRAM cluster node %s starting:\n", nodeID)
-	fmt.Printf("  Gossip address: %s:%d\n", address, port)
+	fmt.Printf("  Gossip address: %s:%d\n", address, gossipPort)
 	fmt.Printf("  HTTP address: :%d\n", httpPort)
 	fmt.Printf("  Replication factor: %d\n", replicationFactor)
 	fmt.Printf("  Bootstrap nodes: %v\n", bootstrapNodes)
+	if useAutoDiscovery {
+		fmt.Printf("  Auto-discovery: enabled\n")
+	}
+	
+	// Set up graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	
+	go func() {
+		<-sigChan
+		log.Println("Received shutdown signal")
+		if allocator != nil {
+			allocator.NotifyShutdown()
+		}
+		os.Exit(0)
+	}()
 	
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", httpPort), server.Router()))
 }
 
 type HTTPServer struct {
 	clusterNode *cluster.ClusterNode
+	allocator   *discovery.PortAllocator
+	nodeID      string
 }
 
 
@@ -116,12 +187,87 @@ func (s *HTTPServer) Router() *mux.Router {
 	r.HandleFunc("/gossip/message", s.gossipHandler).Methods("POST")
 	// Bootstrap endpoint
 	r.HandleFunc("/bootstrap", s.bootstrapHandler).Methods("POST")
+	
+	// Discovery endpoints (only if auto-discovery is enabled)
+	if s.allocator != nil {
+		r.HandleFunc("/peer_announce", s.peerAnnounceHandler).Methods("POST")
+		r.HandleFunc("/peer_leaving", s.peerLeavingHandler).Methods("POST")
+		r.HandleFunc("/peers", s.peersHandler).Methods("GET")
+	}
+	
 	return r
 }
 
 func (s *HTTPServer) healthHandler(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"status": "healthy",
+		"node_id": s.nodeID,
+	}
+	
+	if s.allocator != nil {
+		response["discovery_enabled"] = true
+		response["active_peers"] = len(s.allocator.GetActivePeers())
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "OK")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (s *HTTPServer) peerAnnounceHandler(w http.ResponseWriter, r *http.Request) {
+	if s.allocator == nil {
+		http.Error(w, "Auto-discovery not enabled", http.StatusNotImplemented)
+		return
+	}
+	
+	var announcement discovery.PeerAnnouncement
+	if err := json.NewDecoder(r.Body).Decode(&announcement); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	// Add the new peer to our list
+	s.allocator.AddPeer(announcement.HTTPPort)
+	
+	// TODO: Also inform the cluster node about the new peer for gossip
+	// This would require extending the cluster node API
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"acknowledged": true})
+}
+
+func (s *HTTPServer) peerLeavingHandler(w http.ResponseWriter, r *http.Request) {
+	if s.allocator == nil {
+		http.Error(w, "Auto-discovery not enabled", http.StatusNotImplemented)
+		return
+	}
+	
+	var departure discovery.PeerDeparture
+	if err := json.NewDecoder(r.Body).Decode(&departure); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	// Remove the peer from our list
+	s.allocator.RemovePeer(departure.HTTPPort)
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"acknowledged": true})
+}
+
+func (s *HTTPServer) peersHandler(w http.ResponseWriter, r *http.Request) {
+	if s.allocator == nil {
+		http.Error(w, "Auto-discovery not enabled", http.StatusNotImplemented)
+		return
+	}
+	
+	peers := s.allocator.GetActivePeers()
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"peers": peers,
+		"last_updated": time.Now(),
+	})
 }
 
 func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {

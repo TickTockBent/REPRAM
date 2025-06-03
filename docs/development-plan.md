@@ -53,8 +53,8 @@ This document outlines the phased development approach for REPRAM, a distributed
 - ✅ **Container Packaging**: Multi-stage Docker builds, Alpine-based images, non-root user execution
 - ✅ **Advanced Monitoring**: Prometheus metrics with 7 key metrics, real-time collection (15s intervals)
 - ✅ **Security Hardening**: Rate limiting (100 req/sec), request validation, DDoS protection
-- ✅ **Kubernetes Ready**: Complete K8s manifests, StatefulSets, RBAC, network policies
-- ✅ **Helm Charts**: Flexible deployment modes with configurable values
+- ✅ **Flux Deployment**: Auto-discovery mechanism for multi-instance deployment
+- ✅ **Self-Organizing Network**: Nodes automatically discover peers and form clusters
 - ✅ **Load Testing Framework**: Comprehensive testing with multiple scenarios
 - ✅ **Documentation**: Complete deployment guides, monitoring setup, troubleshooting
 

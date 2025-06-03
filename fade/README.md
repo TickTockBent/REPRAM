@@ -15,11 +15,11 @@ Fade demonstrates:
 
 ### Prerequisites
 
-1. Run at least one REPRAM node in raw mode:
+1. Run at least one REPRAM cluster node:
 ```bash
 # From the main REPRAM directory
-make build-raw
-./bin/repram-node-raw
+make build-cluster
+./bin/cluster-node
 ```
 
 The node will start on port 8080 by default.
@@ -50,13 +50,14 @@ go run server.go
 
 Fade consists of:
 - **Static Web UI**: HTML/CSS/JS client that runs in the browser
-- **REPRAM Nodes**: Standard raw nodes that store unencrypted messages
-- **Simple Web Server**: Go server that serves the static files
+- **REPRAM Cluster Nodes**: Gossip-enabled nodes that replicate messages across the network
+- **Fade Server**: Go proxy server that serves the web UI and load balances across nodes
 
-The client communicates directly with REPRAM nodes using the raw API endpoints:
-- `POST /raw/put` - Store a message with TTL
-- `GET /raw/get/{key}` - Retrieve a specific message
+The fade server proxies requests to REPRAM cluster nodes using standard API endpoints:
+- `PUT /data/{key}?ttl=seconds` - Store a message with TTL
+- `GET /data/{key}` - Retrieve a specific message
 - `GET /health` - Check node health
+- `GET /scan` - List all keys
 
 ## Message Format
 
@@ -72,46 +73,53 @@ The pipe-separated format enables optional callsigns and locations.
 
 ### Running Multiple Nodes
 
-For a true distributed experience, run multiple nodes:
+For a true distributed experience with gossip replication, use docker compose:
 
 ```bash
-# Terminal 1
-./bin/repram-node-raw -port 8080
+# Start 3 cluster nodes + 3 fade servers (simulates Flux deployment)
+docker-compose -f docker-compose-flux-test.yml up
 
-# Terminal 2
-./bin/repram-node-raw -port 8081 -gossip-port 9091
-
-# Terminal 3
-./bin/repram-node-raw -port 8082 -gossip-port 9092
+# Or for simpler testing with the original docker-compose
+docker-compose up
 ```
+
+The flux-test configuration matches the production Flux deployment architecture with multiple fade servers.
 
 ### Customizing the UI
 
 The web interface is in the `web/` directory:
 - `index.html` - Main HTML structure
-- `styles.css` - Dark theme styling
-- `client.js` - REPRAM client implementation
+- `styles.css` - Dark theme styling  
+- `client.js` - Fade client that communicates via fade server proxy
 
 ### Configuration
 
-Update the node URLs in `client.js`:
-```javascript
-this.nodes = [
-    'http://localhost:8080',
-    'http://localhost:8081',
-    'http://localhost:8082'
-];
+The fade server is configured via environment variables:
+```bash
+# Configure cluster nodes
+FADE_NODES=http://localhost:8080,http://localhost:8081,http://localhost:8082
+
+# Configure web server port
+PORT=3000
+```
+
+Or via command line flags:
+```bash
+./fade-server -nodes "http://node1:8080,http://node2:8080,http://node3:8080" -port 3000
 ```
 
 ## Production Deployment
 
-For production use:
+For production deployment on Flux:
 
-1. Deploy REPRAM nodes across multiple regions
-2. Update client.js with production node URLs
-3. Serve the web files via CDN or static hosting
-4. Enable HTTPS for secure communication
-5. Configure CORS on REPRAM nodes if needed
+1. **Container Images**: Use `ticktockbent/repram-cluster-node` and `ticktockbent/fade-server`
+2. **Multi-Server Architecture**: Deploy 3+ fade servers (Flux minimum) with identical config
+3. **Cluster Nodes**: Deploy 3+ cluster nodes with gossip replication enabled
+4. **Environment Variables**: Configure `FADE_NODES` and bootstrap peers for cluster formation
+5. **Load Balancing**: Flux distributes traffic across healthy fade server instances
+6. **Data Consistency**: Gossip protocol ensures messages replicate across all cluster nodes
+
+See `docs/fade-flux-deployment-plan.md` for detailed deployment instructions.
 
 ## Community Features
 
