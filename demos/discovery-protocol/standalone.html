@@ -170,6 +170,19 @@
             height: 12px;
         }
 
+        .node-discovering {
+            background: #9f7aea;
+            width: 14px;
+            height: 14px;
+            animation: discoveringPulse 1s infinite;
+        }
+
+        @keyframes discoveringPulse {
+            0% { opacity: 0.6; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.2); }
+            100% { opacity: 0.6; transform: scale(1); }
+        }
+
         .connection {
             position: absolute;
             height: 2px;
@@ -474,7 +487,7 @@
                 
                 const node = {
                     id: nodeId,
-                    type: 'leaf',
+                    type: 'discovering',  // Initial state
                     location: location,
                     label: nodeId.replace('node-', 'N'),
                     parent: null,
@@ -483,75 +496,120 @@
                     depth: 0,
                     isAlive: true,
                     x: Math.random() * 500 + 50,
-                    y: Math.random() * 300 + 150
+                    y: Math.random() * 300 + 150,
+                    discoveryState: 'probing',
+                    discoveryResponses: [],
+                    discoveryStartTime: Date.now()
                 };
                 
                 this.nodes.set(nodeId, node);
+                this.logEvent(`${nodeId} appeared - starting discovery process...`, 'warning');
                 
-                const attached = this.attachNode(node);
-                
-                if (attached) {
-                    this.logEvent(`Added ${nodeId} at (${location.lat.toFixed(1)}, ${location.lon.toFixed(1)})`, 'success');
-                    this.addDiscoveryMessage(node, node.parent, 'attach');
-                    
-                    setTimeout(() => {
-                        this.addDiscoveryMessage(node.parent, node, 'confirm');
-                    }, 500);
-                } else {
-                    this.nodes.delete(nodeId);
-                    this.logEvent(`Failed to add ${nodeId} - network full`, 'error');
-                }
+                // Start discovery process
+                this.startNodeDiscovery(node);
                 
                 this.updateVisualization();
                 this.updateStats();
             }
             
-            addMultipleNodes(count) {
-                for (let i = 0; i < count; i++) {
-                    setTimeout(() => this.addNode(), i * 300);
-                }
+            startNodeDiscovery(node) {
+                // Send discovery probes to all potential parents
+                const potentialParents = Array.from(this.nodes.values()).filter(n => 
+                    n.isAlive && n !== node && n.type !== 'leaf' && n.type !== 'discovering'
+                );
+                
+                this.logEvent(`${node.id} sending discovery probes to ${potentialParents.length} nodes`, 'info');
+                
+                // Send probes with staggered timing
+                potentialParents.forEach((target, index) => {
+                    setTimeout(() => {
+                        this.addDiscoveryMessage(node, target, 'probe', () => {
+                            // Probe arrived, calculate response delay based on latency
+                            const latency = this.calculateLatency(node.location, target.location);
+                            const responseDelay = latency + Math.random() * 50; // Add some jitter
+                            
+                            setTimeout(() => {
+                                // Send response back
+                                this.addDiscoveryMessage(target, node, 'response', () => {
+                                    // Response received
+                                    node.discoveryResponses.push({
+                                        target: target,
+                                        latency: latency,
+                                        responseTime: Date.now() - node.discoveryStartTime
+                                    });
+                                    
+                                    this.logEvent(`${node.id} received response from ${target.id} (${latency}ms)`, 'info');
+                                    
+                                    // Check if we've received all responses
+                                    if (node.discoveryResponses.length === potentialParents.length) {
+                                        this.completeNodeDiscovery(node);
+                                    }
+                                });
+                            }, responseDelay);
+                        });
+                    }, index * 200); // Stagger probe sends
+                });
+                
+                // Fallback timeout in case some responses are lost
+                setTimeout(() => {
+                    if (node.discoveryState === 'probing') {
+                        this.completeNodeDiscovery(node);
+                    }
+                }, 5000);
             }
             
-            attachNode(node) {
-                const candidates = [];
-                
-                for (const [id, potentialParent] of this.nodes) {
-                    if (!potentialParent.isAlive || potentialParent === node) continue;
-                    if (potentialParent.children.length >= potentialParent.capacity) continue;
-                    if (potentialParent.type === 'leaf') continue;
-                    
-                    const latency = this.calculateLatency(node.location, potentialParent.location);
-                    candidates.push({ parent: potentialParent, latency });
+            completeNodeDiscovery(node) {
+                if (node.discoveryResponses.length === 0) {
+                    this.logEvent(`${node.id} discovery failed - no responses`, 'error');
+                    this.nodes.delete(node.id);
+                    this.updateVisualization();
+                    this.updateStats();
+                    return;
                 }
                 
-                if (candidates.length === 0) return false;
+                // Find best parent based on responses
+                node.discoveryResponses.sort((a, b) => a.latency - b.latency);
                 
-                candidates.sort((a, b) => a.latency - b.latency);
-                
-                // Prefer deeper attachment (branches > trunks > roots)
-                let bestCandidate = null;
-                const branchCandidates = candidates.filter(c => c.parent.type === 'branch');
-                if (branchCandidates.length > 0) {
-                    bestCandidate = branchCandidates[0];
-                } else {
-                    const trunkCandidates = candidates.filter(c => c.parent.type === 'trunk');
-                    if (trunkCandidates.length > 0) {
-                        bestCandidate = trunkCandidates[0];
-                    } else {
-                        bestCandidate = candidates[0];
+                // Try to attach to the best candidates in order
+                for (const response of node.discoveryResponses) {
+                    const parent = response.target;
+                    
+                    // Check if parent still has capacity
+                    if (parent.children.length < parent.capacity) {
+                        this.attachNodeToParent(node, parent);
+                        
+                        this.logEvent(`${node.id} connected to ${parent.id} (best latency: ${response.latency}ms)`, 'success');
+                        
+                        // Send final attachment message
+                        this.addDiscoveryMessage(node, parent, 'attach');
+                        setTimeout(() => {
+                            this.addDiscoveryMessage(parent, node, 'confirm');
+                        }, 300);
+                        
+                        this.updateVisualization();
+                        this.updateStats();
+                        return;
                     }
                 }
                 
-                const parent = bestCandidate.parent;
+                // If we get here, no parent had capacity
+                this.logEvent(`${node.id} discovery failed - no capacity available`, 'error');
+                this.nodes.delete(node.id);
+                this.updateVisualization();
+                this.updateStats();
+            }
+            
+            attachNodeToParent(node, parent) {
                 node.parent = parent;
                 parent.children.push(node);
                 node.depth = parent.depth + 1;
+                node.discoveryState = 'connected';
                 
                 // Position near parent
-                node.x = parent.x + (Math.random() - 0.5) * 100;
+                node.x = parent.x + (Math.random() - 0.5) * 120;
                 node.y = parent.y + 80 + Math.random() * 40;
                 
-                // Determine node type
+                // Determine node type based on parent
                 if (parent.type === 'root') {
                     node.type = 'trunk';
                     node.capacity = this.capacities.trunk;
@@ -562,9 +620,14 @@
                     node.type = 'leaf';
                     node.capacity = 0;
                 }
-                
-                return true;
             }
+            
+            addMultipleNodes(count) {
+                for (let i = 0; i < count; i++) {
+                    setTimeout(() => this.addNode(), i * 300);
+                }
+            }
+            
             
             calculateLatency(loc1, loc2) {
                 const R = 6371;
@@ -664,17 +727,25 @@
                 this.logEvent('Network reset', 'warning');
             }
             
-            addDiscoveryMessage(source, target, type) {
-                this.discoveryMessages.push({
+            addDiscoveryMessage(source, target, type, callback = null) {
+                const message = {
                     id: Math.random(),
                     source: source,
                     target: target,
                     startTime: Date.now(),
-                    duration: 2000,
+                    duration: type === 'probe' ? 1500 : type === 'response' ? 1000 : 2000,
                     type: type,
                     x: source.x,
-                    y: source.y
-                });
+                    y: source.y,
+                    callback: callback
+                };
+                
+                this.discoveryMessages.push(message);
+                
+                // If there's a callback, schedule it for when the message arrives
+                if (callback) {
+                    setTimeout(callback, message.duration);
+                }
             }
             
             updateDiscoveryMessages() {
@@ -697,7 +768,9 @@
                     element.style.top = (y + this.viewOffset.y) + 'px';
                     element.style.opacity = 1 - progress * 0.5;
                     
-                    if (msg.type === 'attach') element.style.background = '#48bb78';
+                    if (msg.type === 'probe') element.style.background = '#9f7aea';
+                    else if (msg.type === 'response') element.style.background = '#fbb6ce';
+                    else if (msg.type === 'attach') element.style.background = '#48bb78';
                     else if (msg.type === 'migrate') element.style.background = '#f6ad55';
                     else if (msg.type === 'confirm') element.style.background = '#ed8936';
                     
@@ -765,10 +838,14 @@
                 
                 this.nodes.delete(nodeId);
                 
-                // Reattach orphans
+                // Reattach orphans using discovery process
                 orphans.forEach(orphan => {
                     orphan.parent = null;
-                    this.attachNode(orphan);
+                    orphan.type = 'discovering';
+                    orphan.discoveryState = 'probing';
+                    orphan.discoveryResponses = [];
+                    orphan.discoveryStartTime = Date.now();
+                    this.startNodeDiscovery(orphan);
                 });
                 
                 this.logEvent(`Removed ${nodeId}`, 'warning');
@@ -777,13 +854,17 @@
             }
             
             updateStats() {
-                const stats = { total: 0, root: 0, trunk: 0, branch: 0, leaf: 0, depths: [] };
+                const stats = { total: 0, root: 0, trunk: 0, branch: 0, leaf: 0, discovering: 0, depths: [] };
                 
                 for (const [id, node] of this.nodes) {
                     if (!node.isAlive) continue;
                     stats.total++;
-                    stats[node.type]++;
-                    if (node.type !== 'root') stats.depths.push(node.depth);
+                    if (node.type === 'discovering') {
+                        stats.discovering++;
+                    } else {
+                        stats[node.type]++;
+                        if (node.type !== 'root') stats.depths.push(node.depth);
+                    }
                 }
                 
                 const avgDepth = stats.depths.length > 0 
