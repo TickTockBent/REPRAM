@@ -340,13 +340,18 @@
                 this.autoRunInterval = null;
                 this.discoveryMessages = [];
                 
-                // Capacity limits
+                // Realistic capacity limits based on protocol
                 this.capacities = {
-                    root: 10,
-                    trunk: 5,
-                    branch: 10,
-                    leaf: 0
+                    root: 15,    // Roots can handle more direct connections
+                    trunk: 8,    // Trunks: 5-15 per protocol
+                    branch: 15,  // Branches: 10-25 per protocol  
+                    leaf: 0      // Leaves cannot have children
                 };
+                
+                // Protocol parameters
+                this.migrationThreshold = 0.25; // 25% improvement needed
+                this.migrationCooldown = 10000;  // 10 seconds between migrations
+                this.discoveryTimeout = 8000;    // 8 seconds for discovery
                 
                 this.container = document.getElementById('networkContainer');
                 this.viewOffset = { x: 0, y: 0 };
@@ -513,91 +518,191 @@
             }
             
             startNodeDiscovery(node) {
-                // Send discovery probes to all potential parents
-                const potentialParents = Array.from(this.nodes.values()).filter(n => 
-                    n.isAlive && n !== node && n.type !== 'leaf' && n.type !== 'discovering'
-                );
+                // Step 1: First contact root nodes for topology information
+                const rootNodes = Array.from(this.nodes.values()).filter(n => n.type === 'root' && n.isAlive);
                 
-                this.logEvent(`${node.id} sending discovery probes to ${potentialParents.length} nodes`, 'info');
+                if (rootNodes.length === 0) {
+                    this.logEvent(`${node.id} discovery failed - no root nodes available`, 'error');
+                    this.nodes.delete(node.id);
+                    return;
+                }
                 
-                // Send probes with staggered timing
-                potentialParents.forEach((target, index) => {
+                this.logEvent(`${node.id} contacting ${rootNodes.length} root nodes for topology`, 'info');
+                
+                // Contact roots to get network topology and find best root
+                let rootResponses = [];
+                rootNodes.forEach((root, index) => {
                     setTimeout(() => {
-                        this.addDiscoveryMessage(node, target, 'probe', () => {
-                            // Probe arrived, calculate response delay based on latency
-                            const latency = this.calculateLatency(node.location, target.location);
-                            const responseDelay = latency + Math.random() * 50; // Add some jitter
+                        this.addDiscoveryMessage(node, root, 'topology-request', () => {
+                            const latency = this.calculateLatency(node.location, root.location);
+                            const responseDelay = latency + Math.random() * 30;
                             
                             setTimeout(() => {
-                                // Send response back
-                                this.addDiscoveryMessage(target, node, 'response', () => {
-                                    // Response received
-                                    node.discoveryResponses.push({
-                                        target: target,
+                                this.addDiscoveryMessage(root, node, 'topology-response', () => {
+                                    rootResponses.push({
+                                        root: root,
                                         latency: latency,
-                                        responseTime: Date.now() - node.discoveryStartTime
+                                        topology: this.getNetworkTopology(root)
                                     });
                                     
-                                    this.logEvent(`${node.id} received response from ${target.id} (${latency}ms)`, 'info');
+                                    this.logEvent(`${node.id} received topology from ${root.id} (${latency}ms)`, 'info');
                                     
-                                    // Check if we've received all responses
-                                    if (node.discoveryResponses.length === potentialParents.length) {
-                                        this.completeNodeDiscovery(node);
+                                    if (rootResponses.length === rootNodes.length) {
+                                        this.processTopologyResponses(node, rootResponses);
                                     }
                                 });
                             }, responseDelay);
                         });
-                    }, index * 200); // Stagger probe sends
+                    }, index * 150);
                 });
                 
-                // Fallback timeout in case some responses are lost
+                // Timeout for topology discovery
                 setTimeout(() => {
-                    if (node.discoveryState === 'probing') {
-                        this.completeNodeDiscovery(node);
+                    if (node.discoveryState === 'probing' && rootResponses.length > 0) {
+                        this.processTopologyResponses(node, rootResponses);
+                    } else if (rootResponses.length === 0) {
+                        this.logEvent(`${node.id} discovery timeout - no topology responses`, 'error');
+                        this.nodes.delete(node.id);
+                        this.updateVisualization();
+                        this.updateStats();
                     }
-                }, 5000);
+                }, this.discoveryTimeout);
             }
             
-            completeNodeDiscovery(node) {
-                if (node.discoveryResponses.length === 0) {
-                    this.logEvent(`${node.id} discovery failed - no responses`, 'error');
+            getNetworkTopology(root) {
+                // Return topology information from this root's perspective
+                const topology = {
+                    trunks: [],
+                    branches: [],
+                    capacityInfo: {}
+                };
+                
+                // Get all nodes in this root's subtree
+                const getAllDescendants = (node) => {
+                    let descendants = [node];
+                    node.children.forEach(child => {
+                        descendants = descendants.concat(getAllDescendants(child));
+                    });
+                    return descendants;
+                };
+                
+                const descendants = getAllDescendants(root);
+                
+                descendants.forEach(node => {
+                    if (node.type === 'trunk') {
+                        topology.trunks.push({
+                            id: node.id,
+                            latency: this.calculateLatency(root.location, node.location),
+                            capacity: node.capacity,
+                            used: node.children.length
+                        });
+                    } else if (node.type === 'branch') {
+                        topology.branches.push({
+                            id: node.id,
+                            parentId: node.parent.id,
+                            latency: this.calculateLatency(root.location, node.location),
+                            capacity: node.capacity,
+                            used: node.children.length
+                        });
+                    }
+                    
+                    topology.capacityInfo[node.id] = {
+                        capacity: node.capacity,
+                        used: node.children.length,
+                        available: node.capacity - node.children.length
+                    };
+                });
+                
+                return topology;
+            }
+            
+            processTopologyResponses(node, rootResponses) {
+                // Find best root based on latency
+                rootResponses.sort((a, b) => a.latency - b.latency);
+                const bestRoot = rootResponses[0];
+                
+                this.logEvent(`${node.id} selected ${bestRoot.root.id} as best root (${bestRoot.latency}ms)`, 'success');
+                
+                // Now attempt attachment following protocol hierarchy: try branches first, then trunks, then root
+                const topology = bestRoot.topology;
+                let candidates = [];
+                
+                // Strategy: attach at deepest possible level with available capacity
+                
+                // 1. Try to become a Leaf (attach to available branches)
+                topology.branches.forEach(branch => {
+                    const branchNode = this.nodes.get(branch.id);
+                    if (branchNode && branchNode.children.length < branchNode.capacity) {
+                        candidates.push({
+                            node: branchNode,
+                            newType: 'leaf',
+                            priority: 1, // Highest priority
+                            latency: this.calculateLatency(node.location, branchNode.location)
+                        });
+                    }
+                });
+                
+                // 2. Try to become a Branch (attach to available trunks)
+                if (candidates.length === 0) {
+                    topology.trunks.forEach(trunk => {
+                        const trunkNode = this.nodes.get(trunk.id);
+                        if (trunkNode && trunkNode.children.length < trunkNode.capacity) {
+                            candidates.push({
+                                node: trunkNode,
+                                newType: 'branch',
+                                priority: 2,
+                                latency: this.calculateLatency(node.location, trunkNode.location)
+                            });
+                        }
+                    });
+                }
+                
+                // 3. Try to become a Trunk (attach to root)
+                if (candidates.length === 0) {
+                    if (bestRoot.root.children.length < bestRoot.root.capacity) {
+                        candidates.push({
+                            node: bestRoot.root,
+                            newType: 'trunk',
+                            priority: 3,
+                            latency: bestRoot.latency
+                        });
+                    }
+                }
+                
+                if (candidates.length === 0) {
+                    this.logEvent(`${node.id} attachment failed - network at capacity`, 'error');
                     this.nodes.delete(node.id);
                     this.updateVisualization();
                     this.updateStats();
                     return;
                 }
                 
-                // Find best parent based on responses
-                node.discoveryResponses.sort((a, b) => a.latency - b.latency);
+                // Sort by priority (deepest first), then by latency
+                candidates.sort((a, b) => {
+                    if (a.priority !== b.priority) return a.priority - b.priority;
+                    return a.latency - b.latency;
+                });
                 
-                // Try to attach to the best candidates in order
-                for (const response of node.discoveryResponses) {
-                    const parent = response.target;
-                    
-                    // Check if parent still has capacity
-                    if (parent.children.length < parent.capacity) {
-                        this.attachNodeToParent(node, parent);
-                        
-                        this.logEvent(`${node.id} connected to ${parent.id} (best latency: ${response.latency}ms)`, 'success');
-                        
-                        // Send final attachment message
-                        this.addDiscoveryMessage(node, parent, 'attach');
-                        setTimeout(() => {
-                            this.addDiscoveryMessage(parent, node, 'confirm');
-                        }, 300);
-                        
-                        this.updateVisualization();
-                        this.updateStats();
-                        return;
-                    }
-                }
+                const bestCandidate = candidates[0];
+                this.attachNodeToParent(node, bestCandidate.node);
+                node.type = bestCandidate.newType;
                 
-                // If we get here, no parent had capacity
-                this.logEvent(`${node.id} discovery failed - no capacity available`, 'error');
-                this.nodes.delete(node.id);
+                if (node.type === 'trunk') node.capacity = this.capacities.trunk;
+                else if (node.type === 'branch') node.capacity = this.capacities.branch;
+                else node.capacity = 0;
+                
+                this.logEvent(`${node.id} attached as ${node.type} to ${bestCandidate.node.id} (${bestCandidate.latency}ms)`, 'success');
+                
+                // Send final attachment messages
+                this.addDiscoveryMessage(node, bestCandidate.node, 'attach');
+                setTimeout(() => {
+                    this.addDiscoveryMessage(bestCandidate.node, node, 'confirm');
+                }, 300);
+                
                 this.updateVisualization();
                 this.updateStats();
             }
+            
             
             attachNodeToParent(node, parent) {
                 node.parent = parent;
@@ -642,54 +747,110 @@
             }
             
             runDiscoveryRound() {
-                this.logEvent('Running discovery round...', 'warning');
+                this.logEvent('Running periodic network evaluation...', 'warning');
                 let migrations = 0;
+                const currentTime = Date.now();
                 
-                // Simple migration logic
-                const nonRootNodes = Array.from(this.nodes.values())
-                    .filter(n => n.isAlive && n.type !== 'root' && n.parent);
+                // Check each non-root node for better attachment opportunities
+                const eligibleNodes = Array.from(this.nodes.values()).filter(n => 
+                    n.isAlive && 
+                    n.type !== 'root' && 
+                    n.type !== 'discovering' && 
+                    n.parent &&
+                    (!n.lastMigration || currentTime - n.lastMigration > this.migrationCooldown)
+                );
                 
-                for (const node of nonRootNodes) {
-                    if (Math.random() < 0.3) { // 30% chance to try migration
-                        const currentLatency = this.calculateLatency(node.location, node.parent.location);
+                this.logEvent(`Evaluating ${eligibleNodes.length} nodes for potential migration`, 'info');
+                
+                for (const node of eligibleNodes) {
+                    const currentLatency = this.calculateLatency(node.location, node.parent.location);
+                    
+                    // Find all potential better parents
+                    const candidates = [];
+                    
+                    for (const [id, potential] of this.nodes) {
+                        if (!potential.isAlive || potential === node || potential === node.parent) continue;
+                        if (potential.type === 'leaf' || potential.type === 'discovering') continue;
+                        if (potential.children.length >= potential.capacity) continue;
+                        if (this.wouldCreateCycle(node, potential)) continue;
                         
-                        // Find better parent
-                        for (const [id, potential] of this.nodes) {
-                            if (!potential.isAlive || potential === node || potential.type === 'leaf') continue;
-                            if (potential.children.length >= potential.capacity) continue;
-                            if (potential === node.parent) continue;
-                            
-                            const newLatency = this.calculateLatency(node.location, potential.location);
-                            if (newLatency < currentLatency * 0.8) { // 20% improvement threshold
-                                // Migrate
-                                node.parent.children = node.parent.children.filter(c => c !== node);
-                                node.parent = potential;
-                                potential.children.push(node);
-                                node.depth = potential.depth + 1;
-                                
-                                // Update position
-                                node.x = potential.x + (Math.random() - 0.5) * 100;
-                                node.y = potential.y + 80 + Math.random() * 40;
-                                
-                                migrations++;
-                                this.addDiscoveryMessage(node, potential, 'migrate');
-                                
-                                const improvement = ((currentLatency - newLatency) / currentLatency * 100).toFixed(1);
-                                this.logEvent(`Migrated ${node.id} (${improvement}% improvement)`, 'success');
-                                break;
-                            }
+                        const newLatency = this.calculateLatency(node.location, potential.location);
+                        
+                        // Protocol requires 25% improvement for migration
+                        if (newLatency < currentLatency * (1 - this.migrationThreshold)) {
+                            candidates.push({
+                                parent: potential,
+                                latency: newLatency,
+                                improvement: (currentLatency - newLatency) / currentLatency
+                            });
                         }
+                    }
+                    
+                    if (candidates.length > 0) {
+                        // Sort by improvement (best first)
+                        candidates.sort((a, b) => b.improvement - a.improvement);
+                        const bestCandidate = candidates[0];
+                        
+                        // Perform migration
+                        this.migrateNode(node, bestCandidate.parent);
+                        node.lastMigration = currentTime;
+                        migrations++;
+                        
+                        const improvementPercent = (bestCandidate.improvement * 100).toFixed(1);
+                        this.logEvent(`Migrated ${node.id} to ${bestCandidate.parent.id} (${improvementPercent}% improvement)`, 'success');
+                        
+                        // Simulate migration messages
+                        this.addDiscoveryMessage(node, node.parent, 'migrate');
+                        setTimeout(() => {
+                            this.addDiscoveryMessage(node.parent, node, 'confirm');
+                        }, 200);
                     }
                 }
                 
                 if (migrations === 0) {
-                    this.logEvent('No migrations needed - network is well-organized', 'success');
+                    this.logEvent('Network evaluation complete - no beneficial migrations found', 'success');
                 } else {
-                    this.logEvent(`Completed ${migrations} migrations`, 'success');
+                    this.logEvent(`Network rebalancing complete - ${migrations} migrations performed`, 'success');
                 }
                 
                 this.updateVisualization();
                 this.updateStats();
+            }
+            
+            migrateNode(node, newParent) {
+                // Remove from old parent
+                if (node.parent) {
+                    node.parent.children = node.parent.children.filter(c => c !== node);
+                }
+                
+                // Attach to new parent
+                node.parent = newParent;
+                newParent.children.push(node);
+                
+                // Update depth and position
+                this.updateNodeDepth(node);
+                node.x = newParent.x + (Math.random() - 0.5) * 120;
+                node.y = newParent.y + 80 + Math.random() * 40;
+            }
+            
+            updateNodeDepth(node) {
+                if (node.parent) {
+                    node.depth = node.parent.depth + 1;
+                }
+                // Recursively update all children
+                node.children.forEach(child => {
+                    this.updateNodeDepth(child);
+                });
+            }
+            
+            wouldCreateCycle(node, potentialParent) {
+                // Check if potentialParent is a descendant of node
+                let current = potentialParent;
+                while (current) {
+                    if (current === node) return true;
+                    current = current.parent;
+                }
+                return false;
             }
             
             toggleAutoRun() {
@@ -768,11 +929,12 @@
                     element.style.top = (y + this.viewOffset.y) + 'px';
                     element.style.opacity = 1 - progress * 0.5;
                     
-                    if (msg.type === 'probe') element.style.background = '#9f7aea';
-                    else if (msg.type === 'response') element.style.background = '#fbb6ce';
+                    if (msg.type === 'topology-request') element.style.background = '#8b5cf6';
+                    else if (msg.type === 'topology-response') element.style.background = '#a78bfa';
                     else if (msg.type === 'attach') element.style.background = '#48bb78';
-                    else if (msg.type === 'migrate') element.style.background = '#f6ad55';
                     else if (msg.type === 'confirm') element.style.background = '#ed8936';
+                    else if (msg.type === 'migrate') element.style.background = '#f6ad55';
+                    else element.style.background = '#00d2ff';
                     
                     container.appendChild(element);
                 });
