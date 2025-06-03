@@ -65,8 +65,24 @@ class DiscoverySimulation {
         document.getElementById('resetBtn').addEventListener('click', () => this.resetNetwork());
         
         document.getElementById('viewMode').addEventListener('change', (e) => {
+            const oldMode = this.viewMode;
             this.viewMode = e.target.value;
-            this.updateVisualization();
+            
+            // If animations are enabled, fade out then fade in
+            if (this.animateChanges) {
+                const g = this.svg.select('g.main-group');
+                g.transition()
+                    .duration(300)
+                    .style('opacity', 0)
+                    .on('end', () => {
+                        this.updateVisualization();
+                        g.transition()
+                            .duration(300)
+                            .style('opacity', 1);
+                    });
+            } else {
+                this.updateVisualization();
+            }
         });
         
         document.getElementById('showLatency').addEventListener('change', (e) => {
@@ -132,6 +148,12 @@ class DiscoverySimulation {
             const hasCapacity = potentialParent.children.length < potentialParent.capacity;
             if (!hasCapacity) continue;
             
+            // IMPORTANT: Leaf nodes cannot attach to root nodes
+            if (node.type === 'leaf' && potentialParent.type === 'root') continue;
+            
+            // Also prevent creating cycles where a leaf would become parent of non-leaf
+            if (potentialParent.type === 'leaf') continue;
+            
             const latency = this.calculateLatency(node.location, potentialParent.location);
             candidates.push({ parent: potentialParent, latency });
         }
@@ -141,11 +163,14 @@ class DiscoverySimulation {
         // Sort by latency (best first)
         candidates.sort((a, b) => a.latency - b.latency);
         
-        // Try to attach at deepest level possible
+        // Try to attach at deepest level possible (but respect hierarchy)
         let bestCandidate = null;
         let maxDepth = -1;
         
         for (const candidate of candidates.slice(0, 5)) { // Consider top 5 by latency
+            // Ensure proper hierarchy: Root -> Trunk -> Branch -> Leaf
+            if (node.type === 'leaf' && candidate.parent.type === 'root') continue;
+            
             if (candidate.parent.depth > maxDepth) {
                 maxDepth = candidate.parent.depth;
                 bestCandidate = candidate;
@@ -380,18 +405,22 @@ class DiscoverySimulation {
     }
     
     updateVisualization() {
-        this.svg.selectAll('*').remove();
+        // Instead of removing everything, we'll update existing elements
+        let g = this.svg.select('g.main-group');
         
-        const g = this.svg.append('g');
-        
-        // Set up zoom
-        const zoom = d3.zoom()
-            .scaleExtent([0.1, 4])
-            .on('zoom', (event) => {
-                g.attr('transform', event.transform);
-            });
-        
-        this.svg.call(zoom);
+        if (g.empty()) {
+            // First time setup
+            g = this.svg.append('g').attr('class', 'main-group');
+            
+            // Set up zoom
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+            
+            this.svg.call(zoom);
+        }
         
         if (this.viewMode === 'tree') {
             this.renderTreeView(g);
@@ -410,6 +439,7 @@ class DiscoverySimulation {
         nodes.forEach(node => {
             if (node.parent && node.parent.isAlive) {
                 links.push({
+                    id: `${node.parent.id}-${node.id}`,
                     source: node.parent,
                     target: node,
                     latency: this.calculateLatency(node.location, node.parent.location)
@@ -428,56 +458,143 @@ class DiscoverySimulation {
         const root = d3.hierarchy(hierarchy, d => d.children || []);
         treeLayout(root);
         
-        // Draw links
-        const link = g.selectAll('.link')
-            .data(links)
-            .enter().append('g');
+        // Calculate positions for all nodes
+        nodes.forEach(node => {
+            const hierarchyNode = this.findInHierarchy(root, node);
+            if (hierarchyNode) {
+                node.targetX = hierarchyNode.x + 50;
+                node.targetY = hierarchyNode.y + 50;
+            } else {
+                // Fallback position for orphaned nodes
+                node.targetX = this.width / 2;
+                node.targetY = this.height / 2;
+            }
+        });
         
-        link.append('line')
+        // Update links with D3 join pattern
+        const linkGroup = g.selectAll('g.link-group')
+            .data(links, d => d.id);
+        
+        // Exit - remove old links
+        linkGroup.exit()
+            .transition()
+            .duration(this.animateChanges ? 500 : 0)
+            .style('opacity', 0)
+            .remove();
+        
+        // Enter - add new links
+        const linkEnter = linkGroup.enter()
+            .append('g')
+            .attr('class', 'link-group')
+            .style('opacity', 0);
+        
+        linkEnter.append('line')
             .attr('class', 'link')
-            .attr('x1', d => this.getNodeX(d.source, root))
-            .attr('y1', d => this.getNodeY(d.source, root))
-            .attr('x2', d => this.getNodeX(d.target, root))
-            .attr('y2', d => this.getNodeY(d.target, root));
+            .attr('x1', d => d.source.targetX || 0)
+            .attr('y1', d => d.source.targetY || 0)
+            .attr('x2', d => d.source.targetX || 0)
+            .attr('y2', d => d.source.targetY || 0);
         
         if (this.showLatency) {
-            link.append('text')
+            linkEnter.append('text')
                 .attr('class', 'link-label')
-                .attr('x', d => (this.getNodeX(d.source, root) + this.getNodeX(d.target, root)) / 2)
-                .attr('y', d => (this.getNodeY(d.source, root) + this.getNodeY(d.target, root)) / 2)
+                .attr('x', d => d.source.targetX || 0)
+                .attr('y', d => d.source.targetY || 0)
                 .text(d => d.latency + 'ms');
         }
         
-        // Draw nodes
-        const node = g.selectAll('.node')
-            .data(nodes)
-            .enter().append('g')
-            .attr('class', 'node')
-            .attr('transform', d => `translate(${this.getNodeX(d, root)}, ${this.getNodeY(d, root)})`)
+        // Update - merge enter and update selections
+        const linkUpdate = linkEnter.merge(linkGroup);
+        
+        linkUpdate.transition()
+            .duration(this.animateChanges ? 750 : 0)
+            .style('opacity', 1)
+            .select('line')
+            .attr('x1', d => d.source.targetX)
+            .attr('y1', d => d.source.targetY)
+            .attr('x2', d => d.target.targetX)
+            .attr('y2', d => d.target.targetY);
+        
+        if (this.showLatency) {
+            linkUpdate.select('text')
+                .transition()
+                .duration(this.animateChanges ? 750 : 0)
+                .attr('x', d => (d.source.targetX + d.target.targetX) / 2)
+                .attr('y', d => (d.source.targetY + d.target.targetY) / 2);
+        }
+        
+        // Update nodes with D3 join pattern
+        const nodeGroup = g.selectAll('g.node-group')
+            .data(nodes, d => d.id);
+        
+        // Exit - remove old nodes
+        nodeGroup.exit()
+            .transition()
+            .duration(this.animateChanges ? 500 : 0)
+            .style('opacity', 0)
+            .attr('transform', d => `translate(${d.targetX || 0}, ${d.targetY || 0}) scale(0)`)
+            .remove();
+        
+        // Enter - add new nodes
+        const nodeEnter = nodeGroup.enter()
+            .append('g')
+            .attr('class', 'node-group')
+            .attr('transform', d => `translate(${d.targetX || this.width/2}, ${d.targetY || this.height/2}) scale(0)`)
+            .style('opacity', 0)
             .on('click', (event, d) => {
                 if (d.type !== 'root') {
                     this.removeNode(d.id);
                 }
             });
         
-        node.append('circle')
+        nodeEnter.append('circle')
             .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6)
             .attr('class', d => `node-${d.type}`)
             .attr('stroke', '#fff')
             .attr('stroke-width', 2);
         
-        node.append('text')
+        nodeEnter.append('text')
             .attr('class', 'node-label')
             .attr('y', 20)
             .text(d => d.label || d.id);
         
-        // Add capacity indicators
-        node.filter(d => d.capacity > 0)
+        // Add capacity indicators for non-leaf nodes
+        nodeEnter.filter(d => d.capacity > 0)
             .append('text')
-            .attr('class', 'node-label')
+            .attr('class', 'node-capacity')
             .attr('y', 35)
-            .style('font-size', '10px')
+            .style('font-size', '10px');
+        
+        // Update - merge enter and update selections
+        const nodeUpdate = nodeEnter.merge(nodeGroup);
+        
+        // Animate to new positions
+        nodeUpdate.transition()
+            .duration(this.animateChanges ? 750 : 0)
+            .delay((d, i) => this.animateChanges ? i * 10 : 0)
+            .style('opacity', 1)
+            .attr('transform', d => `translate(${d.targetX}, ${d.targetY}) scale(1)`);
+        
+        // Update capacity text
+        nodeUpdate.select('.node-capacity')
             .text(d => `${d.children.length}/${d.capacity}`);
+        
+        // Add some fun animations on hover
+        if (this.animateChanges) {
+            nodeUpdate
+                .on('mouseenter', function(event, d) {
+                    d3.select(this)
+                        .transition()
+                        .duration(200)
+                        .attr('transform', `translate(${d.targetX}, ${d.targetY}) scale(1.2)`);
+                })
+                .on('mouseleave', function(event, d) {
+                    d3.select(this)
+                        .transition()
+                        .duration(200)
+                        .attr('transform', `translate(${d.targetX}, ${d.targetY}) scale(1)`);
+                });
+        }
     }
     
     getNodeX(node, root) {
@@ -510,6 +627,7 @@ class DiscoverySimulation {
         nodes.forEach(node => {
             if (node.parent && node.parent.isAlive) {
                 links.push({
+                    id: `${node.parent.id}-${node.id}`,
                     source: node.parent,
                     target: node,
                     latency: this.calculateLatency(node.location, node.parent.location)
@@ -526,40 +644,90 @@ class DiscoverySimulation {
             .domain([-90, 90])
             .range([this.height - 50, 50]);
         
-        // Draw links
-        const link = g.selectAll('.link')
-            .data(links)
-            .enter().append('g');
+        // Update links with D3 join pattern
+        const linkGroup = g.selectAll('g.link-group')
+            .data(links, d => d.id);
         
-        link.append('line')
+        linkGroup.exit()
+            .transition()
+            .duration(this.animateChanges ? 500 : 0)
+            .style('opacity', 0)
+            .remove();
+        
+        const linkEnter = linkGroup.enter()
+            .append('g')
+            .attr('class', 'link-group')
+            .style('opacity', 0);
+        
+        linkEnter.append('line')
             .attr('class', 'link')
+            .attr('x1', d => xScale(d.source.location.lon))
+            .attr('y1', d => yScale(d.source.location.lat))
+            .attr('x2', d => xScale(d.source.location.lon))
+            .attr('y2', d => yScale(d.source.location.lat));
+        
+        const linkUpdate = linkEnter.merge(linkGroup);
+        
+        linkUpdate.transition()
+            .duration(this.animateChanges ? 750 : 0)
+            .style('opacity', 1)
+            .select('line')
             .attr('x1', d => xScale(d.source.location.lon))
             .attr('y1', d => yScale(d.source.location.lat))
             .attr('x2', d => xScale(d.target.location.lon))
             .attr('y2', d => yScale(d.target.location.lat));
         
-        // Draw nodes
-        const node = g.selectAll('.node')
-            .data(nodes)
-            .enter().append('g')
-            .attr('class', 'node')
-            .attr('transform', d => `translate(${xScale(d.location.lon)}, ${yScale(d.location.lat)})`)
+        // Update nodes with D3 join pattern
+        const nodeGroup = g.selectAll('g.node-group')
+            .data(nodes, d => d.id);
+        
+        nodeGroup.exit()
+            .transition()
+            .duration(this.animateChanges ? 500 : 0)
+            .style('opacity', 0)
+            .attr('transform', d => `translate(${xScale(d.location.lon)}, ${yScale(d.location.lat)}) scale(0)`)
+            .remove();
+        
+        const nodeEnter = nodeGroup.enter()
+            .append('g')
+            .attr('class', 'node-group')
+            .attr('transform', d => `translate(${xScale(d.location.lon)}, ${yScale(d.location.lat)}) scale(0)`)
+            .style('opacity', 0)
             .on('click', (event, d) => {
                 if (d.type !== 'root') {
                     this.removeNode(d.id);
                 }
             });
         
-        node.append('circle')
+        nodeEnter.append('circle')
             .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6)
             .attr('class', d => `node-${d.type}`)
             .attr('stroke', '#fff')
             .attr('stroke-width', 2);
         
-        node.append('text')
+        nodeEnter.append('text')
             .attr('class', 'node-label')
             .attr('y', 20)
             .text(d => d.label || d.id);
+        
+        const nodeUpdate = nodeEnter.merge(nodeGroup);
+        
+        nodeUpdate.transition()
+            .duration(this.animateChanges ? 750 : 0)
+            .delay((d, i) => this.animateChanges ? i * 10 : 0)
+            .style('opacity', 1)
+            .attr('transform', d => `translate(${xScale(d.location.lon)}, ${yScale(d.location.lat)}) scale(1)`);
+        
+        // Add pulse animation for new nodes
+        if (this.animateChanges) {
+            nodeEnter.select('circle')
+                .transition()
+                .duration(1000)
+                .attr('r', d => (d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6) * 1.5)
+                .transition()
+                .duration(500)
+                .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6);
+        }
     }
     
     renderRadialView(g) {
@@ -569,6 +737,7 @@ class DiscoverySimulation {
         nodes.forEach(node => {
             if (node.parent && node.parent.isAlive) {
                 links.push({
+                    id: `${node.parent.id}-${node.id}`,
                     source: node.parent,
                     target: node,
                     latency: this.calculateLatency(node.location, node.parent.location)
@@ -588,55 +757,131 @@ class DiscoverySimulation {
                     .filter(n => n.type === 'root')
                     .indexOf(node);
                 const angle = (rootIndex / 3) * 2 * Math.PI;
-                node.x = centerX + Math.cos(angle) * 50;
-                node.y = centerY + Math.sin(angle) * 50;
+                node.targetX = centerX + Math.cos(angle) * 50;
+                node.targetY = centerY + Math.sin(angle) * 50;
             } else {
                 const radius = node.depth * radiusStep;
                 const siblings = node.parent.children;
                 const index = siblings.indexOf(node);
                 const angleStep = (2 * Math.PI) / siblings.length;
-                const parentAngle = Math.atan2(node.parent.y - centerY, node.parent.x - centerX);
+                const parentAngle = Math.atan2(node.parent.targetY - centerY, node.parent.targetX - centerX);
                 const angle = parentAngle + (index - siblings.length / 2) * angleStep * 0.3;
                 
-                node.x = centerX + Math.cos(angle) * radius;
-                node.y = centerY + Math.sin(angle) * radius;
+                node.targetX = centerX + Math.cos(angle) * radius;
+                node.targetY = centerY + Math.sin(angle) * radius;
             }
         });
         
-        // Draw links
-        const link = g.selectAll('.link')
-            .data(links)
-            .enter().append('g');
+        // Update links with D3 join pattern
+        const linkGroup = g.selectAll('g.link-group')
+            .data(links, d => d.id);
         
-        link.append('line')
+        linkGroup.exit()
+            .transition()
+            .duration(this.animateChanges ? 500 : 0)
+            .style('opacity', 0)
+            .remove();
+        
+        const linkEnter = linkGroup.enter()
+            .append('g')
+            .attr('class', 'link-group')
+            .style('opacity', 0);
+        
+        linkEnter.append('line')
             .attr('class', 'link')
-            .attr('x1', d => d.source.x)
-            .attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x)
-            .attr('y2', d => d.target.y);
+            .attr('x1', d => d.source.targetX || centerX)
+            .attr('y1', d => d.source.targetY || centerY)
+            .attr('x2', d => d.source.targetX || centerX)
+            .attr('y2', d => d.source.targetY || centerY);
         
-        // Draw nodes
-        const node = g.selectAll('.node')
-            .data(nodes)
-            .enter().append('g')
-            .attr('class', 'node')
-            .attr('transform', d => `translate(${d.x}, ${d.y})`)
+        const linkUpdate = linkEnter.merge(linkGroup);
+        
+        linkUpdate.transition()
+            .duration(this.animateChanges ? 750 : 0)
+            .style('opacity', 1)
+            .select('line')
+            .attr('x1', d => d.source.targetX)
+            .attr('y1', d => d.source.targetY)
+            .attr('x2', d => d.target.targetX)
+            .attr('y2', d => d.target.targetY);
+        
+        // Update nodes with D3 join pattern
+        const nodeGroup = g.selectAll('g.node-group')
+            .data(nodes, d => d.id);
+        
+        nodeGroup.exit()
+            .transition()
+            .duration(this.animateChanges ? 500 : 0)
+            .style('opacity', 0)
+            .attr('transform', d => `translate(${d.targetX || centerX}, ${d.targetY || centerY}) scale(0) rotate(360)`)
+            .remove();
+        
+        const nodeEnter = nodeGroup.enter()
+            .append('g')
+            .attr('class', 'node-group')
+            .attr('transform', d => `translate(${centerX}, ${centerY}) scale(0)`)
+            .style('opacity', 0)
             .on('click', (event, d) => {
                 if (d.type !== 'root') {
                     this.removeNode(d.id);
                 }
             });
         
-        node.append('circle')
+        nodeEnter.append('circle')
             .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6)
             .attr('class', d => `node-${d.type}`)
             .attr('stroke', '#fff')
             .attr('stroke-width', 2);
         
-        node.append('text')
+        nodeEnter.append('text')
             .attr('class', 'node-label')
             .attr('y', 20)
             .text(d => d.label || d.id);
+        
+        const nodeUpdate = nodeEnter.merge(nodeGroup);
+        
+        // Animate nodes spiraling out from center
+        nodeUpdate.transition()
+            .duration(this.animateChanges ? 1000 : 0)
+            .delay((d, i) => this.animateChanges ? d.depth * 100 : 0)
+            .style('opacity', 1)
+            .attr('transform', d => `translate(${d.targetX}, ${d.targetY}) scale(1) rotate(0)`);
+        
+        // Add orbit animation for fun
+        if (this.animateChanges) {
+            nodeUpdate.filter(d => d.type !== 'root')
+                .transition()
+                .delay(1500)
+                .duration(20000)
+                .ease(d3.easeLinear)
+                .attrTween('transform', function(d) {
+                    const radius = Math.sqrt(Math.pow(d.targetX - centerX, 2) + Math.pow(d.targetY - centerY, 2));
+                    const startAngle = Math.atan2(d.targetY - centerY, d.targetX - centerX);
+                    return function(t) {
+                        const angle = startAngle + (t * Math.PI * 2 * 0.1); // Slow rotation
+                        const x = centerX + radius * Math.cos(angle);
+                        const y = centerY + radius * Math.sin(angle);
+                        return `translate(${x}, ${y}) scale(1)`;
+                    };
+                })
+                .on('end', function repeat() {
+                    d3.select(this)
+                        .transition()
+                        .duration(20000)
+                        .ease(d3.easeLinear)
+                        .attrTween('transform', function(d) {
+                            const radius = Math.sqrt(Math.pow(d.targetX - centerX, 2) + Math.pow(d.targetY - centerY, 2));
+                            const startAngle = Math.atan2(d.targetY - centerY, d.targetX - centerX);
+                            return function(t) {
+                                const angle = startAngle + (t * Math.PI * 2 * 0.1);
+                                const x = centerX + radius * Math.cos(angle);
+                                const y = centerY + radius * Math.sin(angle);
+                                return `translate(${x}, ${y}) scale(1)`;
+                            };
+                        })
+                        .on('end', repeat);
+                });
+        }
     }
     
     logEvent(message, type = 'info') {
@@ -650,11 +895,35 @@ class DiscoverySimulation {
             <span class="log-message ${type}">${message}</span>
         `;
         
+        // Start with entry off-screen
+        entry.style.transform = 'translateX(-100%)';
+        entry.style.opacity = '0';
+        
         log.insertBefore(entry, log.firstChild);
+        
+        // Animate entry sliding in
+        if (this.animateChanges) {
+            setTimeout(() => {
+                entry.style.transition = 'all 0.3s ease-out';
+                entry.style.transform = 'translateX(0)';
+                entry.style.opacity = '1';
+            }, 10);
+        } else {
+            entry.style.transform = 'translateX(0)';
+            entry.style.opacity = '1';
+        }
         
         // Keep only last 20 entries
         while (log.children.length > 20) {
-            log.removeChild(log.lastChild);
+            const lastChild = log.lastChild;
+            if (this.animateChanges) {
+                lastChild.style.transition = 'all 0.3s ease-out';
+                lastChild.style.transform = 'translateX(100%)';
+                lastChild.style.opacity = '0';
+                setTimeout(() => log.removeChild(lastChild), 300);
+            } else {
+                log.removeChild(lastChild);
+            }
         }
     }
 }

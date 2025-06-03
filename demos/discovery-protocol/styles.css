@@ -242,16 +242,18 @@ header p {
 }
 
 /* Node styles for visualization */
-.node {
+.node-group {
     cursor: pointer;
 }
 
-.node circle {
+.node-group circle {
     transition: all 0.3s ease;
+    filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.5));
 }
 
-.node:hover circle {
+.node-group:hover circle {
     stroke-width: 3px;
+    filter: drop-shadow(0 0 12px rgba(0, 210, 255, 0.6));
 }
 
 .node-root {
@@ -275,11 +277,19 @@ header p {
     stroke: #4a5568;
     stroke-width: 2px;
     opacity: 0.6;
+    transition: all 0.3s ease;
+}
+
+.link-group:hover .link {
+    stroke: #00d2ff;
+    stroke-width: 3px;
+    opacity: 0.8;
 }
 
 .link-label {
     font-size: 10px;
     fill: #718096;
+    transition: all 0.3s ease;
 }
 
 .node-label {
@@ -287,6 +297,33 @@ header p {
     fill: #e0e0e0;
     text-anchor: middle;
     pointer-events: none;
+}
+
+.node-capacity {
+    font-size: 10px;
+    fill: #9ca3af;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+/* Pulse animation for new nodes */
+@keyframes pulse {
+    0% {
+        stroke-width: 2px;
+        stroke-opacity: 1;
+    }
+    50% {
+        stroke-width: 6px;
+        stroke-opacity: 0.5;
+    }
+    100% {
+        stroke-width: 2px;
+        stroke-opacity: 1;
+    }
+}
+
+.node-group.new-node circle {
+    animation: pulse 1s ease-in-out;
 }
 
 /* Animations */
