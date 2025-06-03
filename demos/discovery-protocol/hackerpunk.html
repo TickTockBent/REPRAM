@@ -1022,7 +1022,6 @@
                     <div class="view-controls">
                         <select id="viewSelect">
                             <option value="free">Free Form View</option>
-                            <option value="geographic">Geographic View</option>
                             <option value="radial">Radial View</option>
                             <option value="tree">Tree View</option>
                         </select>
@@ -1116,10 +1115,10 @@
                 <h4>🔮 DISCOVERY ROUNDS</h4>
                 <p>Discovery rounds are periodic optimization cycles where nodes probe the network for better positions. Each round involves:</p>
                 <ol>
-                    <li><span class="traffic-purple">Purple packets</span> - Topology requests to mainframes</li>
-                    <li><span class="traffic-pink">Pink packets</span> - Network topology responses</li>
-                    <li><span class="traffic-yellow">Yellow packets</span> - Migration requests to better parents</li>
-                    <li><span class="traffic-orange">Orange packets</span> - Attachment confirmations</li>
+                    <li><span class="dot traffic-purple"></span> Purple packets - Topology requests to mainframes</li>
+                    <li><span class="dot traffic-pink"></span> Pink packets - Network topology responses</li>
+                    <li><span class="dot traffic-yellow"></span> Yellow packets - Migration requests to better parents</li>
+                    <li><span class="dot traffic-orange"></span> Orange packets - Attachment confirmations</li>
                 </ol>
                 <p>This creates a self-optimizing network that continuously improves its structure.</p>
             </div>
@@ -1174,7 +1173,7 @@
                 this.isDragging = false;
                 this.dragStart = { x: 0, y: 0 };
                 this.zoom = 1.0;
-                this.viewMode = 'free'; // free, geographic, radial, tree
+                this.viewMode = 'free'; // free, radial, tree
                 this.isDraggingNode = false;
                 this.draggedNode = null;
                 this.nodeDragStart = { x: 0, y: 0 };
@@ -1910,9 +1909,6 @@
                 const containerHeight = 600;
                 
                 switch (this.viewMode) {
-                    case 'geographic':
-                        this.layoutGeographic(nodes, containerWidth, containerHeight);
-                        break;
                     case 'radial':
                         this.layoutRadial(nodes, containerWidth, containerHeight);
                         break;
@@ -1926,19 +1922,6 @@
                 }
             }
             
-            layoutGeographic(nodes, width, height) {
-                // Map lat/lon to screen coordinates
-                const latRange = { min: -90, max: 90 };
-                const lonRange = { min: -180, max: 180 };
-                
-                nodes.forEach(node => {
-                    const x = ((node.location.lon - lonRange.min) / (lonRange.max - lonRange.min)) * (width - 100) + 50;
-                    const y = ((latRange.max - node.location.lat) / (latRange.max - latRange.min)) * (height - 100) + 50;
-                    
-                    node.x = x;
-                    node.y = y;
-                });
-            }
             
             layoutRadial(nodes, width, height) {
                 const centerX = width / 2;
@@ -1999,12 +1982,6 @@
             
             getInitialNodePosition() {
                 switch (this.viewMode) {
-                    case 'geographic':
-                        // Random position based on location coordinates
-                        return {
-                            x: Math.random() * 700 + 50,
-                            y: Math.random() * 500 + 50
-                        };
                     case 'radial':
                         // Random position in outer ring
                         const centerX = 400;
