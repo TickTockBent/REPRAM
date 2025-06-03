@@ -481,27 +481,27 @@
             z-index: 10;
         }
 
-        .node-root {
+        .node-mainframe {
             background: #ff0000;
             width: 32px;
             height: 32px;
             box-shadow: 0 0 15px #ff0000;
-            animation: rootPulse 2s ease-in-out infinite;
+            animation: mainframePulse 2s ease-in-out infinite;
         }
 
-        @keyframes rootPulse {
+        @keyframes mainframePulse {
             0%, 100% { box-shadow: 0 0 15px #ff0000; }
             50% { box-shadow: 0 0 25px #ff0000, 0 0 35px rgba(255, 0, 0, 0.5); }
         }
 
-        .node-trunk {
+        .node-relay {
             background: #ff8800;
             width: 28px;
             height: 28px;
             box-shadow: 0 0 12px #ff8800;
         }
 
-        .node-branch {
+        .node-node {
             background: #00ff00;
             width: 24px;
             height: 24px;
@@ -516,7 +516,7 @@
                 -2px 2px 0px #00ff00;
         }
 
-        .node-leaf {
+        .node-terminal {
             background: #00ffff;
             width: 20px;
             height: 20px;
@@ -928,20 +928,20 @@
                         <span id="totalNodes" class="stat-value">3</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">Root Nodes:</span>
-                        <span id="rootNodes" class="stat-value">3</span>
+                        <span class="stat-label">Mainframes:</span>
+                        <span id="mainframeNodes" class="stat-value">3</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">Trunk Nodes:</span>
-                        <span id="trunkNodes" class="stat-value">0</span>
+                        <span class="stat-label">Relays:</span>
+                        <span id="relayNodes" class="stat-value">0</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">Branch Nodes:</span>
-                        <span id="branchNodes" class="stat-value">0</span>
+                        <span class="stat-label">Nodes:</span>
+                        <span id="nodeNodes" class="stat-value">0</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">Leaf Nodes:</span>
-                        <span id="leafNodes" class="stat-value">0</span>
+                        <span class="stat-label">Terminals:</span>
+                        <span id="terminalNodes" class="stat-value">0</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">Average Depth:</span>
@@ -952,7 +952,7 @@
                 <div class="protocol-info">
                     <h4>PROTOCOL FEATURES</h4>
                     <ul>
-                        <li>Self-organizing tree structure</li>
+                        <li>Self-organizing matrix structure</li>
                         <li>Latency-based node attachment</li>
                         <li>Real-time network optimization</li>
                         <li>Automatic failure recovery</li>
@@ -985,12 +985,12 @@
                 this.autoRunInterval = null;
                 this.discoveryMessages = [];
                 
-                // Realistic capacity limits based on protocol
+                // Realistic capacity limits based on protocol (hackerpunk rebranded)
                 this.capacities = {
-                    root: 15,    // Roots can handle more direct connections
-                    trunk: 8,    // Trunks: 5-15 per protocol
-                    branch: 15,  // Branches: 10-25 per protocol  
-                    leaf: 0      // Leaves cannot have children
+                    mainframe: 15,  // Mainframes can handle more direct connections (was root)
+                    relay: 8,       // Relays: 5-15 per protocol (was trunk)
+                    node: 15,       // Nodes: 10-25 per protocol (was branch)
+                    terminal: 0     // Terminals cannot have children (was leaf)
                 };
                 
                 // Protocol parameters
@@ -1005,32 +1005,32 @@
                 this.zoom = 1.0;
                 this.viewMode = 'free'; // free, geographic, radial, tree
                 
-                this.initializeRootNodes();
+                this.initializeMainframes();
                 this.setupEventHandlers();
                 this.startDiscoveryAnimation();
                 this.updateVisualization();
                 this.updateStats();
                 
                 console.log('SYNTH TREE MATRIX ONLINE - READY FOR NODE INJECTION');
-                this.logEvent('SYNTH TREE MATRIX INITIALIZED - 3 ROOT NODES ACTIVE', 'success');
+                this.logEvent('SYNTH TREE MATRIX INITIALIZED - 3 MAINFRAME NODES ACTIVE', 'success');
             }
             
-            initializeRootNodes() {
-                const rootLocations = [
-                    { name: 'ROOT-ALPHA', lat: 40.7128, lon: -74.0060, label: 'α' },
-                    { name: 'ROOT-BETA', lat: 51.5074, lon: -0.1278, label: 'β' },
-                    { name: 'ROOT-GAMMA', lat: 35.6762, lon: 139.6503, label: 'γ' }
+            initializeMainframes() {
+                const mainframeLocations = [
+                    { name: 'MAINFRAME-ALPHA', lat: 40.7128, lon: -74.0060, label: 'α' },
+                    { name: 'MAINFRAME-BETA', lat: 51.5074, lon: -0.1278, label: 'β' },
+                    { name: 'MAINFRAME-GAMMA', lat: 35.6762, lon: 139.6503, label: 'γ' }
                 ];
                 
-                rootLocations.forEach((loc, index) => {
+                mainframeLocations.forEach((loc, index) => {
                     const node = {
                         id: loc.name,
-                        type: 'root',
+                        type: 'mainframe',
                         location: { lat: loc.lat, lon: loc.lon },
                         label: loc.label,
                         parent: null,
                         children: [],
-                        capacity: this.capacities.root,
+                        capacity: this.capacities.mainframe,
                         depth: 0,
                         isAlive: true,
                         x: 150 + index * 250,
@@ -1167,16 +1167,16 @@
                     }
                 }
                 
-                // 2. Root node status broadcasts (periodic)
+                // 2. Mainframe node status broadcasts (periodic)
                 if (Math.random() < 0.3) {
-                    const rootNodes = activeNodes.filter(n => n.type === 'root');
-                    if (rootNodes.length > 0) {
-                        const root = rootNodes[Math.floor(Math.random() * rootNodes.length)];
-                        const children = activeNodes.filter(n => n.parent === root);
+                    const mainframeNodes = activeNodes.filter(n => n.type === 'mainframe');
+                    if (mainframeNodes.length > 0) {
+                        const mainframe = mainframeNodes[Math.floor(Math.random() * mainframeNodes.length)];
+                        const children = activeNodes.filter(n => n.parent === mainframe);
                         
                         children.forEach((child, index) => {
                             setTimeout(() => {
-                                this.addDiscoveryMessage(root, child, 'status-broadcast', null, 1000);
+                                this.addDiscoveryMessage(mainframe, child, 'status-broadcast', null, 1000);
                             }, index * 50);
                         });
                     }
@@ -1209,9 +1209,9 @@
                 
                 // 4. Capacity status checks (less frequent)
                 if (Math.random() < 0.2) {
-                    const nonLeafNodes = activeNodes.filter(n => n.type !== 'leaf' && n.children.length > 0);
-                    if (nonLeafNodes.length > 0) {
-                        const parent = nonLeafNodes[Math.floor(Math.random() * nonLeafNodes.length)];
+                    const nonTerminalNodes = activeNodes.filter(n => n.type !== 'terminal' && n.children.length > 0);
+                    if (nonTerminalNodes.length > 0) {
+                        const parent = nonTerminalNodes[Math.floor(Math.random() * nonTerminalNodes.length)];
                         const children = parent.children.filter(c => c.isAlive);
                         
                         if (children.length > 0) {
@@ -1266,36 +1266,36 @@
             }
             
             startNodeDiscovery(node) {
-                // Step 1: Contact all root nodes for topology information
-                const rootNodes = Array.from(this.nodes.values()).filter(n => n.type === 'root' && n.isAlive);
+                // Step 1: Contact all mainframe nodes for topology information
+                const mainframeNodes = Array.from(this.nodes.values()).filter(n => n.type === 'mainframe' && n.isAlive);
                 
-                if (rootNodes.length === 0) {
-                    this.logEvent(`${node.id} DISCOVERY ABORT - NO ROOT NODES DETECTED`, 'error');
+                if (mainframeNodes.length === 0) {
+                    this.logEvent(`${node.id} DISCOVERY ABORT - NO MAINFRAME NODES DETECTED`, 'error');
                     this.nodes.delete(node.id);
                     return;
                 }
                 
-                this.logEvent(`${node.id} SCANNING ${rootNodes.length} ROOT NODES FOR TOPOLOGY DATA`, 'info');
+                this.logEvent(`${node.id} SCANNING ${mainframeNodes.length} MAINFRAME NODES FOR TOPOLOGY DATA`, 'info');
                 
-                let rootResponses = [];
-                rootNodes.forEach((root, index) => {
+                let mainframeResponses = [];
+                mainframeNodes.forEach((mainframe, index) => {
                     setTimeout(() => {
-                        this.addDiscoveryMessage(node, root, 'topology-request', () => {
-                            const latency = this.calculateLatency(node.location, root.location);
+                        this.addDiscoveryMessage(node, mainframe, 'topology-request', () => {
+                            const latency = this.calculateLatency(node.location, mainframe.location);
                             const responseDelay = latency + Math.random() * 30;
                             
                             setTimeout(() => {
-                                this.addDiscoveryMessage(root, node, 'topology-response', () => {
-                                    rootResponses.push({
-                                        root: root,
+                                this.addDiscoveryMessage(mainframe, node, 'topology-response', () => {
+                                    mainframeResponses.push({
+                                        mainframe: mainframe,
                                         latency: latency,
-                                        topology: this.getNetworkTopology(root)
+                                        topology: this.getNetworkTopology(mainframe)
                                     });
                                     
-                                    this.logEvent(`${node.id} RX TOPOLOGY FROM ${root.id} (${latency}ms)`, 'info');
+                                    this.logEvent(`${node.id} RX TOPOLOGY FROM ${mainframe.id} (${latency}ms)`, 'info');
                                     
-                                    if (rootResponses.length === rootNodes.length) {
-                                        this.processTopologyResponses(node, rootResponses);
+                                    if (mainframeResponses.length === mainframeNodes.length) {
+                                        this.processTopologyResponses(node, mainframeResponses);
                                     }
                                 });
                             }, responseDelay);
@@ -1305,9 +1305,9 @@
                 
                 // Timeout for topology discovery
                 setTimeout(() => {
-                    if (node.discoveryState === 'probing' && rootResponses.length > 0) {
-                        this.processTopologyResponses(node, rootResponses);
-                    } else if (rootResponses.length === 0) {
+                    if (node.discoveryState === 'probing' && mainframeResponses.length > 0) {
+                        this.processTopologyResponses(node, mainframeResponses);
+                    } else if (mainframeResponses.length === 0) {
                         this.logEvent(`${node.id} DISCOVERY TIMEOUT - NO TOPOLOGY RESPONSES`, 'error');
                         this.nodes.delete(node.id);
                         this.updateVisualization();
@@ -1316,10 +1316,10 @@
                 }, this.discoveryTimeout);
             }
             
-            getNetworkTopology(root) {
+            getNetworkTopology(mainframe) {
                 const topology = {
-                    trunks: [],
-                    branches: [],
+                    relays: [],
+                    nodes: [],
                     capacityInfo: {}
                 };
                 
@@ -1331,21 +1331,21 @@
                     return descendants;
                 };
                 
-                const descendants = getAllDescendants(root);
+                const descendants = getAllDescendants(mainframe);
                 
                 descendants.forEach(node => {
-                    if (node.type === 'trunk') {
-                        topology.trunks.push({
+                    if (node.type === 'relay') {
+                        topology.relays.push({
                             id: node.id,
-                            latency: this.calculateLatency(root.location, node.location),
+                            latency: this.calculateLatency(mainframe.location, node.location),
                             capacity: node.capacity,
                             used: node.children.length
                         });
-                    } else if (node.type === 'branch') {
-                        topology.branches.push({
+                    } else if (node.type === 'node') {
+                        topology.nodes.push({
                             id: node.id,
                             parentId: node.parent.id,
-                            latency: this.calculateLatency(root.location, node.location),
+                            latency: this.calculateLatency(mainframe.location, node.location),
                             capacity: node.capacity,
                             used: node.children.length
                         });
@@ -1361,51 +1361,51 @@
                 return topology;
             }
             
-            processTopologyResponses(node, rootResponses) {
-                rootResponses.sort((a, b) => a.latency - b.latency);
-                const bestRoot = rootResponses[0];
+            processTopologyResponses(node, mainframeResponses) {
+                mainframeResponses.sort((a, b) => a.latency - b.latency);
+                const bestMainframe = mainframeResponses[0];
                 
-                this.logEvent(`${node.id} SELECTED ${bestRoot.root.id} AS PRIMARY ROOT (${bestRoot.latency}ms)`, 'success');
+                this.logEvent(`${node.id} SELECTED ${bestMainframe.mainframe.id} AS PRIMARY MAINFRAME (${bestMainframe.latency}ms)`, 'success');
                 
-                const topology = bestRoot.topology;
+                const topology = bestMainframe.topology;
                 let candidates = [];
                 
-                // 1. Try to become a Leaf (attach to available branches)
-                topology.branches.forEach(branch => {
-                    const branchNode = this.nodes.get(branch.id);
-                    if (branchNode && branchNode.children.length < branchNode.capacity) {
+                // 1. Try to become a Terminal (attach to available nodes)
+                topology.nodes.forEach(nodeEntry => {
+                    const targetNode = this.nodes.get(nodeEntry.id);
+                    if (targetNode && targetNode.children.length < targetNode.capacity) {
                         candidates.push({
-                            node: branchNode,
-                            newType: 'leaf',
+                            node: targetNode,
+                            newType: 'terminal',
                             priority: 1,
-                            latency: this.calculateLatency(node.location, branchNode.location)
+                            latency: this.calculateLatency(node.location, targetNode.location)
                         });
                     }
                 });
                 
-                // 2. Try to become a Branch (attach to available trunks)
+                // 2. Try to become a Node (attach to available relays)
                 if (candidates.length === 0) {
-                    topology.trunks.forEach(trunk => {
-                        const trunkNode = this.nodes.get(trunk.id);
-                        if (trunkNode && trunkNode.children.length < trunkNode.capacity) {
+                    topology.relays.forEach(relay => {
+                        const relayNode = this.nodes.get(relay.id);
+                        if (relayNode && relayNode.children.length < relayNode.capacity) {
                             candidates.push({
-                                node: trunkNode,
-                                newType: 'branch',
+                                node: relayNode,
+                                newType: 'node',
                                 priority: 2,
-                                latency: this.calculateLatency(node.location, trunkNode.location)
+                                latency: this.calculateLatency(node.location, relayNode.location)
                             });
                         }
                     });
                 }
                 
-                // 3. Try to become a Trunk (attach to root)
+                // 3. Try to become a Relay (attach to mainframe)
                 if (candidates.length === 0) {
-                    if (bestRoot.root.children.length < bestRoot.root.capacity) {
+                    if (bestMainframe.mainframe.children.length < bestMainframe.mainframe.capacity) {
                         candidates.push({
-                            node: bestRoot.root,
-                            newType: 'trunk',
+                            node: bestMainframe.mainframe,
+                            newType: 'relay',
                             priority: 3,
-                            latency: bestRoot.latency
+                            latency: bestMainframe.latency
                         });
                     }
                 }
@@ -1427,8 +1427,8 @@
                 this.attachNodeToParent(node, bestCandidate.node);
                 node.type = bestCandidate.newType;
                 
-                if (node.type === 'trunk') node.capacity = this.capacities.trunk;
-                else if (node.type === 'branch') node.capacity = this.capacities.branch;
+                if (node.type === 'relay') node.capacity = this.capacities.relay;
+                else if (node.type === 'node') node.capacity = this.capacities.node;
                 else node.capacity = 0;
                 
                 this.logEvent(`${node.id} INTEGRATED AS ${node.type.toUpperCase()} → ${bestCandidate.node.id} (${bestCandidate.latency}ms)`, 'success');
@@ -1479,7 +1479,7 @@
                 
                 const eligibleNodes = Array.from(this.nodes.values()).filter(n => 
                     n.isAlive && 
-                    n.type !== 'root' && 
+                    n.type !== 'mainframe' && 
                     n.type !== 'discovering' && 
                     n.parent &&
                     (!n.lastMigration || currentTime - n.lastMigration > this.migrationCooldown)
@@ -1501,30 +1501,30 @@
             }
             
             runNodeDiscoveryOptimization(node) {
-                // Step 1: Contact all root nodes for fresh topology information
-                const rootNodes = Array.from(this.nodes.values()).filter(n => n.type === 'root' && n.isAlive);
+                // Step 1: Contact all mainframe nodes for fresh topology information
+                const mainframeNodes = Array.from(this.nodes.values()).filter(n => n.type === 'mainframe' && n.isAlive);
                 
-                this.logEvent(`${node.id} REQUESTING FRESH TOPOLOGY FROM ${rootNodes.length} ROOTS`, 'info');
+                this.logEvent(`${node.id} REQUESTING FRESH TOPOLOGY FROM ${mainframeNodes.length} MAINFRAMES`, 'info');
                 
-                let rootResponses = [];
-                rootNodes.forEach((root, index) => {
+                let mainframeResponses = [];
+                mainframeNodes.forEach((mainframe, index) => {
                     setTimeout(() => {
-                        this.addDiscoveryMessage(node, root, 'topology-request', () => {
-                            const latency = this.calculateLatency(node.location, root.location);
+                        this.addDiscoveryMessage(node, mainframe, 'topology-request', () => {
+                            const latency = this.calculateLatency(node.location, mainframe.location);
                             const responseDelay = latency + Math.random() * 30;
                             
                             setTimeout(() => {
-                                this.addDiscoveryMessage(root, node, 'topology-response', () => {
-                                    rootResponses.push({
-                                        root: root,
+                                this.addDiscoveryMessage(mainframe, node, 'topology-response', () => {
+                                    mainframeResponses.push({
+                                        mainframe: mainframe,
                                         latency: latency,
-                                        topology: this.getNetworkTopology(root)
+                                        topology: this.getNetworkTopology(mainframe)
                                     });
                                     
-                                    this.logEvent(`${node.id} RX TOPOLOGY FROM ${root.id} (${latency}ms)`, 'info');
+                                    this.logEvent(`${node.id} RX TOPOLOGY FROM ${mainframe.id} (${latency}ms)`, 'info');
                                     
-                                    if (rootResponses.length === rootNodes.length) {
-                                        this.processOptimizationResponses(node, rootResponses);
+                                    if (mainframeResponses.length === mainframeNodes.length) {
+                                        this.processOptimizationResponses(node, mainframeResponses);
                                     }
                                 });
                             }, responseDelay);
@@ -1608,8 +1608,8 @@
                                 node.lastMigration = Date.now();
                                 
                                 // Update capacity
-                                if (node.type === 'trunk') node.capacity = this.capacities.trunk;
-                                else if (node.type === 'branch') node.capacity = this.capacities.branch;
+                                if (node.type === 'relay') node.capacity = this.capacities.relay;
+                                else if (node.type === 'node') node.capacity = this.capacities.node;
                                 else node.capacity = 0;
                                 
                                 this.logEvent(`${node.id} MIGRATION COMPLETE: NOW ${node.type.toUpperCase()}`, 'success');
@@ -1718,22 +1718,22 @@
             layoutRadial(nodes, width, height) {
                 const centerX = width / 2;
                 const centerY = height / 2;
-                const rootNodes = nodes.filter(n => n.type === 'root');
+                const mainframeNodes = nodes.filter(n => n.type === 'mainframe');
                 
-                // Place roots in center circle
-                rootNodes.forEach((root, index) => {
-                    const angle = (index / rootNodes.length) * Math.PI * 2;
+                // Place mainframes in center circle
+                mainframeNodes.forEach((mainframe, index) => {
+                    const angle = (index / mainframeNodes.length) * Math.PI * 2;
                     const radius = 60;
-                    root.x = centerX + Math.cos(angle) * radius;
-                    root.y = centerY + Math.sin(angle) * radius;
+                    mainframe.x = centerX + Math.cos(angle) * radius;
+                    mainframe.y = centerY + Math.sin(angle) * radius;
                 });
                 
                 // Place other nodes in concentric circles by depth
-                const nonRootNodes = nodes.filter(n => n.type !== 'root');
-                const maxDepth = Math.max(...nonRootNodes.map(n => n.depth), 0);
+                const nonMainframeNodes = nodes.filter(n => n.type !== 'mainframe');
+                const maxDepth = Math.max(...nonMainframeNodes.map(n => n.depth), 0);
                 
                 for (let depth = 1; depth <= maxDepth; depth++) {
-                    const depthNodes = nonRootNodes.filter(n => n.depth === depth);
+                    const depthNodes = nonMainframeNodes.filter(n => n.depth === depth);
                     const radius = 60 + depth * 80;
                     
                     depthNodes.forEach((node, index) => {
@@ -1745,14 +1745,14 @@
             }
             
             layoutTree(nodes, width, height) {
-                const rootNodes = nodes.filter(n => n.type === 'root');
-                const rootSpacing = width / (rootNodes.length + 1);
+                const mainframeNodes = nodes.filter(n => n.type === 'mainframe');
+                const mainframeSpacing = width / (mainframeNodes.length + 1);
                 
-                // Place roots at bottom
-                rootNodes.forEach((root, index) => {
-                    root.x = rootSpacing * (index + 1);
-                    root.y = height - 80;
-                    this.layoutTreeRecursive(root, root.x, root.y, 150, height - 80);
+                // Place mainframes at bottom
+                mainframeNodes.forEach((mainframe, index) => {
+                    mainframe.x = mainframeSpacing * (index + 1);
+                    mainframe.y = height - 80;
+                    this.layoutTreeRecursive(mainframe, mainframe.x, mainframe.y, 150, height - 80);
                 });
             }
             
@@ -1833,11 +1833,11 @@
                 this.nodes.clear();
                 this.nodeIdCounter = 1;
                 this.discoveryMessages = [];
-                this.initializeRootNodes();
+                this.initializeMainframes();
                 
                 this.updateVisualization();
                 this.updateStats();
-                this.logEvent('SYNTH TREE MATRIX RESET - ALL NODES PURGED', 'warning');
+                this.logEvent('SYNTH TREE MATRIX RESET - ALL MAINFRAMES RESTORED', 'warning');
             }
             
             addDiscoveryMessage(source, target, type, callback = null, customDuration = null) {
@@ -1942,7 +1942,7 @@
                     element.style.top = scaledY + 'px';
                     element.style.transform = `scale(${this.zoom})`;
                     
-                    if (node.type !== 'root') {
+                    if (node.type !== 'mainframe') {
                         element.addEventListener('click', () => {
                             this.removeNode(node.id);
                         });
@@ -1954,7 +1954,7 @@
             
             removeNode(nodeId) {
                 const node = this.nodes.get(nodeId);
-                if (!node || node.type === 'root') return;
+                if (!node || node.type === 'mainframe') return;
                 
                 const orphans = [...node.children];
                 
@@ -1980,16 +1980,16 @@
             }
             
             updateStats() {
-                const stats = { total: 0, root: 0, trunk: 0, branch: 0, leaf: 0, discovering: 0, depths: [] };
+                const stats = { total: 0, mainframe: 0, relay: 0, node: 0, terminal: 0, discovering: 0, depths: [] };
                 
-                for (const [id, node] of this.nodes) {
-                    if (!node.isAlive) continue;
+                for (const [id, nodeEntry] of this.nodes) {
+                    if (!nodeEntry.isAlive) continue;
                     stats.total++;
-                    if (node.type === 'discovering') {
+                    if (nodeEntry.type === 'discovering') {
                         stats.discovering++;
                     } else {
-                        stats[node.type]++;
-                        if (node.type !== 'root') stats.depths.push(node.depth);
+                        stats[nodeEntry.type]++;
+                        if (nodeEntry.type !== 'mainframe') stats.depths.push(nodeEntry.depth);
                     }
                 }
                 
@@ -1998,10 +1998,10 @@
                     : '0.00';
                 
                 document.getElementById('totalNodes').textContent = stats.total;
-                document.getElementById('rootNodes').textContent = stats.root;
-                document.getElementById('trunkNodes').textContent = stats.trunk;
-                document.getElementById('branchNodes').textContent = stats.branch;
-                document.getElementById('leafNodes').textContent = stats.leaf;
+                document.getElementById('mainframeNodes').textContent = stats.mainframe;
+                document.getElementById('relayNodes').textContent = stats.relay;
+                document.getElementById('nodeNodes').textContent = stats.node;
+                document.getElementById('terminalNodes').textContent = stats.terminal;
                 document.getElementById('avgDepth').textContent = avgDepth;
             }
             
