@@ -342,6 +342,28 @@ header p {
     animation: fadeIn 0.5s ease-out;
 }
 
+/* Discovery message animation */
+.discovery-message {
+    pointer-events: none;
+    filter: blur(0.5px);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        r: 3;
+        opacity: 0.8;
+    }
+    50% {
+        r: 5;
+        opacity: 1;
+    }
+    100% {
+        r: 3;
+        opacity: 0.8;
+    }
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
     width: 8px;

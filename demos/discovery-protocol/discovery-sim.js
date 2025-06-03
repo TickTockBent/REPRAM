@@ -7,6 +7,7 @@ class DiscoverySimulation {
         this.viewMode = 'tree';
         this.showLatency = true;
         this.animateChanges = true;
+        this.discoveryMessages = [];
         
         // Capacity limits
         this.capacities = {
@@ -26,6 +27,9 @@ class DiscoverySimulation {
         
         // Set up event handlers
         this.setupEventHandlers();
+        
+        // Start discovery message animation
+        this.startDiscoveryAnimation();
         
         // Initial render
         this.updateVisualization();
@@ -65,24 +69,8 @@ class DiscoverySimulation {
         document.getElementById('resetBtn').addEventListener('click', () => this.resetNetwork());
         
         document.getElementById('viewMode').addEventListener('change', (e) => {
-            const oldMode = this.viewMode;
             this.viewMode = e.target.value;
-            
-            // If animations are enabled, fade out then fade in
-            if (this.animateChanges) {
-                const g = this.svg.select('g.main-group');
-                g.transition()
-                    .duration(300)
-                    .style('opacity', 0)
-                    .on('end', () => {
-                        this.updateVisualization();
-                        g.transition()
-                            .duration(300)
-                            .style('opacity', 1);
-                    });
-            } else {
-                this.updateVisualization();
-            }
+            this.updateVisualization();
         });
         
         document.getElementById('showLatency').addEventListener('change', (e) => {
@@ -93,6 +81,32 @@ class DiscoverySimulation {
         document.getElementById('animateChanges').addEventListener('change', (e) => {
             this.animateChanges = e.target.checked;
         });
+    }
+    
+    startDiscoveryAnimation() {
+        // Animate discovery messages between nodes
+        setInterval(() => {
+            // Clean up old messages
+            this.discoveryMessages = this.discoveryMessages.filter(msg => Date.now() - msg.startTime < msg.duration);
+            
+            // Add new discovery messages
+            const nodes = Array.from(this.nodes.values()).filter(n => n.isAlive);
+            if (nodes.length > 1 && Math.random() < 0.3) {
+                const source = nodes[Math.floor(Math.random() * nodes.length)];
+                const target = nodes[Math.floor(Math.random() * nodes.length)];
+                
+                if (source !== target) {
+                    this.discoveryMessages.push({
+                        id: Math.random(),
+                        source: source,
+                        target: target,
+                        startTime: Date.now(),
+                        duration: 2000 + Math.random() * 1000,
+                        type: 'discovery'
+                    });
+                }
+            }
+        }, 500);
     }
     
     addNode() {
@@ -123,6 +137,9 @@ class DiscoverySimulation {
         
         if (attached) {
             this.logEvent(`Added ${nodeId} at (${location.lat.toFixed(1)}, ${location.lon.toFixed(1)})`, 'success');
+            
+            // Trigger discovery messages
+            this.triggerDiscoveryMessages(node);
         } else {
             this.nodes.delete(nodeId);
             this.logEvent(`Failed to add ${nodeId} - network full`, 'error');
@@ -145,13 +162,11 @@ class DiscoverySimulation {
         for (const [id, potentialParent] of this.nodes) {
             if (!potentialParent.isAlive || potentialParent === node) continue;
             
+            // Check capacity
             const hasCapacity = potentialParent.children.length < potentialParent.capacity;
             if (!hasCapacity) continue;
             
-            // IMPORTANT: Leaf nodes cannot attach to root nodes
-            if (node.type === 'leaf' && potentialParent.type === 'root') continue;
-            
-            // Also prevent creating cycles where a leaf would become parent of non-leaf
+            // Only non-leaf nodes can be parents
             if (potentialParent.type === 'leaf') continue;
             
             const latency = this.calculateLatency(node.location, potentialParent.location);
@@ -163,23 +178,29 @@ class DiscoverySimulation {
         // Sort by latency (best first)
         candidates.sort((a, b) => a.latency - b.latency);
         
-        // Try to attach at deepest level possible (but respect hierarchy)
+        // Try to attach at deepest level possible
         let bestCandidate = null;
         let maxDepth = -1;
         
-        for (const candidate of candidates.slice(0, 5)) { // Consider top 5 by latency
-            // Ensure proper hierarchy: Root -> Trunk -> Branch -> Leaf
-            if (node.type === 'leaf' && candidate.parent.type === 'root') continue;
-            
-            if (candidate.parent.depth > maxDepth) {
-                maxDepth = candidate.parent.depth;
-                bestCandidate = candidate;
+        // First, try to find branch nodes (deepest level that can have children)
+        const branchCandidates = candidates.filter(c => c.parent.type === 'branch');
+        if (branchCandidates.length > 0) {
+            bestCandidate = branchCandidates[0];
+        } else {
+            // If no branches available, try trunk nodes
+            const trunkCandidates = candidates.filter(c => c.parent.type === 'trunk');
+            if (trunkCandidates.length > 0) {
+                bestCandidate = trunkCandidates[0];
+            } else {
+                // Finally, attach to root if necessary
+                const rootCandidates = candidates.filter(c => c.parent.type === 'root');
+                if (rootCandidates.length > 0) {
+                    bestCandidate = rootCandidates[0];
+                }
             }
         }
         
-        if (!bestCandidate) {
-            bestCandidate = candidates[0];
-        }
+        if (!bestCandidate) return false;
         
         // Attach to best parent
         const parent = bestCandidate.parent;
@@ -202,6 +223,33 @@ class DiscoverySimulation {
         return true;
     }
     
+    triggerDiscoveryMessages(node) {
+        // Simulate discovery protocol messages
+        if (node.parent) {
+            // Message to parent
+            this.discoveryMessages.push({
+                id: Math.random(),
+                source: node,
+                target: node.parent,
+                startTime: Date.now(),
+                duration: 1500,
+                type: 'attach'
+            });
+            
+            // Response from parent
+            setTimeout(() => {
+                this.discoveryMessages.push({
+                    id: Math.random(),
+                    source: node.parent,
+                    target: node,
+                    startTime: Date.now(),
+                    duration: 1500,
+                    type: 'confirm'
+                });
+            }, 300);
+        }
+    }
+    
     calculateLatency(loc1, loc2) {
         // Haversine formula for distance
         const R = 6371; // Earth radius in km
@@ -222,9 +270,10 @@ class DiscoverySimulation {
         let migrations = 0;
         
         // Check each node for better attachment
-        for (const [id, node] of this.nodes) {
-            if (!node.isAlive || node.type === 'root' || !node.parent) continue;
-            
+        const nodesToCheck = Array.from(this.nodes.values())
+            .filter(n => n.isAlive && n.type !== 'root' && n.parent);
+        
+        for (const node of nodesToCheck) {
             const currentLatency = this.calculateLatency(node.location, node.parent.location);
             
             // Find better parent
@@ -232,7 +281,7 @@ class DiscoverySimulation {
             let bestLatency = currentLatency;
             
             for (const [pid, potential] of this.nodes) {
-                if (!potential.isAlive || potential === node || potential.capacity === 0) continue;
+                if (!potential.isAlive || potential === node || potential.type === 'leaf') continue;
                 if (potential.children.length >= potential.capacity) continue;
                 if (this.wouldCreateCycle(node, potential)) continue;
                 
@@ -266,6 +315,25 @@ class DiscoverySimulation {
     }
     
     migrateNode(node, newParent) {
+        // Trigger migration discovery messages
+        this.discoveryMessages.push({
+            id: Math.random(),
+            source: node,
+            target: node.parent,
+            startTime: Date.now(),
+            duration: 1000,
+            type: 'leave'
+        });
+        
+        this.discoveryMessages.push({
+            id: Math.random(),
+            source: node,
+            target: newParent,
+            startTime: Date.now() + 500,
+            duration: 1500,
+            type: 'join'
+        });
+        
         // Remove from old parent
         if (node.parent) {
             node.parent.children = node.parent.children.filter(c => c !== node);
@@ -353,6 +421,7 @@ class DiscoverySimulation {
         
         this.nodes.clear();
         this.nodeIdCounter = 1;
+        this.discoveryMessages = [];
         this.initializeRootNodes();
         
         this.updateVisualization();
@@ -405,22 +474,18 @@ class DiscoverySimulation {
     }
     
     updateVisualization() {
-        // Instead of removing everything, we'll update existing elements
-        let g = this.svg.select('g.main-group');
+        this.svg.selectAll('*').remove();
         
-        if (g.empty()) {
-            // First time setup
-            g = this.svg.append('g').attr('class', 'main-group');
-            
-            // Set up zoom
-            const zoom = d3.zoom()
-                .scaleExtent([0.1, 4])
-                .on('zoom', (event) => {
-                    g.attr('transform', event.transform);
-                });
-            
-            this.svg.call(zoom);
-        }
+        const g = this.svg.append('g');
+        
+        // Set up zoom
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on('zoom', (event) => {
+                g.attr('transform', event.transform);
+            });
+        
+        this.svg.call(zoom);
         
         if (this.viewMode === 'tree') {
             this.renderTreeView(g);
@@ -428,6 +493,73 @@ class DiscoverySimulation {
             this.renderGeographicView(g);
         } else {
             this.renderRadialView(g);
+        }
+        
+        // Render discovery messages on top
+        this.renderDiscoveryMessages(g);
+    }
+    
+    renderDiscoveryMessages(g) {
+        const messages = g.selectAll('.discovery-message')
+            .data(this.discoveryMessages, d => d.id);
+        
+        messages.exit().remove();
+        
+        const messageEnter = messages.enter()
+            .append('circle')
+            .attr('class', 'discovery-message')
+            .attr('r', 3)
+            .style('fill', d => {
+                if (d.type === 'discovery') return '#00d2ff';
+                if (d.type === 'attach' || d.type === 'join') return '#48bb78';
+                if (d.type === 'leave') return '#f56565';
+                return '#f6ad55';
+            })
+            .style('opacity', 0.8);
+        
+        const allMessages = messageEnter.merge(messages);
+        
+        // Animate messages along paths
+        allMessages.each(function(d) {
+            const message = d3.select(this);
+            const progress = (Date.now() - d.startTime) / d.duration;
+            
+            if (progress >= 1) return;
+            
+            let x1, y1, x2, y2;
+            
+            if (this.viewMode === 'tree') {
+                const root = this.getTreeRoot();
+                x1 = this.getNodeX(d.source, root);
+                y1 = this.getNodeY(d.source, root);
+                x2 = this.getNodeX(d.target, root);
+                y2 = this.getNodeY(d.target, root);
+            } else if (this.viewMode === 'geographic') {
+                const xScale = d3.scaleLinear().domain([-180, 180]).range([50, this.width - 50]);
+                const yScale = d3.scaleLinear().domain([-90, 90]).range([this.height - 50, 50]);
+                x1 = xScale(d.source.location.lon);
+                y1 = yScale(d.source.location.lat);
+                x2 = xScale(d.target.location.lon);
+                y2 = yScale(d.target.location.lat);
+            } else {
+                x1 = d.source.x || this.width / 2;
+                y1 = d.source.y || this.height / 2;
+                x2 = d.target.x || this.width / 2;
+                y2 = d.target.y || this.height / 2;
+            }
+            
+            const x = x1 + (x2 - x1) * progress;
+            const y = y1 + (y2 - y1) * progress;
+            
+            message
+                .attr('cx', x)
+                .attr('cy', y)
+                .style('opacity', 0.8 * (1 - progress * 0.5));
+        }.bind(this));
+        
+        // Schedule next update
+        if (this.discoveryMessages.length > 0) {
+            requestAnimationFrame(() => this.renderDiscoveryMessages(g));
         }
     }
     
@@ -439,7 +571,6 @@ class DiscoverySimulation {
         nodes.forEach(node => {
             if (node.parent && node.parent.isAlive) {
                 links.push({
-                    id: `${node.parent.id}-${node.id}`,
                     source: node.parent,
                     target: node,
                     latency: this.calculateLatency(node.location, node.parent.location)
@@ -458,143 +589,141 @@ class DiscoverySimulation {
         const root = d3.hierarchy(hierarchy, d => d.children || []);
         treeLayout(root);
         
-        // Calculate positions for all nodes
-        nodes.forEach(node => {
-            const hierarchyNode = this.findInHierarchy(root, node);
-            if (hierarchyNode) {
-                node.targetX = hierarchyNode.x + 50;
-                node.targetY = hierarchyNode.y + 50;
-            } else {
-                // Fallback position for orphaned nodes
-                node.targetX = this.width / 2;
-                node.targetY = this.height / 2;
-            }
-        });
+        // Store tree root for message animation
+        this.treeRoot = root;
         
-        // Update links with D3 join pattern
-        const linkGroup = g.selectAll('g.link-group')
-            .data(links, d => d.id);
+        const duration = this.animateChanges ? 750 : 0;
         
-        // Exit - remove old links
-        linkGroup.exit()
-            .transition()
-            .duration(this.animateChanges ? 500 : 0)
-            .style('opacity', 0)
-            .remove();
+        // Draw links
+        const link = g.selectAll('.link')
+            .data(links, d => `${d.source.id}-${d.target.id}`);
         
-        // Enter - add new links
-        const linkEnter = linkGroup.enter()
-            .append('g')
-            .attr('class', 'link-group')
-            .style('opacity', 0);
+        const linkEnter = link.enter().append('g')
+            .attr('class', 'link-group');
         
         linkEnter.append('line')
             .attr('class', 'link')
-            .attr('x1', d => d.source.targetX || 0)
-            .attr('y1', d => d.source.targetY || 0)
-            .attr('x2', d => d.source.targetX || 0)
-            .attr('y2', d => d.source.targetY || 0);
+            .attr('x1', d => this.getNodeX(d.source, root))
+            .attr('y1', d => this.getNodeY(d.source, root))
+            .attr('x2', d => this.getNodeX(d.source, root))
+            .attr('y2', d => this.getNodeY(d.source, root));
         
         if (this.showLatency) {
             linkEnter.append('text')
                 .attr('class', 'link-label')
-                .attr('x', d => d.source.targetX || 0)
-                .attr('y', d => d.source.targetY || 0)
-                .text(d => d.latency + 'ms');
+                .attr('x', d => this.getNodeX(d.source, root))
+                .attr('y', d => this.getNodeY(d.source, root))
+                .style('opacity', 0);
         }
         
-        // Update - merge enter and update selections
-        const linkUpdate = linkEnter.merge(linkGroup);
+        // Update links
+        const linkUpdate = linkEnter.merge(link);
         
-        linkUpdate.transition()
-            .duration(this.animateChanges ? 750 : 0)
-            .style('opacity', 1)
-            .select('line')
-            .attr('x1', d => d.source.targetX)
-            .attr('y1', d => d.source.targetY)
-            .attr('x2', d => d.target.targetX)
-            .attr('y2', d => d.target.targetY);
+        linkUpdate.select('line')
+            .transition()
+            .duration(duration)
+            .attr('x1', d => this.getNodeX(d.source, root))
+            .attr('y1', d => this.getNodeY(d.source, root))
+            .attr('x2', d => this.getNodeX(d.target, root))
+            .attr('y2', d => this.getNodeY(d.target, root));
         
         if (this.showLatency) {
             linkUpdate.select('text')
                 .transition()
-                .duration(this.animateChanges ? 750 : 0)
-                .attr('x', d => (d.source.targetX + d.target.targetX) / 2)
-                .attr('y', d => (d.source.targetY + d.target.targetY) / 2);
+                .duration(duration)
+                .attr('x', d => (this.getNodeX(d.source, root) + this.getNodeX(d.target, root)) / 2)
+                .attr('y', d => (this.getNodeY(d.source, root) + this.getNodeY(d.target, root)) / 2)
+                .style('opacity', 1)
+                .text(d => d.latency + 'ms');
         }
         
-        // Update nodes with D3 join pattern
-        const nodeGroup = g.selectAll('g.node-group')
-            .data(nodes, d => d.id);
-        
-        // Exit - remove old nodes
-        nodeGroup.exit()
+        link.exit()
             .transition()
-            .duration(this.animateChanges ? 500 : 0)
+            .duration(duration)
             .style('opacity', 0)
-            .attr('transform', d => `translate(${d.targetX || 0}, ${d.targetY || 0}) scale(0)`)
             .remove();
         
-        // Enter - add new nodes
-        const nodeEnter = nodeGroup.enter()
-            .append('g')
-            .attr('class', 'node-group')
-            .attr('transform', d => `translate(${d.targetX || this.width/2}, ${d.targetY || this.height/2}) scale(0)`)
-            .style('opacity', 0)
+        // Draw nodes
+        const node = g.selectAll('.node')
+            .data(nodes, d => d.id);
+        
+        const nodeEnter = node.enter().append('g')
+            .attr('class', 'node')
+            .attr('transform', d => `translate(${this.getNodeX(d.parent || d, root)}, ${this.getNodeY(d.parent || d, root)})`)
             .on('click', (event, d) => {
                 if (d.type !== 'root') {
                     this.removeNode(d.id);
                 }
+            })
+            .on('mouseover', function(event, d) {
+                d3.select(this).select('circle')
+                    .transition()
+                    .duration(200)
+                    .attr('r', d => (d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6) * 1.3);
+            })
+            .on('mouseout', function(event, d) {
+                d3.select(this).select('circle')
+                    .transition()
+                    .duration(200)
+                    .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6);
             });
         
         nodeEnter.append('circle')
-            .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6)
+            .attr('r', 0)
             .attr('class', d => `node-${d.type}`)
             .attr('stroke', '#fff')
-            .attr('stroke-width', 2);
+            .attr('stroke-width', 2)
+            .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))');
         
         nodeEnter.append('text')
             .attr('class', 'node-label')
             .attr('y', 20)
+            .style('opacity', 0)
             .text(d => d.label || d.id);
         
-        // Add capacity indicators for non-leaf nodes
         nodeEnter.filter(d => d.capacity > 0)
             .append('text')
-            .attr('class', 'node-capacity')
+            .attr('class', 'node-label')
             .attr('y', 35)
-            .style('font-size', '10px');
-        
-        // Update - merge enter and update selections
-        const nodeUpdate = nodeEnter.merge(nodeGroup);
-        
-        // Animate to new positions
-        nodeUpdate.transition()
-            .duration(this.animateChanges ? 750 : 0)
-            .delay((d, i) => this.animateChanges ? i * 10 : 0)
-            .style('opacity', 1)
-            .attr('transform', d => `translate(${d.targetX}, ${d.targetY}) scale(1)`);
-        
-        // Update capacity text
-        nodeUpdate.select('.node-capacity')
+            .style('font-size', '10px')
+            .style('opacity', 0)
             .text(d => `${d.children.length}/${d.capacity}`);
         
-        // Add some fun animations on hover
-        if (this.animateChanges) {
-            nodeUpdate
-                .on('mouseenter', function(event, d) {
-                    d3.select(this)
-                        .transition()
-                        .duration(200)
-                        .attr('transform', `translate(${d.targetX}, ${d.targetY}) scale(1.2)`);
-                })
-                .on('mouseleave', function(event, d) {
-                    d3.select(this)
-                        .transition()
-                        .duration(200)
-                        .attr('transform', `translate(${d.targetX}, ${d.targetY}) scale(1)`);
-                });
-        }
+        // Update nodes
+        const nodeUpdate = nodeEnter.merge(node);
+        
+        nodeUpdate.transition()
+            .duration(duration)
+            .delay((d, i) => i * 50)
+            .attr('transform', d => `translate(${this.getNodeX(d, root)}, ${this.getNodeY(d, root)})`);
+        
+        nodeUpdate.select('circle')
+            .transition()
+            .duration(duration)
+            .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6);
+        
+        nodeUpdate.selectAll('text')
+            .transition()
+            .duration(duration)
+            .style('opacity', 1);
+        
+        // Remove nodes
+        node.exit()
+            .transition()
+            .duration(duration)
+            .style('opacity', 0)
+            .attr('transform', function(d) {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 50;
+                const x = parseFloat(d3.select(this).attr('transform').split('(')[1]);
+                const y = parseFloat(d3.select(this).attr('transform').split(',')[1]);
+                return `translate(${x + Math.cos(angle) * distance}, ${y + Math.sin(angle) * distance}) rotate(180)`;
+            })
+            .remove();
+    }
+    
+    getTreeRoot() {
+        return this.treeRoot;
     }
     
     getNodeX(node, root) {
@@ -627,7 +756,6 @@ class DiscoverySimulation {
         nodes.forEach(node => {
             if (node.parent && node.parent.isAlive) {
                 links.push({
-                    id: `${node.parent.id}-${node.id}`,
                     source: node.parent,
                     target: node,
                     latency: this.calculateLatency(node.location, node.parent.location)
@@ -644,55 +772,36 @@ class DiscoverySimulation {
             .domain([-90, 90])
             .range([this.height - 50, 50]);
         
-        // Update links with D3 join pattern
-        const linkGroup = g.selectAll('g.link-group')
-            .data(links, d => d.id);
+        const duration = this.animateChanges ? 750 : 0;
         
-        linkGroup.exit()
-            .transition()
-            .duration(this.animateChanges ? 500 : 0)
-            .style('opacity', 0)
-            .remove();
+        // Draw links
+        const link = g.selectAll('.link')
+            .data(links, d => `${d.source.id}-${d.target.id}`);
         
-        const linkEnter = linkGroup.enter()
-            .append('g')
-            .attr('class', 'link-group')
-            .style('opacity', 0);
-        
-        linkEnter.append('line')
+        link.enter().append('line')
             .attr('class', 'link')
             .attr('x1', d => xScale(d.source.location.lon))
             .attr('y1', d => yScale(d.source.location.lat))
             .attr('x2', d => xScale(d.source.location.lon))
-            .attr('y2', d => yScale(d.source.location.lat));
-        
-        const linkUpdate = linkEnter.merge(linkGroup);
-        
-        linkUpdate.transition()
-            .duration(this.animateChanges ? 750 : 0)
-            .style('opacity', 1)
-            .select('line')
-            .attr('x1', d => xScale(d.source.location.lon))
-            .attr('y1', d => yScale(d.source.location.lat))
+            .attr('y2', d => yScale(d.source.location.lat))
+            .transition()
+            .duration(duration)
             .attr('x2', d => xScale(d.target.location.lon))
             .attr('y2', d => yScale(d.target.location.lat));
         
-        // Update nodes with D3 join pattern
-        const nodeGroup = g.selectAll('g.node-group')
-            .data(nodes, d => d.id);
-        
-        nodeGroup.exit()
+        link.exit()
             .transition()
-            .duration(this.animateChanges ? 500 : 0)
+            .duration(duration)
             .style('opacity', 0)
-            .attr('transform', d => `translate(${xScale(d.location.lon)}, ${yScale(d.location.lat)}) scale(0)`)
             .remove();
         
-        const nodeEnter = nodeGroup.enter()
-            .append('g')
-            .attr('class', 'node-group')
-            .attr('transform', d => `translate(${xScale(d.location.lon)}, ${yScale(d.location.lat)}) scale(0)`)
-            .style('opacity', 0)
+        // Draw nodes
+        const node = g.selectAll('.node')
+            .data(nodes, d => d.id);
+        
+        const nodeEnter = node.enter().append('g')
+            .attr('class', 'node')
+            .attr('transform', d => `translate(${xScale(d.location.lon)}, ${yScale(d.location.lat)})`)
             .on('click', (event, d) => {
                 if (d.type !== 'root') {
                     this.removeNode(d.id);
@@ -700,34 +809,39 @@ class DiscoverySimulation {
             });
         
         nodeEnter.append('circle')
-            .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6)
+            .attr('r', 0)
             .attr('class', d => `node-${d.type}`)
             .attr('stroke', '#fff')
-            .attr('stroke-width', 2);
+            .attr('stroke-width', 2)
+            .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))')
+            .transition()
+            .duration(duration)
+            .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6)
+            .on('end', function() {
+                // Pulse animation for new nodes
+                d3.select(this)
+                    .transition()
+                    .duration(300)
+                    .attr('r', d => (d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6) * 1.5)
+                    .transition()
+                    .duration(300)
+                    .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6);
+            });
         
         nodeEnter.append('text')
             .attr('class', 'node-label')
             .attr('y', 20)
-            .text(d => d.label || d.id);
+            .style('opacity', 0)
+            .text(d => d.label || d.id)
+            .transition()
+            .duration(duration)
+            .style('opacity', 1);
         
-        const nodeUpdate = nodeEnter.merge(nodeGroup);
-        
-        nodeUpdate.transition()
-            .duration(this.animateChanges ? 750 : 0)
-            .delay((d, i) => this.animateChanges ? i * 10 : 0)
-            .style('opacity', 1)
-            .attr('transform', d => `translate(${xScale(d.location.lon)}, ${yScale(d.location.lat)}) scale(1)`);
-        
-        // Add pulse animation for new nodes
-        if (this.animateChanges) {
-            nodeEnter.select('circle')
-                .transition()
-                .duration(1000)
-                .attr('r', d => (d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6) * 1.5)
-                .transition()
-                .duration(500)
-                .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6);
-        }
+        node.exit()
+            .transition()
+            .duration(duration)
+            .style('opacity', 0)
+            .remove();
     }
     
     renderRadialView(g) {
@@ -737,7 +851,6 @@ class DiscoverySimulation {
         nodes.forEach(node => {
             if (node.parent && node.parent.isAlive) {
                 links.push({
-                    id: `${node.parent.id}-${node.id}`,
                     source: node.parent,
                     target: node,
                     latency: this.calculateLatency(node.location, node.parent.location)
@@ -750,77 +863,51 @@ class DiscoverySimulation {
         const centerY = this.height / 2;
         const radiusStep = 80;
         
-        // Position nodes by depth
+        // Position nodes by depth with rotation animation
+        const time = Date.now() * 0.0001;
         nodes.forEach(node => {
             if (node.type === 'root') {
                 const rootIndex = Array.from(this.nodes.values())
                     .filter(n => n.type === 'root')
                     .indexOf(node);
-                const angle = (rootIndex / 3) * 2 * Math.PI;
-                node.targetX = centerX + Math.cos(angle) * 50;
-                node.targetY = centerY + Math.sin(angle) * 50;
+                const angle = (rootIndex / 3) * 2 * Math.PI + time;
+                node.x = centerX + Math.cos(angle) * 50;
+                node.y = centerY + Math.sin(angle) * 50;
             } else {
                 const radius = node.depth * radiusStep;
                 const siblings = node.parent.children;
                 const index = siblings.indexOf(node);
                 const angleStep = (2 * Math.PI) / siblings.length;
-                const parentAngle = Math.atan2(node.parent.targetY - centerY, node.parent.targetX - centerX);
-                const angle = parentAngle + (index - siblings.length / 2) * angleStep * 0.3;
+                const parentAngle = Math.atan2(node.parent.y - centerY, node.parent.x - centerX);
+                const angle = parentAngle + (index - siblings.length / 2) * angleStep * 0.3 + time * (0.5 / node.depth);
                 
-                node.targetX = centerX + Math.cos(angle) * radius;
-                node.targetY = centerY + Math.sin(angle) * radius;
+                node.x = centerX + Math.cos(angle) * radius;
+                node.y = centerY + Math.sin(angle) * radius;
             }
         });
         
-        // Update links with D3 join pattern
-        const linkGroup = g.selectAll('g.link-group')
-            .data(links, d => d.id);
+        const duration = this.animateChanges ? 750 : 0;
         
-        linkGroup.exit()
-            .transition()
-            .duration(this.animateChanges ? 500 : 0)
-            .style('opacity', 0)
-            .remove();
+        // Draw links
+        const link = g.selectAll('.link')
+            .data(links, d => `${d.source.id}-${d.target.id}`);
         
-        const linkEnter = linkGroup.enter()
-            .append('g')
-            .attr('class', 'link-group')
-            .style('opacity', 0);
-        
-        linkEnter.append('line')
+        link.enter().append('line')
             .attr('class', 'link')
-            .attr('x1', d => d.source.targetX || centerX)
-            .attr('y1', d => d.source.targetY || centerY)
-            .attr('x2', d => d.source.targetX || centerX)
-            .attr('y2', d => d.source.targetY || centerY);
+            .merge(link)
+            .attr('x1', d => d.source.x)
+            .attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x)
+            .attr('y2', d => d.target.y);
         
-        const linkUpdate = linkEnter.merge(linkGroup);
+        link.exit().remove();
         
-        linkUpdate.transition()
-            .duration(this.animateChanges ? 750 : 0)
-            .style('opacity', 1)
-            .select('line')
-            .attr('x1', d => d.source.targetX)
-            .attr('y1', d => d.source.targetY)
-            .attr('x2', d => d.target.targetX)
-            .attr('y2', d => d.target.targetY);
-        
-        // Update nodes with D3 join pattern
-        const nodeGroup = g.selectAll('g.node-group')
+        // Draw nodes
+        const node = g.selectAll('.node')
             .data(nodes, d => d.id);
         
-        nodeGroup.exit()
-            .transition()
-            .duration(this.animateChanges ? 500 : 0)
-            .style('opacity', 0)
-            .attr('transform', d => `translate(${d.targetX || centerX}, ${d.targetY || centerY}) scale(0) rotate(360)`)
-            .remove();
-        
-        const nodeEnter = nodeGroup.enter()
-            .append('g')
-            .attr('class', 'node-group')
-            .attr('transform', d => `translate(${centerX}, ${centerY}) scale(0)`)
-            .style('opacity', 0)
+        const nodeEnter = node.enter().append('g')
+            .attr('class', 'node')
             .on('click', (event, d) => {
                 if (d.type !== 'root') {
                     this.removeNode(d.id);
@@ -828,59 +915,32 @@ class DiscoverySimulation {
             });
         
         nodeEnter.append('circle')
-            .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6)
+            .attr('r', 0)
             .attr('class', d => `node-${d.type}`)
             .attr('stroke', '#fff')
-            .attr('stroke-width', 2);
+            .attr('stroke-width', 2)
+            .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))')
+            .transition()
+            .duration(duration)
+            .attr('r', d => d.type === 'root' ? 12 : d.type === 'trunk' ? 10 : d.type === 'branch' ? 8 : 6);
         
         nodeEnter.append('text')
             .attr('class', 'node-label')
             .attr('y', 20)
             .text(d => d.label || d.id);
         
-        const nodeUpdate = nodeEnter.merge(nodeGroup);
+        const nodeUpdate = nodeEnter.merge(node);
+        nodeUpdate.attr('transform', d => `translate(${d.x}, ${d.y})`);
         
-        // Animate nodes spiraling out from center
-        nodeUpdate.transition()
-            .duration(this.animateChanges ? 1000 : 0)
-            .delay((d, i) => this.animateChanges ? d.depth * 100 : 0)
-            .style('opacity', 1)
-            .attr('transform', d => `translate(${d.targetX}, ${d.targetY}) scale(1) rotate(0)`);
+        node.exit()
+            .transition()
+            .duration(duration)
+            .style('opacity', 0)
+            .remove();
         
-        // Add orbit animation for fun
-        if (this.animateChanges) {
-            nodeUpdate.filter(d => d.type !== 'root')
-                .transition()
-                .delay(1500)
-                .duration(20000)
-                .ease(d3.easeLinear)
-                .attrTween('transform', function(d) {
-                    const radius = Math.sqrt(Math.pow(d.targetX - centerX, 2) + Math.pow(d.targetY - centerY, 2));
-                    const startAngle = Math.atan2(d.targetY - centerY, d.targetX - centerX);
-                    return function(t) {
-                        const angle = startAngle + (t * Math.PI * 2 * 0.1); // Slow rotation
-                        const x = centerX + radius * Math.cos(angle);
-                        const y = centerY + radius * Math.sin(angle);
-                        return `translate(${x}, ${y}) scale(1)`;
-                    };
-                })
-                .on('end', function repeat() {
-                    d3.select(this)
-                        .transition()
-                        .duration(20000)
-                        .ease(d3.easeLinear)
-                        .attrTween('transform', function(d) {
-                            const radius = Math.sqrt(Math.pow(d.targetX - centerX, 2) + Math.pow(d.targetY - centerY, 2));
-                            const startAngle = Math.atan2(d.targetY - centerY, d.targetX - centerX);
-                            return function(t) {
-                                const angle = startAngle + (t * Math.PI * 2 * 0.1);
-                                const x = centerX + radius * Math.cos(angle);
-                                const y = centerY + radius * Math.sin(angle);
-                                return `translate(${x}, ${y}) scale(1)`;
-                            };
-                        })
-                        .on('end', repeat);
-                });
+        // Continue animation
+        if (this.viewMode === 'radial') {
+            requestAnimationFrame(() => this.renderRadialView(g));
         }
     }
     
@@ -895,35 +955,11 @@ class DiscoverySimulation {
             <span class="log-message ${type}">${message}</span>
         `;
         
-        // Start with entry off-screen
-        entry.style.transform = 'translateX(-100%)';
-        entry.style.opacity = '0';
-        
         log.insertBefore(entry, log.firstChild);
-        
-        // Animate entry sliding in
-        if (this.animateChanges) {
-            setTimeout(() => {
-                entry.style.transition = 'all 0.3s ease-out';
-                entry.style.transform = 'translateX(0)';
-                entry.style.opacity = '1';
-            }, 10);
-        } else {
-            entry.style.transform = 'translateX(0)';
-            entry.style.opacity = '1';
-        }
         
         // Keep only last 20 entries
         while (log.children.length > 20) {
-            const lastChild = log.lastChild;
-            if (this.animateChanges) {
-                lastChild.style.transition = 'all 0.3s ease-out';
-                lastChild.style.transform = 'translateX(100%)';
-                lastChild.style.opacity = '0';
-                setTimeout(() => log.removeChild(lastChild), 300);
-            } else {
-                log.removeChild(lastChild);
-            }
+            log.removeChild(log.lastChild);
         }
     }
 }
