@@ -4,7 +4,7 @@ CLUSTER_BINARY=repram-cluster-node
 EXAMPLE_BINARY=repram-example
 SDK_EXAMPLE=repram-sdk-example
 
-.PHONY: build build-raw build-cluster build-example build-sdk-example run run-raw run-cluster test clean example sdk-example docker-build docker-run docker-compose-up docker-compose-down docker-compose-cluster load-test-build load-test load-test-ramp load-test-stress docker-scale-test-quick docker-scale-test-full docker-scale-test-stress docker-monitor docker-monitor-long
+.PHONY: build build-raw build-cluster build-example build-sdk-example run run-raw run-cluster test clean example sdk-example docker-build docker-run docker-compose-up docker-compose-down docker-compose-cluster load-test-build load-test load-test-ramp load-test-stress docker-scale-test-quick docker-scale-test-full docker-scale-test-stress docker-monitor docker-monitor-long demo-server
 
 build:
 	go build -o bin/$(BINARY_NAME) cmd/node/main.go
@@ -109,8 +109,9 @@ docker-monitor:
 docker-monitor-long:
 	./scripts/docker-monitoring.sh --duration 1800
 
-# Synaptic Mesh Protocol Demo
-synaptic-mesh-demo:
-	@echo "Starting SYNAPTIC MESH PROTOCOL demo..."
-	@echo "Open http://localhost:8000/demos/discovery-protocol/hackerpunk.html in your browser"
-	@cd . && python3 -m http.server 8000
+# Discovery Protocol Demo Server
+demo-server:
+	@echo "Starting Discovery Protocol Demo server at http://localhost:3001"
+	@echo "Open http://localhost:3001/ in your browser"
+	@echo "Press Ctrl+C to stop"
+	@cd demos/discovery-protocol && python3 -m http.server 3001
