@@ -1585,6 +1585,7 @@
                     
                     const isValid = this.isValidHierarchy(node, node.parent);
                     const isParentOverloaded = node.parent.children.length > node.parent.capacity;
+                    const isUnderutilized = this.isNodeUnderutilized(node);
                     
                     if (!isValid) {
                         this.logEvent(`${node.id} HIERARCHY VIOLATION DETECTED: ${node.type} → ${node.parent.type}`, 'warning');
@@ -1603,6 +1604,17 @@
                         // Rerun discovery to find less congested parent
                         this.logEvent(`${node.id} SEEKING LOAD-BALANCED PARENT`, 'info');
                         this.rerunNodeDiscovery(node);
+                    } else if (isUnderutilized) {
+                        this.logEvent(`${node.id} UNDERUTILIZED: No children for extended period`, 'warning');
+                        
+                        // Consider demotion or repositioning
+                        if (this.shouldDemoteNode(node)) {
+                            this.performNodeDemotion(node);
+                        } else {
+                            // Try to find a better position
+                            this.logEvent(`${node.id} SEEKING MORE USEFUL POSITION`, 'info');
+                            this.rerunNodeDiscovery(node);
+                        }
                     }
                 });
             }
@@ -1680,6 +1692,68 @@
                 
                 // Restart discovery process
                 this.startNodeDiscovery(node);
+            }
+            
+            isNodeUnderutilized(node) {
+                // Only check intermediate nodes (relay, node) that could have children
+                if (node.type === 'terminal' || node.type === 'mainframe') return false;
+                
+                // Check if node has been childless for a while
+                if (node.children.length === 0) {
+                    // Initialize timestamp if not exists
+                    if (!node.lastChildlessCheck) {
+                        node.lastChildlessCheck = Date.now();
+                        return false;
+                    }
+                    
+                    // Consider underutilized if childless for more than 25 seconds
+                    const childlessDuration = Date.now() - node.lastChildlessCheck;
+                    return childlessDuration > 25000;
+                } else {
+                    // Reset timestamp when node has children
+                    node.lastChildlessCheck = null;
+                    return false;
+                }
+            }
+            
+            shouldDemoteNode(node) {
+                // Check if there are already enough intermediate nodes of this type
+                const sameTypeNodes = Array.from(this.nodes.values()).filter(n => 
+                    n.isAlive && n.type === node.type && n !== node
+                );
+                
+                // Also check if there are available positions for terminals at lower levels
+                const availableTerminalSlots = this.countAvailableTerminalSlots();
+                
+                // Demote if there are other nodes of same type and available terminal slots
+                return sameTypeNodes.length > 0 && availableTerminalSlots > 0;
+            }
+            
+            countAvailableTerminalSlots() {
+                const nodeTypeNodes = Array.from(this.nodes.values()).filter(n => 
+                    n.isAlive && n.type === 'node'
+                );
+                
+                let availableSlots = 0;
+                nodeTypeNodes.forEach(node => {
+                    availableSlots += Math.max(0, node.capacity - node.children.length);
+                });
+                
+                return availableSlots;
+            }
+            
+            performNodeDemotion(node) {
+                this.logEvent(`${node.id} SELF-DEMOTING: ${node.type.toUpperCase()} → TERMINAL`, 'info');
+                
+                // Visual confirmation
+                this.addDiscoveryMessage(node, node.parent, 'demote', null, 800);
+                
+                // Demote to terminal and rerun discovery
+                node.type = 'terminal';
+                node.capacity = 0;
+                
+                // Force rediscovery to find appropriate parent
+                this.rerunNodeDiscovery(node);
             }
             
             addNode() {
@@ -2283,17 +2357,17 @@
                 if (rand < 0.15 && nonMainframeNodes.length > 3) {
                     // 15% chance: Random node failure
                     this.simulateNodeFailure();
-                } else if (rand < 0.35) {
-                    // 20% chance: Spawn cluster of nodes (2-4 nodes)
+                } else if (rand < 0.30) {
+                    // 15% chance: Spawn cluster of nodes (2-4 nodes)
                     this.spawnNodeCluster();
-                } else if (rand < 0.65) {
+                } else if (rand < 0.60) {
                     // 30% chance: Add single node
                     this.addNode();
-                } else if (rand < 0.85) {
-                    // 20% chance: Run discovery optimization
+                } else if (rand < 0.78) {
+                    // 18% chance: Run discovery optimization
                     this.runDiscoveryRound();
                 } else {
-                    // 15% chance: Multiple simultaneous failures (chaos mode)
+                    // 22% chance: Multiple simultaneous failures (chaos mode)
                     if (nonMainframeNodes.length > 6) {
                         this.simulateCascadeFailure();
                     } else {
