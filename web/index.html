@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REPRAM - Replicated Ephemeral RAM</title>
+    <meta name="description" content="REPRAM: A distributed ephemeral key-value storage system for high-performance, privacy-preserving applications">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>REPRAM</h1>
+            <div class="tagline">Replicated Ephemeral RAM</div>
+            <div class="subtitle">Distributed • Privacy-First • Lightning Fast</div>
+        </header>
+
+        <div class="hero-section">
+            <div class="hero-description">
+                <p>A revolutionary distributed ephemeral storage system that prioritizes <span class="highlight">privacy</span>, <span class="highlight">speed</span>, and <span class="highlight">decentralization</span>. Data exists only in memory, automatically expires, and remains encrypted end-to-end.</p>
+            </div>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>Client-Side Encryption</h3>
+                <p>AES-256-GCM encryption happens on your device. Nodes store encrypted blobs without knowing the content.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>Memory-Only Storage</h3>
+                <p>Pure RAM storage with automatic TTL expiration. No persistence means no data forensics.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🌐</div>
+                <h3>Distributed Network</h3>
+                <p>Gossip protocol replication across nodes with configurable quorum for availability.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🚀</div>
+                <h3>High Performance</h3>
+                <p>REST API with Prometheus metrics, security middleware, and optimized for speed.</p>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>Live Demonstrations</h2>
+            <div class="demo-grid">
+                <div class="demo-card">
+                    <h3>Discovery Protocol Demo</h3>
+                    <p>Watch nodes discover each other and form a mesh network with real-time visualization of the gossip protocol.</p>
+                    <div class="demo-actions">
+                        <a href="../demos/discovery-protocol/" class="demo-btn primary">Live Demo</a>
+                        <a href="https://github.com/ticktockbent/REPRAM/tree/main/demos/discovery-protocol" class="demo-btn secondary">Learn More</a>
+                    </div>
+                </div>
+                
+                <div class="demo-card">
+                    <h3>FADE Ephemeral Chat</h3>
+                    <p>Experience ephemeral messaging with automatic expiration. Messages disappear forever after their TTL expires.</p>
+                    <div class="demo-actions">
+                        <a href="fade/" class="demo-btn primary">Live Demo</a>
+                        <a href="https://github.com/ticktockbent/REPRAM/tree/main/fade" class="demo-btn secondary">Documentation</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="architecture-section">
+            <h2>Architecture Overview</h2>
+            <div class="arch-grid">
+                <div class="arch-component">
+                    <h4>Open Source Node</h4>
+                    <p>MIT licensed server that stores unencrypted data. Run your own instances anywhere.</p>
+                    <div class="component-tech">Go • REST API • Memory Storage</div>
+                </div>
+                
+                <div class="arch-component">
+                    <h4>Proprietary SDK</h4>
+                    <p>Commercial client library handling encryption, key management, and node communication.</p>
+                    <div class="component-tech">Go • AES-256-GCM • HTTP Client</div>
+                </div>
+                
+                <div class="arch-component">
+                    <h4>Gossip Protocol</h4>
+                    <p>Peer-to-peer replication ensuring data availability across distributed node clusters.</p>
+                    <div class="component-tech">gRPC • Bootstrap • Quorum</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="getting-started">
+            <h2>Quick Start</h2>
+            <div class="code-blocks">
+                <div class="code-block">
+                    <h4>Run a Node</h4>
+                    <pre><code>git clone https://github.com/ticktockbent/REPRAM.git
+cd REPRAM
+make build
+./bin/node</code></pre>
+                </div>
+                
+                <div class="code-block">
+                    <h4>Docker Deployment</h4>
+                    <pre><code>docker-compose up -d
+# 3-node cluster ready at localhost:8080-8082</code></pre>
+                </div>
+                
+                <div class="code-block">
+                    <h4>Store Data (Raw API)</h4>
+                    <pre><code>curl -X PUT "http://localhost:8080/data/mykey?ttl=300" \
+  -d "sensitive data"</code></pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="use-cases">
+            <h2>Use Cases</h2>
+            <div class="use-case-grid">
+                <div class="use-case">
+                    <h4>🔐 Secure Communications</h4>
+                    <p>Ephemeral messaging, secure file sharing, temporary credentials</p>
+                </div>
+                <div class="use-case">
+                    <h4>🎮 Gaming & Sessions</h4>
+                    <p>Game state, user sessions, temporary matchmaking data</p>
+                </div>
+                <div class="use-case">
+                    <h4>💼 Enterprise Privacy</h4>
+                    <p>Compliance-safe data processing, temporary workflows, audit-free operations</p>
+                </div>
+                <div class="use-case">
+                    <h4>🌍 Edge Computing</h4>
+                    <p>Distributed caching, CDN replacement, regional data processing</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-section">
+            <h2>Project Status</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <div class="status-indicator active"></div>
+                    <div>
+                        <strong>Core Storage</strong>
+                        <span>Production Ready</span>
+                    </div>
+                </div>
+                <div class="status-item">
+                    <div class="status-indicator active"></div>
+                    <div>
+                        <strong>Gossip Protocol</strong>
+                        <span>Beta Testing</span>
+                    </div>
+                </div>
+                <div class="status-item">
+                    <div class="status-indicator development"></div>
+                    <div>
+                        <strong>SDK Distribution</strong>
+                        <span>In Development</span>
+                    </div>
+                </div>
+                <div class="status-item">
+                    <div class="status-indicator planning"></div>
+                    <div>
+                        <strong>Auto-Discovery</strong>
+                        <span>Research Phase</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <div class="footer-links">
+                <a href="https://github.com/ticktockbent/REPRAM">GitHub Repository</a>
+                <a href="https://github.com/ticktockbent/REPRAM/blob/main/docs/whitepaper.md">Whitepaper</a>
+                <a href="https://github.com/ticktockbent/REPRAM/blob/main/LICENSE">MIT License</a>
+                <a href="https://github.com/ticktockbent/REPRAM/issues">Report Issues</a>
+            </div>
+            <div class="footer-version">
+                REPRAM v1.0 • Ephemeral by Design • Privacy by Default
+            </div>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
