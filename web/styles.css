@@ -370,6 +370,19 @@ h1::after {
     box-shadow: 0 0 20px #00ffff;
 }
 
+.demo-btn.disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    border-color: #666;
+    color: #666;
+    background: #000;
+    pointer-events: none;
+}
+
+.demo-btn.disabled::before {
+    display: none;
+}
+
 /* Architecture Section */
 .architecture-section {
     margin-bottom: 80px;
