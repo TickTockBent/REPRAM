@@ -1,0 +1,33 @@
+{
+  "name": "repram-showcase",
+  "version": "1.0.0",
+  "description": "REPRAM - Replicated Ephemeral RAM Showcase and Landing Page",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx http-server . -p 3000 -o",
+    "start": "npx http-server . -p 8080",
+    "build": "echo 'Static site - no build required'",
+    "serve": "npx http-server . -p 8080"
+  },
+  "keywords": [
+    "repram",
+    "distributed-storage",
+    "ephemeral",
+    "key-value",
+    "blockchain-alternative",
+    "privacy"
+  ],
+  "author": "REPRAM Project",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ticktockbent/REPRAM.git"
+  },
+  "homepage": "https://ticktockbent.github.io/REPRAM/web/"
+}
