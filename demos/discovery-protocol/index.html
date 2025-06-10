@@ -2259,22 +2259,53 @@
                     const radius = 60;
                     mainframe.x = centerX + Math.cos(angle) * radius;
                     mainframe.y = centerY + Math.sin(angle) * radius;
+                    mainframe.radialAngle = angle; // Store angle for child positioning
                 });
                 
-                // Place other nodes in concentric circles by depth
-                const nonMainframeNodes = nodes.filter(n => n.type !== 'mainframe');
-                const maxDepth = Math.max(...nonMainframeNodes.map(n => n.depth), 0);
+                // Recursively position children near their parents
+                mainframeNodes.forEach(mainframe => {
+                    this.layoutRadialChildren(mainframe, centerX, centerY, mainframe.radialAngle, 1);
+                });
                 
-                for (let depth = 1; depth <= maxDepth; depth++) {
-                    const depthNodes = nonMainframeNodes.filter(n => n.depth === depth);
-                    const radius = 60 + depth * 80;
+                // Handle any orphaned nodes (shouldn't happen but just in case)
+                const orphanedNodes = nodes.filter(n => n.type !== 'mainframe' && !n.parent);
+                orphanedNodes.forEach((node, index) => {
+                    const angle = (index / orphanedNodes.length) * Math.PI * 2;
+                    const radius = 200;
+                    node.x = centerX + Math.cos(angle) * radius;
+                    node.y = centerY + Math.sin(angle) * radius;
+                });
+            }
+            
+            layoutRadialChildren(parent, centerX, centerY, parentAngle, depth) {
+                if (parent.children.length === 0) return;
+                
+                const baseRadius = 60 + depth * 80;
+                const angleSpread = Math.min(Math.PI / 2, Math.PI / Math.max(1, parent.children.length - 1));
+                const startAngle = parentAngle - angleSpread / 2;
+                
+                parent.children.forEach((child, index) => {
+                    let childAngle;
                     
-                    depthNodes.forEach((node, index) => {
-                        const angle = (index / depthNodes.length) * Math.PI * 2;
-                        node.x = centerX + Math.cos(angle) * radius;
-                        node.y = centerY + Math.sin(angle) * radius;
-                    });
-                }
+                    if (parent.children.length === 1) {
+                        // Single child: place directly in line with parent
+                        childAngle = parentAngle;
+                    } else {
+                        // Multiple children: spread them around parent's angle
+                        childAngle = startAngle + (index / (parent.children.length - 1)) * angleSpread;
+                    }
+                    
+                    // Add some variation to avoid exact overlap
+                    const radiusVariation = (Math.random() - 0.5) * 20;
+                    const radius = baseRadius + radiusVariation;
+                    
+                    child.x = centerX + Math.cos(childAngle) * radius;
+                    child.y = centerY + Math.sin(childAngle) * radius;
+                    child.radialAngle = childAngle;
+                    
+                    // Recursively position this child's children
+                    this.layoutRadialChildren(child, centerX, centerY, childAngle, depth + 1);
+                });
             }
             
             layoutTree(nodes, width, height) {
