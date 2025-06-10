@@ -1,6 +1,6 @@
-# REPRAM Discovery Protocol Web Demo
+# REPRAM Synth-Tree Web Demo
 
-An interactive web-based simulation of the REPRAM tree discovery protocol that visualizes how nodes self-organize into an efficient hierarchical network structure.
+An interactive web-based simulation of the REPRAM synth-tree protocol that visualizes how nodes self-organize into an efficient hierarchical network structure.
 
 ## How to Run
 
@@ -8,11 +8,11 @@ Simply open `index.html` in a modern web browser:
 
 ```bash
 # From the project root
-open demos/discovery-protocol/index.html
+open demos/synth-tree/index.html
 
 # Or start a simple HTTP server
 python3 -m http.server 8000
-# Then navigate to http://localhost:8000/demos/discovery-protocol/
+# Then navigate to http://localhost:8000/demos/synth-tree/
 ```
 
 ## Features
@@ -38,9 +38,9 @@ python3 -m http.server 8000
 - Tracks all network events with timestamps
 - Color-coded messages (success, warning, error)
 
-## Protocol Demonstration
+## Synth-Tree Protocol Demonstration
 
-The simulation demonstrates key protocol features:
+The simulation demonstrates key synth-tree protocol features:
 
 1. **Self-Organization**: New nodes automatically find optimal positions based on latency
 2. **Geographic Clustering**: Nodes naturally group with geographically close peers
