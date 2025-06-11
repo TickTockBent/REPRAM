@@ -165,6 +165,35 @@ func main() {
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", httpPort), server.Router()))
 }
 
+// CORS middleware for handling cross-origin requests
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("CORS middleware called for %s %s with origin: %s", r.Method, r.URL.Path, r.Header.Get("Origin"))
+		
+		// Allow specific origins
+		origin := r.Header.Get("Origin")
+		if origin == "https://fade.repram.io" || origin == "https://repram.io" || 
+		   strings.HasPrefix(origin, "http://localhost") {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			log.Printf("Set CORS origin header to: %s", origin)
+		}
+		
+		// Set other CORS headers
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-TTL")
+		w.Header().Set("Access-Control-Max-Age", "3600")
+		
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			log.Printf("Handling OPTIONS preflight request")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		
+		next.ServeHTTP(w, r)
+	})
+}
+
 type HTTPServer struct {
 	clusterNode *cluster.ClusterNode
 	allocator   *discovery.PortAllocator
@@ -175,25 +204,28 @@ type HTTPServer struct {
 func (s *HTTPServer) Router() *mux.Router {
 	r := mux.NewRouter()
 	
-	r.HandleFunc("/health", s.healthHandler).Methods("GET")
+	// Add CORS middleware
+	r.Use(corsMiddleware)
+	
+	r.HandleFunc("/health", s.healthHandler).Methods("GET", "OPTIONS")
 	// Standard endpoints (compatible with load tester)
-	r.HandleFunc("/data/{key}", s.putHandler).Methods("PUT")
-	r.HandleFunc("/data/{key}", s.getHandler).Methods("GET")
-	r.HandleFunc("/scan", s.scanHandler).Methods("GET")
+	r.HandleFunc("/data/{key}", s.putHandler).Methods("PUT", "OPTIONS")
+	r.HandleFunc("/data/{key}", s.getHandler).Methods("GET", "OPTIONS")
+	r.HandleFunc("/scan", s.scanHandler).Methods("GET", "OPTIONS")
 	// Cluster-specific endpoints
-	r.HandleFunc("/cluster/put/{key}", s.putHandler).Methods("PUT")
-	r.HandleFunc("/cluster/get/{key}", s.getHandler).Methods("GET")
-	r.HandleFunc("/cluster/scan", s.scanHandler).Methods("GET")
+	r.HandleFunc("/cluster/put/{key}", s.putHandler).Methods("PUT", "OPTIONS")
+	r.HandleFunc("/cluster/get/{key}", s.getHandler).Methods("GET", "OPTIONS")
+	r.HandleFunc("/cluster/scan", s.scanHandler).Methods("GET", "OPTIONS")
 	// Gossip endpoint
-	r.HandleFunc("/gossip/message", s.gossipHandler).Methods("POST")
+	r.HandleFunc("/gossip/message", s.gossipHandler).Methods("POST", "OPTIONS")
 	// Bootstrap endpoint
-	r.HandleFunc("/bootstrap", s.bootstrapHandler).Methods("POST")
+	r.HandleFunc("/bootstrap", s.bootstrapHandler).Methods("POST", "OPTIONS")
 	
 	// Discovery endpoints (only if auto-discovery is enabled)
 	if s.allocator != nil {
-		r.HandleFunc("/peer_announce", s.peerAnnounceHandler).Methods("POST")
-		r.HandleFunc("/peer_leaving", s.peerLeavingHandler).Methods("POST")
-		r.HandleFunc("/peers", s.peersHandler).Methods("GET")
+		r.HandleFunc("/peer_announce", s.peerAnnounceHandler).Methods("POST", "OPTIONS")
+		r.HandleFunc("/peer_leaving", s.peerLeavingHandler).Methods("POST", "OPTIONS")
+		r.HandleFunc("/peers", s.peersHandler).Methods("GET", "OPTIONS")
 	}
 	
 	return r
