@@ -1,5 +1,4 @@
 BINARY_NAME=repram-node
-RAW_BINARY=repram-node-raw
 CLUSTER_BINARY=repram-cluster-node
 EXAMPLE_BINARY=repram-example
 SDK_EXAMPLE=repram-sdk-example
@@ -9,8 +8,6 @@ SDK_EXAMPLE=repram-sdk-example
 build:
 	go build -o bin/$(BINARY_NAME) cmd/node/main.go
 
-build-raw:
-	go build -o bin/$(RAW_BINARY) cmd/node-raw/main.go
 
 build-cluster:
 	go build -o bin/$(CLUSTER_BINARY) cmd/cluster-node/main.go
@@ -23,9 +20,6 @@ build-sdk-example:
 
 run: build
 	./bin/$(BINARY_NAME)
-
-run-raw: build-raw
-	./bin/$(RAW_BINARY)
 
 run-cluster: build-cluster
 	./bin/$(CLUSTER_BINARY)

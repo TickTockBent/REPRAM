@@ -22,8 +22,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram-node ./cmd
 # Build the cluster node binary
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram-cluster-node ./cmd/cluster-node
 
-# Build the raw node binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram-node-raw ./cmd/node-raw
 
 # Note: fade-cluster-node removed as cmd/fade-cluster-node doesn't exist
 
@@ -54,32 +52,6 @@ EXPOSE 8080 9090
 # Run cluster node
 CMD ["./repram-cluster-node"]
 
-# Raw node target
-FROM alpine:latest AS raw-node
-
-# Install runtime dependencies
-RUN apk --no-cache add ca-certificates tzdata
-
-# Create non-root user
-RUN adduser -D -s /bin/sh repram
-
-# Set working directory
-WORKDIR /app
-
-# Copy raw node binary only
-COPY --from=builder /app/repram-node-raw .
-
-# Change ownership to non-root user
-RUN chown -R repram:repram /app
-
-# Switch to non-root user
-USER repram
-
-# Expose default port
-EXPOSE 8080
-
-# Run raw node
-CMD ["./repram-node-raw"]
 
 # Default target - main node
 FROM alpine:latest
@@ -93,8 +65,9 @@ RUN adduser -D -s /bin/sh repram
 # Set working directory
 WORKDIR /app
 
-# Copy main node binary
+# Copy all node binaries
 COPY --from=builder /app/repram-node .
+COPY --from=builder /app/repram-cluster-node .
 
 # Change ownership to non-root user
 RUN chown -R repram:repram /app
