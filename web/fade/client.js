@@ -1,8 +1,12 @@
 // REPRAM Fade Client - Ephemeral Message Board
 class RepramFadeClient {
     constructor() {
-        // Use proxy endpoints to avoid CORS issues
-        this.baseURL = ''; // Same origin
+        // Use configuration to determine base URL
+        this.baseURL = typeof FadeConfig !== 'undefined' ? FadeConfig.getApiBaseURL() : '';
+        this.connectionMode = typeof FadeConfig !== 'undefined' ? FadeConfig.connectionMode : 'proxy';
+        this.nodes = typeof FadeConfig !== 'undefined' ? FadeConfig.nodes : [];
+        this.currentNodeIndex = 0;
+        
         this.messages = new Map();
         this.pollInterval = null;
         this.ttlInterval = null;

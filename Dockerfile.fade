@@ -17,7 +17,7 @@ RUN go mod download
 COPY . .
 
 # Build the fade web server
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o fade-server ./fade/server.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o fade-server ./demos/fade/server.go
 
 # Final stage - minimal runtime image
 FROM alpine:latest
@@ -35,7 +35,7 @@ WORKDIR /app
 COPY --from=builder /app/fade-server .
 
 # Copy static web files
-COPY fade/web ./web/
+COPY demos/fade/web ./web/
 
 # Change ownership to non-root user
 RUN chown -R fade:fade /app
@@ -44,7 +44,11 @@ RUN chown -R fade:fade /app
 USER fade
 
 # Expose fade web port
-EXPOSE 3000
+EXPOSE 8080
+
+# Set environment variables
+ENV PORT=8080
+ENV FADE_NODES="http://node1:8080,http://node2:8080,http://node3:8080"
 
 # Default command
-CMD ["./fade-server"]
+CMD ["./fade-server", "-port", "8080"]

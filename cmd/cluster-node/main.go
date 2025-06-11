@@ -174,6 +174,7 @@ type HTTPServer struct {
 
 func (s *HTTPServer) Router() *mux.Router {
 	r := mux.NewRouter()
+	
 	r.HandleFunc("/health", s.healthHandler).Methods("GET")
 	// Standard endpoints (compatible with load tester)
 	r.HandleFunc("/data/{key}", s.putHandler).Methods("PUT")
