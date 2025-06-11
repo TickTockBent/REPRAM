@@ -80,28 +80,58 @@ class RepramFadeClient {
     async connectToNode() {
         try {
             console.log('Attempting to connect to REPRAM network...');
-            const headers = {};
-            if (this.preferredNode) {
-                headers['X-Preferred-Node'] = this.preferredNode;
-            }
             
-            const response = await fetch(`${this.baseURL}/api/health`, {
-                method: 'GET',
-                headers: headers
-            });
-            
-            console.log('Health check response:', response.status);
-            
-            if (response.ok) {
-                this.connected = true;
-                console.log('Connected to REPRAM network via proxy');
-                this.updateConnectionStatus('connected');
-                // Update node status
-                await this.updateNodeStatus();
-                return;
+            if (this.connectionMode === 'direct' && this.nodes.length > 0) {
+                // Direct connection to cluster nodes
+                for (let i = 0; i < this.nodes.length; i++) {
+                    const nodeUrl = this.nodes[this.currentNodeIndex];
+                    try {
+                        console.log('Trying direct connection to:', nodeUrl);
+                        const response = await fetch(`${nodeUrl}/health`, {
+                            method: 'GET',
+                            mode: 'cors'
+                        });
+                        
+                        if (response.ok) {
+                            this.baseURL = nodeUrl;
+                            this.connected = true;
+                            console.log('Connected to REPRAM network via direct connection:', nodeUrl);
+                            this.updateConnectionStatus('connected');
+                            await this.updateNodeStatus();
+                            return;
+                        }
+                    } catch (error) {
+                        console.log('Failed to connect to node:', nodeUrl, error.message);
+                    }
+                    
+                    // Try next node
+                    this.currentNodeIndex = (this.currentNodeIndex + 1) % this.nodes.length;
+                }
+                throw new Error('All direct nodes failed');
             } else {
-                console.error('Health check failed with status:', response.status);
-                this.updateConnectionStatus('error');
+                // Proxy mode
+                const headers = {};
+                if (this.preferredNode) {
+                    headers['X-Preferred-Node'] = this.preferredNode;
+                }
+                
+                const response = await fetch(`${this.baseURL}/api/health`, {
+                    method: 'GET',
+                    headers: headers
+                });
+                
+                console.log('Health check response:', response.status);
+                
+                if (response.ok) {
+                    this.connected = true;
+                    console.log('Connected to REPRAM network via proxy');
+                    this.updateConnectionStatus('connected');
+                    await this.updateNodeStatus();
+                    return;
+                } else {
+                    console.error('Health check failed with status:', response.status);
+                    this.updateConnectionStatus('error');
+                }
             }
         } catch (error) {
             console.error('Failed to connect to REPRAM network:', error);
@@ -113,9 +143,22 @@ class RepramFadeClient {
 
     async updateNodeStatus() {
         try {
-            if (this.selectedNode) {
+            if (this.connectionMode === 'direct') {
+                // For direct connections, create status from configured nodes
+                this.nodeStatuses = [];
+                for (let i = 0; i < this.nodes.length; i++) {
+                    const nodeUrl = this.nodes[i];
+                    const isCurrentNode = nodeUrl === this.baseURL;
+                    this.nodeStatuses.push({
+                        id: `node-${i + 1}`,
+                        url: nodeUrl,
+                        healthy: isCurrentNode ? this.connected : false, // Only know current node status
+                        current: isCurrentNode
+                    });
+                }
+            } else if (this.selectedNode) {
                 // When directly connected, we only know about this one node
-                this.nodes = [{
+                this.nodeStatuses = [{
                     id: `node-${this.selectedNode.split(':').pop()}`,
                     url: this.selectedNode,
                     healthy: this.connected,
@@ -125,7 +168,7 @@ class RepramFadeClient {
                 // Use the proxy's node status endpoint
                 const response = await fetch(`${this.baseURL}/api/nodes/status`);
                 if (response.ok) {
-                    this.nodes = await response.json();
+                    this.nodeStatuses = await response.json();
                 }
             }
             this.updateNetworkDisplay();
@@ -135,11 +178,12 @@ class RepramFadeClient {
     }
 
     updateNetworkDisplay() {
-        const activeNodes = this.nodes.filter(n => n.healthy).length;
+        const nodes = this.nodeStatuses || [];
+        const activeNodes = nodes.filter(n => n.healthy).length;
         document.getElementById('currentNode').textContent = `${activeNodes} nodes active`;
         
         // Update a more detailed display if needed
-        const nodeList = this.nodes.map(n => 
+        const nodeList = nodes.map(n => 
             `${n.id}: ${n.healthy ? '✓' : '✗'} ${n.current ? '(current)' : ''}`
         ).join(', ');
         console.log('Node status:', nodeList);
@@ -170,7 +214,11 @@ class RepramFadeClient {
                 headers['X-Preferred-Node'] = this.preferredNode;
             }
             
-            const response = await fetch(`${this.baseURL}/api/data/${key}?ttl=${parseInt(ttl)}`, {
+            const endpoint = this.connectionMode === 'direct' ? 
+                `${this.baseURL}/data/${key}?ttl=${parseInt(ttl)}` : 
+                `${this.baseURL}/api/data/${key}?ttl=${parseInt(ttl)}`;
+                
+            const response = await fetch(endpoint, {
                 method: 'PUT',
                 headers: headers,
                 body: formattedContent  // Send raw text directly
@@ -214,7 +262,9 @@ class RepramFadeClient {
 
         try {
             // Using standard data endpoint
-            const url = `${this.baseURL}/api/data/${encodeURIComponent(key)}`;
+            const url = this.connectionMode === 'direct' ? 
+                `${this.baseURL}/data/${encodeURIComponent(key)}` : 
+                `${this.baseURL}/api/data/${encodeURIComponent(key)}`;
             const response = await fetch(url);
             
             if (response.ok) {
@@ -261,7 +311,10 @@ class RepramFadeClient {
                 headers['X-Preferred-Node'] = this.preferredNode;
             }
             
-            const scanResponse = await fetch(`${this.baseURL}/api/scan`, {
+            const scanEndpoint = this.connectionMode === 'direct' ? 
+                `${this.baseURL}/scan` : 
+                `${this.baseURL}/api/scan`;
+            const scanResponse = await fetch(scanEndpoint, {
                 method: 'GET',
                 headers: headers
             });
@@ -483,7 +536,10 @@ class RepramFadeClient {
                     headers['X-Preferred-Node'] = this.preferredNode;
                 }
                 
-                const healthResponse = await fetch(`${this.baseURL}/api/health`, { 
+                const healthEndpoint = this.connectionMode === 'direct' ? 
+                    `${this.baseURL}/health` : 
+                    `${this.baseURL}/api/health`;
+                const healthResponse = await fetch(healthEndpoint, { 
                     method: 'GET', 
                     headers: headers,
                     timeout: 2000 
