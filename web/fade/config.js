@@ -19,8 +19,8 @@ const FadeConfig = {
         
         // Default backends based on environment
         if (window.location.hostname === 'fade.repram.io' || window.location.hostname === 'repram.io') {
-            // Production - use your dynamic DNS
-            return 'https://repram.ddns.net:8081';
+            // Production - use your dynamic DNS (HTTP for now, HTTPS later)
+            return 'http://repram.ddns.net:8081';
         } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
             // Local development
             return 'http://localhost:8081';
@@ -32,9 +32,9 @@ const FadeConfig = {
     
     // Node endpoints (for direct connection)
     nodes: [
-        'https://repram.ddns.net:8081',
-        'https://repram.ddns.net:8082', 
-        'https://repram.ddns.net:8083'
+        'http://repram.ddns.net:8081',
+        'http://repram.ddns.net:8082', 
+        'http://repram.ddns.net:8083'
     ],
     
     // Connection mode
