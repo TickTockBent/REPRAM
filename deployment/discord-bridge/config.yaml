@@ -19,16 +19,16 @@ repram:
 # Bridge Settings
 bridge:
   # Message prefix for Discord messages synced from REPRAM
-  repram_prefix: "🌐"
+  repram_prefix: "◆ FADE:"
   
   # Message prefix for Discord messages synced to REPRAM
-  discord_prefix: "💬"
+  discord_prefix: "◇ DISCORD:"
   
   # Show TTL in Discord messages
   show_ttl: true
   
   # TTL display format
-  ttl_format: "⏰ %s"
+  ttl_format: "⏱️ TTL: %s"
   
   # Key embedding in Discord messages (hidden)
   embed_keys: true
