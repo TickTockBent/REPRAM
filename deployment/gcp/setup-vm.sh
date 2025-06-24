@@ -32,14 +32,21 @@ sudo usermod -aG docker $USER
 echo "🛠️ Installing additional tools..."
 sudo apt-get install -y git curl htop nano
 
-# Create project directory
-echo "📁 Creating project directory..."
-mkdir -p /home/$USER/repram
-cd /home/$USER/repram
-
-# Clone REPRAM repository (replace with your repo URL)
-echo "📥 Cloning REPRAM repository..."
-git clone https://github.com/your-username/REPRAM.git .
+# Check if we're already in a REPRAM repository
+if [ -f "go.mod" ] && grep -q "repram" go.mod; then
+    echo "📁 Already in REPRAM repository directory"
+    REPRAM_DIR=$(pwd)
+else
+    # Create project directory and clone
+    echo "📁 Creating project directory..."
+    mkdir -p /home/$USER/repram
+    cd /home/$USER/repram
+    
+    # Clone REPRAM repository (replace with your repo URL)
+    echo "📥 Cloning REPRAM repository..."
+    git clone https://github.com/your-username/REPRAM.git .
+    REPRAM_DIR=/home/$USER/repram
+fi
 
 # Set up firewall rules
 echo "🔥 Configuring firewall..."
