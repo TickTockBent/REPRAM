@@ -38,6 +38,12 @@ bridge:
   
   # Cleanup interval for expired messages (seconds)
   cleanup_interval: 60
+  
+  # Rate limiting settings for Discord API
+  max_deletions_per_cleanup: 3     # Max deletions per cleanup cycle
+  deletion_rate_limit: 333         # Milliseconds between deletions (3/second)
+  deletion_queue_size: 1000        # Max queued deletions
+  rate_limit_retry_delay: 2        # Seconds to wait after rate limit hit
 
 # TTL Command Configuration
 ttl_commands:

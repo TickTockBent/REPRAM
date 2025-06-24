@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,6 +18,7 @@ type Bridge struct {
 	discord        *discordgo.Session
 	repramClient   *RepramClient
 	messageTracker *MessageTracker
+	deletionQueue  chan string // Queue for rate-limited message deletion
 }
 
 func main() {
@@ -72,6 +74,7 @@ func NewBridge(config *Config) (*Bridge, error) {
 		discord:        discord,
 		repramClient:   repramClient,
 		messageTracker: messageTracker,
+		deletionQueue:  make(chan string, config.Bridge.DeletionQueueSize),
 	}
 
 	// Set up Discord event handlers
@@ -90,6 +93,7 @@ func (b *Bridge) Start() error {
 	// Start background routines
 	go b.pollRepramMessages()
 	go b.cleanupExpiredMessages()
+	go b.processDeleteQueue() // Rate-limited deletion processor
 
 	return nil
 }
@@ -272,7 +276,7 @@ func (b *Bridge) formatRepramMessage(msg *RepramMessage) string {
 	return content
 }
 
-// cleanupExpiredMessages removes expired messages from Discord
+// cleanupExpiredMessages removes expired messages from Discord with rate limiting
 func (b *Bridge) cleanupExpiredMessages() {
 	ticker := time.NewTicker(time.Duration(b.config.Bridge.CleanupInterval) * time.Second)
 	defer ticker.Stop()
@@ -280,14 +284,66 @@ func (b *Bridge) cleanupExpiredMessages() {
 	for {
 		select {
 		case <-ticker.C:
-			b.messageTracker.CleanupExpired(func(discordMessageID string) {
-				err := b.discord.ChannelMessageDelete(b.config.Discord.ChannelID, discordMessageID)
-				if err != nil {
-					log.Printf("❌ Failed to delete expired message: %v", err)
-				} else {
-					log.Printf("🗑️ Deleted expired Discord message: %s", discordMessageID)
+			// Use rate-limited cleanup - queue messages for deletion
+			expiredCount := len(b.messageTracker.CleanupExpired(func(discordMessageID string) {
+				select {
+				case b.deletionQueue <- discordMessageID:
+					// Successfully queued for deletion
+				default:
+					// Queue is full, log and skip (eventual deletion)
+					log.Printf("⚠️ Deletion queue full, skipping message: %s", discordMessageID)
 				}
-			})
+			}, b.config.Bridge.MaxDeletionsPerCleanup))
+			
+			if expiredCount > 0 {
+				queueLen := len(b.deletionQueue)
+				log.Printf("📊 Cleanup stats: %d expired messages, %d queued for deletion", expiredCount, queueLen)
+			}
+		}
+	}
+}
+
+// processDeleteQueue handles rate-limited Discord message deletion
+func (b *Bridge) processDeleteQueue() {
+	// Use configurable rate limit
+	ticker := time.NewTicker(time.Duration(b.config.Bridge.DeletionRateLimit) * time.Millisecond)
+	defer ticker.Stop()
+
+	log.Printf("📋 Started deletion queue processor (rate: %dms between deletions)", b.config.Bridge.DeletionRateLimit)
+
+	for {
+		select {
+		case <-ticker.C:
+			// Try to process one message from the queue
+			select {
+			case messageID := <-b.deletionQueue:
+				err := b.discord.ChannelMessageDelete(b.config.Discord.ChannelID, messageID)
+				if err != nil {
+					// Check if it's a rate limit error
+					if strings.Contains(err.Error(), "rate limit") || strings.Contains(err.Error(), "429") {
+						// Put the message back in the queue for retry
+						select {
+						case b.deletionQueue <- messageID:
+							log.Printf("⏳ Rate limited, requeueing message deletion: %s", messageID)
+						default:
+							log.Printf("❌ Rate limited and queue full, dropping message deletion: %s", messageID)
+						}
+						
+						// Wait longer before next attempt using configurable delay
+						time.Sleep(time.Duration(b.config.Bridge.RateLimitRetryDelay) * time.Second)
+					} else if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "404") {
+						// Message already deleted or doesn't exist - this is OK
+						log.Printf("ℹ️ Message already deleted: %s", messageID)
+					} else {
+						// Other error - log but don't retry
+						log.Printf("❌ Failed to delete message: %v", err)
+					}
+				} else {
+					log.Printf("🗑️ Successfully deleted expired message: %s", messageID)
+				}
+			default:
+				// No messages in queue, continue
+			}
 		}
 	}
 }
