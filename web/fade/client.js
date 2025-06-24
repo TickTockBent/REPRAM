@@ -4,7 +4,7 @@ class RepramFadeClient {
         // Use configuration to determine base URL
         this.baseURL = typeof FadeConfig !== 'undefined' ? FadeConfig.getApiBaseURL() : '';
         this.connectionMode = typeof FadeConfig !== 'undefined' ? FadeConfig.connectionMode : 'proxy';
-        this.nodes = typeof FadeConfig !== 'undefined' ? FadeConfig.nodes : [];
+        this.nodes = typeof FadeConfig !== 'undefined' && FadeConfig.getNodes ? FadeConfig.getNodes() : [];
         this.currentNodeIndex = 0;
         
         this.messages = new Map();
@@ -58,16 +58,24 @@ class RepramFadeClient {
     async init() {
         console.log('Initializing REPRAM Fade client...');
         
-        // Update node selector labels for clarity
+        // Update node selector labels based on connection mode
         const select = document.getElementById('nodeSelect');
-        if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-            // Update labels to show this is routing preference, not direct connection
+        if (this.connectionMode === 'direct') {
+            // Direct mode - show node selection
+            select.options[0].text = 'Auto (Load Balance)';
+            select.options[1].text = 'Node 1 Direct';
+            select.options[2].text = 'Node 2 Direct';
+            select.options[3].text = 'Node 3 Direct';
+            
+            console.log('Direct connection mode - connecting to cluster nodes directly');
+        } else {
+            // Proxy mode
             select.options[0].text = 'Auto (Round Robin)';
             select.options[1].text = 'Prefer Node 1';
             select.options[2].text = 'Prefer Node 2';
             select.options[3].text = 'Prefer Node 3';
             
-            console.log('Remote access via ' + window.location.hostname + ' - using proxy with node preference.');
+            console.log('Proxy mode via ' + window.location.hostname + ' - using proxy with node preference.');
         }
         
         await this.connectToNode();
