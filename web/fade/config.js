@@ -18,9 +18,10 @@ const FadeConfig = {
         }
         
         // Default backends based on environment
-        if (window.location.hostname === 'fade.repram.io' || window.location.hostname === 'repram.io') {
-            // Production - use your dynamic DNS (HTTP for now, HTTPS later)
-            return 'http://repram.ddns.net:8081';
+        if (window.location.hostname === 'fade.repram.io' || window.location.hostname === 'repram.io' ||
+            window.location.hostname.includes('vercel.app') || window.location.hostname.includes('vercel.com')) {
+            // Production - use GCP VM external IP (placeholder - update with actual IP)
+            return 'http://YOUR_GCP_EXTERNAL_IP:8081';
         } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || 
                    window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.') || 
                    window.location.hostname.startsWith('172.')) {
@@ -34,11 +35,13 @@ const FadeConfig = {
     
     // Node endpoints (for direct connection)
     getNodes: function() {
-        if (window.location.hostname === 'fade.repram.io' || window.location.hostname === 'repram.io') {
+        if (window.location.hostname === 'fade.repram.io' || window.location.hostname === 'repram.io' ||
+            window.location.hostname.includes('vercel.app') || window.location.hostname.includes('vercel.com')) {
+            // Production - use GCP VM external IP (placeholder - update with actual IP)
             return [
-                'http://repram.ddns.net:8081',
-                'http://repram.ddns.net:8082', 
-                'http://repram.ddns.net:8083'
+                'http://YOUR_GCP_EXTERNAL_IP:8081',
+                'http://YOUR_GCP_EXTERNAL_IP:8082', 
+                'http://YOUR_GCP_EXTERNAL_IP:8083'
             ];
         } else {
             // Local development - use same hostname as the web server
