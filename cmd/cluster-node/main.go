@@ -173,7 +173,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 		// Allow specific origins
 		origin := r.Header.Get("Origin")
 		if origin == "https://fade.repram.io" || origin == "https://repram.io" || 
-		   strings.HasPrefix(origin, "http://localhost") {
+		   strings.HasPrefix(origin, "http://localhost") ||
+		   strings.Contains(origin, "192.168.") || strings.Contains(origin, "10.") || 
+		   strings.Contains(origin, "172.") {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			log.Printf("Set CORS origin header to: %s", origin)
 		}
