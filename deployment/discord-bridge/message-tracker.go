@@ -99,9 +99,9 @@ func (mt *MessageTracker) CleanupExpired(cleanupFunc func(discordMessageID strin
 
 	if len(expiredKeys) > 0 {
 		if deletedCount < len(expiredKeys) {
-			println("🧹 Cleaned up", len(expiredKeys), "expired messages (", deletedCount, "deleted,", len(expiredKeys)-deletedCount, "rate limited)")
+			println("⚡ TTL ENFORCEMENT:", len(expiredKeys), "EXPIRED //", deletedCount, "PURGED //", len(expiredKeys)-deletedCount, "THROTTLED")
 		} else {
-			println("🧹 Cleaned up", len(expiredKeys), "expired messages")
+			println("⚡ TTL ENFORCEMENT:", len(expiredKeys), "MESSAGES PURGED")
 		}
 	}
 
@@ -204,6 +204,6 @@ func (mt *MessageTracker) CleanupOld(maxAge time.Duration, cleanupFunc func(disc
 	}
 
 	if len(oldKeys) > 0 {
-		println("🧹 Cleaned up", len(oldKeys), "old messages")
+		println("🗑️ LEGACY DATA PURGED:", len(oldKeys), "STALE ENTRIES")
 	}
 }

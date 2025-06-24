@@ -22,37 +22,37 @@ type Bridge struct {
 }
 
 func main() {
-	log.Println("🚀 Starting Discord-REPRAM Bridge...")
+	log.Println(">>> INITIALIZING DISCORD-REPRAM BRIDGE PROTOCOL...")
 
 	// Load configuration
 	config, err := LoadConfig("config.yaml")
 	if err != nil {
-		log.Fatalf("❌ Failed to load config: %v", err)
+		log.Fatalf("❌ CRITICAL: CONFIG PROTOCOL FAILURE: %v", err)
 	}
 
 	// Initialize bridge
 	bridge, err := NewBridge(config)
 	if err != nil {
-		log.Fatalf("❌ Failed to initialize bridge: %v", err)
+		log.Fatalf("❌ FATAL: BRIDGE INITIALIZATION FAILED: %v", err)
 	}
 
 	// Start the bridge
 	if err := bridge.Start(); err != nil {
-		log.Fatalf("❌ Failed to start bridge: %v", err)
+		log.Fatalf("❌ ABORT: BRIDGE STARTUP SEQUENCE FAILED: %v", err)
 	}
 
-	log.Println("✅ Discord-REPRAM Bridge started successfully!")
-	log.Printf("📡 Monitoring channel: %s", config.Discord.ChannelID)
-	log.Printf("🌐 Connected to %d REPRAM nodes", len(config.Repram.Nodes))
+	log.Println("✅ BRIDGE ONLINE // EPHEMERAL SYNC PROTOCOL ACTIVE")
+	log.Printf("📡 MONITORING CHANNEL: %s", config.Discord.ChannelID)
+	log.Printf("🌐 LINKED TO %d REPRAM NODES // DISTRIBUTED NETWORK", len(config.Repram.Nodes))
 
 	// Wait for interrupt signal
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	log.Println("🛑 Shutting down bridge...")
+	log.Println("🛑 TERMINATION SIGNAL RECEIVED // INITIATING SHUTDOWN...")
 	bridge.Stop()
-	log.Println("👋 Bridge stopped")
+	log.Println("👋 BRIDGE DISCONNECTED // END OF LINE")
 }
 
 // NewBridge creates a new Discord-REPRAM bridge instance
@@ -109,7 +109,7 @@ func (b *Bridge) Stop() {
 func (b *Bridge) setupEventHandlers() {
 	// Handle ready event
 	b.discord.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
-		log.Printf("✅ Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
+		log.Printf("🤖 NEURAL LINK ESTABLISHED: %v#%v // AWAITING TRANSMISSIONS", s.State.User.Username, s.State.User.Discriminator)
 	})
 
 	// Handle message create event
@@ -133,7 +133,7 @@ func (b *Bridge) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreat
 		return
 	}
 
-	log.Printf("📨 Processing Discord message: %s", m.Content)
+	log.Printf("📡 INCOMING TRANSMISSION FROM %s: %s", m.Author.Username, m.Content)
 
 	// Parse TTL command if present
 	content, ttl := b.parseTTLCommand(m.Content)
@@ -153,11 +153,11 @@ func (b *Bridge) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreat
 	// Store in REPRAM
 	key, err := b.repramClient.StoreMessage(repramMessage)
 	if err != nil {
-		log.Printf("❌ Failed to store message in REPRAM: %v", err)
+		log.Printf("❌ TRANSMISSION FAILED // REPRAM STORAGE ERROR: %v", err)
 		return
 	}
 
-	log.Printf("✅ Stored message in REPRAM with key: %s", key)
+	log.Printf("✅ MESSAGE UPLOADED TO REPRAM NETWORK // KEY: %s", key)
 
 	// Track the message for cleanup
 	b.messageTracker.TrackMessage(key, m.ID, time.Now().Add(time.Duration(ttl)*time.Second))
@@ -223,7 +223,7 @@ func (b *Bridge) pollRepramMessages() {
 func (b *Bridge) syncRepramToDiscord() {
 	messages, err := b.repramClient.GetRecentMessages()
 	if err != nil {
-		log.Printf("❌ Failed to get messages from REPRAM: %v", err)
+		log.Printf("❌ REPRAM NETWORK SCAN FAILED: %v", err)
 		return
 	}
 
@@ -244,7 +244,7 @@ func (b *Bridge) syncRepramToDiscord() {
 		// Post to Discord
 		discordMsg, err := b.discord.ChannelMessageSend(b.config.Discord.ChannelID, discordContent)
 		if err != nil {
-			log.Printf("❌ Failed to send message to Discord: %v", err)
+			log.Printf("❌ DISCORD TRANSMISSION FAILED: %v", err)
 			continue
 		}
 
@@ -252,7 +252,7 @@ func (b *Bridge) syncRepramToDiscord() {
 		expiryTime := msg.Timestamp.Add(time.Duration(msg.TTL) * time.Second)
 		b.messageTracker.TrackMessage(msg.Key, discordMsg.ID, expiryTime)
 
-		log.Printf("📤 Synced REPRAM message to Discord: %s", msg.Key)
+		log.Printf("📤 FADE MESSAGE RELAYED TO DISCORD // KEY: %s", msg.Key)
 	}
 }
 
@@ -297,7 +297,7 @@ func (b *Bridge) cleanupExpiredMessages() {
 			
 			if expiredCount > 0 {
 				queueLen := len(b.deletionQueue)
-				log.Printf("📊 Cleanup stats: %d expired messages, %d queued for deletion", expiredCount, queueLen)
+				log.Printf("⚡ TTL SWEEP COMPLETE: %d EXPIRED // %d QUEUED FOR PURGE", expiredCount, queueLen)
 			}
 		}
 	}
@@ -309,7 +309,7 @@ func (b *Bridge) processDeleteQueue() {
 	ticker := time.NewTicker(time.Duration(b.config.Bridge.DeletionRateLimit) * time.Millisecond)
 	defer ticker.Stop()
 
-	log.Printf("📋 Started deletion queue processor (rate: %dms between deletions)", b.config.Bridge.DeletionRateLimit)
+	log.Printf("🗑️ TTL ENFORCEMENT PROTOCOL ACTIVE // DELETION RATE: %dms", b.config.Bridge.DeletionRateLimit)
 
 	for {
 		select {
@@ -324,22 +324,22 @@ func (b *Bridge) processDeleteQueue() {
 						// Put the message back in the queue for retry
 						select {
 						case b.deletionQueue <- messageID:
-							log.Printf("⏳ Rate limited, requeueing message deletion: %s", messageID)
+							log.Printf("⏳ DISCORD API THROTTLED // REQUEUING: %s", messageID)
 						default:
-							log.Printf("❌ Rate limited and queue full, dropping message deletion: %s", messageID)
+							log.Printf("❌ DELETION QUEUE OVERLOAD // DROPPING: %s", messageID)
 						}
 						
 						// Wait longer before next attempt using configurable delay
 						time.Sleep(time.Duration(b.config.Bridge.RateLimitRetryDelay) * time.Second)
 					} else if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "404") {
 						// Message already deleted or doesn't exist - this is OK
-						log.Printf("ℹ️ Message already deleted: %s", messageID)
+						log.Printf("ℹ️ MESSAGE ALREADY PURGED FROM CHANNEL: %s", messageID)
 					} else {
 						// Other error - log but don't retry
-						log.Printf("❌ Failed to delete message: %v", err)
+						log.Printf("❌ DELETION PROTOCOL ERROR: %v", err)
 					}
 				} else {
-					log.Printf("🗑️ Successfully deleted expired message: %s", messageID)
+					log.Printf("🗑️ TTL EXPIRED // MESSAGE PURGED: %s", messageID)
 				}
 			default:
 				// No messages in queue, continue
