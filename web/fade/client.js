@@ -109,11 +109,15 @@ class RepramFadeClient {
         const icon = document.getElementById(`node${nodeNum}Icon`);
         const state = document.getElementById(`node${nodeNum}State`);
         
-        // Remove existing status classes
-        icon.classList.remove('online', 'connecting', 'offline');
-        icon.classList.add(status);
+        if (icon) {
+            // Remove existing status classes
+            icon.classList.remove('online', 'connecting', 'offline');
+            icon.classList.add(status);
+        }
         
-        state.textContent = statusText;
+        if (state) {
+            state.textContent = statusText;
+        }
     }
 
     async checkAllNodes() {
@@ -121,11 +125,9 @@ class RepramFadeClient {
             // In proxy mode, assume all nodes are healthy
             if (this.connected) {
                 for (let i = 1; i <= 3; i++) {
-                    this.updateNodeStatus(i, 'online', 'ONLINE');
+                    this.updateNodeStatus(i, 'online', 'Online');
                 }
-                document.getElementById('nodesOnline').textContent = '3/3 nodes online';
                 document.getElementById('nodeCount').textContent = '3';
-                document.getElementById('modeStatus').textContent = 'ALL SYSTEMS OPERATIONAL';
             }
             return;
         }
@@ -139,32 +141,20 @@ class RepramFadeClient {
                     timeout: 3000
                 });
                 if (response.ok) {
-                    this.updateNodeStatus(index + 1, 'online', 'ONLINE');
+                    this.updateNodeStatus(index + 1, 'online', 'Online');
                     onlineCount++;
                 } else {
-                    this.updateNodeStatus(index + 1, 'offline', 'ERROR');
+                    this.updateNodeStatus(index + 1, 'offline', 'Error');
                 }
             } catch (error) {
-                this.updateNodeStatus(index + 1, 'offline', 'OFFLINE');
+                this.updateNodeStatus(index + 1, 'offline', 'Offline');
             }
         });
         
         await Promise.all(nodePromises);
         
-        // Update summary
-        const totalNodes = this.nodes.length;
-        document.getElementById('nodesOnline').textContent = `${onlineCount}/${totalNodes} nodes online`;
-        
         // Update the statistics section
         document.getElementById('nodeCount').textContent = onlineCount;
-        
-        if (onlineCount === totalNodes) {
-            document.getElementById('modeStatus').textContent = 'ALL SYSTEMS OPERATIONAL';
-        } else if (onlineCount > 0) {
-            document.getElementById('modeStatus').textContent = 'PARTIAL CONNECTIVITY';
-        } else {
-            document.getElementById('modeStatus').textContent = 'CONNECTION FAILED';
-        }
     }
 
     async connectToNode() {
@@ -668,27 +658,45 @@ class RepramFadeClient {
     }
 
     updateConnectionStatus(status, nodeId = null) {
-        // Update the new network status elements instead of the old ones
+        const statusIcon = document.getElementById('statusIcon');
         const modeStatus = document.getElementById('modeStatus');
         const currentActivity = document.getElementById('currentActivity');
         
+        // Update status icon
+        if (statusIcon) {
+            statusIcon.className = `status-icon ${status}`;
+            switch(status) {
+                case 'scanning':
+                    statusIcon.textContent = '◈';
+                    break;
+                case 'connected':
+                    statusIcon.textContent = '◆';
+                    break;
+                case 'error':
+                    statusIcon.textContent = '◇';
+                    break;
+                default:
+                    statusIcon.textContent = '◆';
+            }
+        }
+        
         switch(status) {
             case 'scanning':
-                if (modeStatus) modeStatus.textContent = 'SCANNING NETWORK...';
+                if (modeStatus) modeStatus.textContent = 'SCANNING...';
                 if (currentActivity) currentActivity.textContent = 'Searching for nodes...';
                 break;
             case 'connected':
                 if (modeStatus) {
                     if (this.connectionMode === 'direct') {
-                        modeStatus.textContent = 'DIRECT CONNECTION ACTIVE';
+                        modeStatus.textContent = 'CONNECTED';
                     } else {
-                        modeStatus.textContent = 'PROXY CONNECTION ACTIVE';
+                        modeStatus.textContent = 'CONNECTED';
                     }
                 }
                 if (currentActivity) currentActivity.textContent = 'Network operational';
                 break;
             case 'error':
-                if (modeStatus) modeStatus.textContent = 'CONNECTION ERROR';
+                if (modeStatus) modeStatus.textContent = 'ERROR';
                 if (currentActivity) currentActivity.textContent = 'Retrying connection...';
                 break;
             default:
