@@ -953,6 +953,27 @@
             padding-top: 15px;
         }
 
+        .footer-credits {
+            font-size: 0.65rem;
+            color: #444;
+            text-align: center;
+            margin: 10px 0;
+            opacity: 0.7;
+            font-family: 'Share Tech Mono', monospace;
+            text-shadow: none;
+        }
+
+        .footer-credits a {
+            color: #00ff00;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .footer-credits a:hover {
+            color: #00ffff;
+            text-shadow: 0 0 5px rgba(0, 255, 255, 0.6);
+        }
+
         /* Mobile Responsive */
         @media (max-width: 1200px) {
             .main-content {
@@ -1149,6 +1170,9 @@
         </div>
         
         <div class="footer-version">SYNTH-TREE v0.1 "Cyberpunk-Matrix" // REPRAM.io</div>
+        <div class="footer-credits">
+            Developed by <a href="https://www.clocktowerassoc.com" target="_blank">Clocktower and Associates</a>
+        </div>
     </div>
 
     <script>
@@ -2737,10 +2761,69 @@
             }
         }
 
+        // Add matrix rain effect (subtle)
+        function createMatrixRain() {
+            const canvas = document.createElement('canvas');
+            canvas.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                pointer-events: none;
+                z-index: 1;
+                opacity: 0.05;
+            `;
+            document.body.appendChild(canvas);
+            
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            
+            const chars = 'SYNTH0101';
+            const fontSize = 14;
+            const columns = canvas.width / fontSize;
+            const drops = [];
+            
+            for (let i = 0; i < columns; i++) {
+                drops[i] = 1;
+            }
+            
+            function draw() {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = '#00ff00';
+                ctx.font = fontSize + 'px monospace';
+                
+                for (let i = 0; i < drops.length; i++) {
+                    const text = chars[Math.floor(Math.random() * chars.length)];
+                    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                    
+                    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                        drops[i] = 0;
+                    }
+                    
+                    drops[i]++;
+                }
+            }
+            
+            setInterval(draw, 100);
+            
+            // Resize handler
+            window.addEventListener('resize', function() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            });
+        }
+
         // Initialize simulation when page loads
         document.addEventListener('DOMContentLoaded', () => {
             console.log('SYNTH TREE MATRIX BOOTSTRAP SEQUENCE INITIATED...');
             window.simulation = new DiscoverySimulation();
+            
+            // Start matrix rain after page loads
+            setTimeout(createMatrixRain, 2000);
         });
     </script>
 </body>
