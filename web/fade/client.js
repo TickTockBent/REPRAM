@@ -145,6 +145,8 @@ class RepramFadeClient {
         if (state) {
             state.textContent = statusText;
         }
+        
+        console.log(`Updated node ${nodeNum}: ${statusText} (found icon: ${!!icon}, found state: ${!!state})`);
     }
 
     async checkAllNodes() {
