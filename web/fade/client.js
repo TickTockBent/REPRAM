@@ -643,13 +643,19 @@ class RepramFadeClient {
             try {
                 // Check if node is still healthy
                 const headers = {};
-                if (this.preferredNode) {
-                    headers['X-Preferred-Node'] = this.preferredNode;
+                let healthEndpoint;
+                
+                if (this.connectionMode === 'direct') {
+                    // In direct mode, use the current baseURL (which may be a specific selected node)
+                    healthEndpoint = `${this.baseURL}/health`;
+                } else {
+                    // In proxy mode, use preferred node header
+                    if (this.preferredNode) {
+                        headers['X-Preferred-Node'] = this.preferredNode;
+                    }
+                    healthEndpoint = `${this.baseURL}/api/health`;
                 }
                 
-                const healthEndpoint = this.connectionMode === 'direct' ? 
-                    `${this.baseURL}/health` : 
-                    `${this.baseURL}/api/health`;
                 const healthResponse = await fetch(healthEndpoint, { 
                     method: 'GET', 
                     headers: headers,
@@ -733,23 +739,39 @@ class RepramFadeClient {
 
     async switchNode(nodeUrl) {
         if (nodeUrl) {
-            // Extract port number for preference
-            const port = nodeUrl.split(':').pop();
-            this.preferredNode = port;
-            console.log(`Setting preferred node to port ${port}`);
-            
-            // Update status immediately
-            document.getElementById('nodeInfo').textContent = `[Prefer: ${port}]`;
+            // In direct mode, switch to specific node
+            if (this.connectionMode === 'direct') {
+                this.baseURL = nodeUrl;
+                this.preferredNode = nodeUrl;
+                console.log(`Switching to direct node: ${nodeUrl}`);
+                
+                // Update current node display
+                const currentNodeDisplay = nodeUrl.replace('https://', '').replace('http://', '');
+                const currentNode = document.getElementById('currentNode');
+                if (currentNode) currentNode.textContent = currentNodeDisplay;
+                
+                // Update activity to show single node mode
+                const currentActivity = document.getElementById('currentActivity');
+                if (currentActivity) currentActivity.textContent = `Using ${currentNodeDisplay}`;
+            } else {
+                // In proxy mode, set preferred node header
+                const port = nodeUrl.split(':').pop();
+                this.preferredNode = port;
+                console.log(`Setting preferred node to port ${port}`);
+            }
         } else {
-            // Back to auto/round-robin
+            // Back to auto/load-balance mode
             this.preferredNode = null;
-            console.log('Switching to auto/round-robin mode');
-            document.getElementById('nodeInfo').textContent = '';
+            console.log('Switching to auto/load-balance mode');
+            
+            const currentActivity = document.getElementById('currentActivity');
+            if (currentActivity) currentActivity.textContent = 'Load balancing';
         }
         
         // Clear current messages and reload
         this.messages.clear();
-        document.getElementById('messageBoard').innerHTML = '<div class="loading">Updating node preference...</div>';
+        const messageBoard = document.getElementById('messageBoard');
+        if (messageBoard) messageBoard.innerHTML = '<div class="loading">Updating node preference...</div>';
         
         // Reload messages
         await this.loadRecentMessages();
