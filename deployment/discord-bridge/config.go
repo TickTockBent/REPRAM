@@ -37,6 +37,7 @@ type BridgeConfig struct {
 	ShowTTL                 bool   `yaml:"show_ttl"`
 	TTLFormat               string `yaml:"ttl_format"`
 	EmbedKeys               bool   `yaml:"embed_keys"`
+	ShowKeys                bool   `yaml:"show_keys"`
 	PollInterval            int    `yaml:"poll_interval"`
 	CleanupInterval         int    `yaml:"cleanup_interval"`
 	MaxDeletionsPerCleanup  int    `yaml:"max_deletions_per_cleanup"`
@@ -110,6 +111,17 @@ func LoadConfig(filename string) (*Config, error) {
 	}
 	if config.TTLCommands.Prefix == "" {
 		config.TTLCommands.Prefix = "/ttl"
+	}
+
+	// Override Discord config with environment variables if present
+	if token := os.Getenv("DISCORD_TOKEN"); token != "" {
+		config.Discord.Token = token
+	}
+	if channelID := os.Getenv("DISCORD_CHANNEL_ID"); channelID != "" {
+		config.Discord.ChannelID = channelID
+	}
+	if guildID := os.Getenv("DISCORD_GUILD_ID"); guildID != "" {
+		config.Discord.GuildID = guildID
 	}
 
 	return &config, nil

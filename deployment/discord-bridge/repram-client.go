@@ -226,15 +226,8 @@ func (rc *RepramClient) parseMessage(key, content string) (*RepramMessage, error
 	// Parse the pipe-separated format: content|author|timestamp|ttl|source
 	parts := strings.SplitN(content, "|", 5)
 	if len(parts) < 5 {
-		// Fallback for simple text messages (might be from FADE)
-		return &RepramMessage{
-			Key:       key,
-			Content:   content,
-			Author:    "unknown",
-			Timestamp: time.Now(),
-			TTL:       3600,
-			Source:    "fade",
-		}, nil
+		// Check if this is a FADE message format: content|callsign|location
+		return rc.parseFadeMessage(key, content, parts)
 	}
 
 	timestamp, err := time.Parse(time.RFC3339, parts[2])
@@ -255,5 +248,41 @@ func (rc *RepramClient) parseMessage(key, content string) (*RepramMessage, error
 		Timestamp: timestamp,
 		TTL:       ttl,
 		Source:    parts[4],
+	}, nil
+}
+
+// parseFadeMessage parses a FADE message format: content|callsign|location
+func (rc *RepramClient) parseFadeMessage(key, content string, parts []string) (*RepramMessage, error) {
+	var messageContent, callsign, location string
+	
+	if len(parts) == 1 {
+		// Simple message with no callsign/location
+		messageContent = parts[0]
+	} else if len(parts) >= 2 {
+		// Message with callsign and optionally location
+		messageContent = parts[0]
+		callsign = parts[1]
+		if len(parts) >= 3 && parts[2] != "" {
+			location = parts[2]
+		}
+	}
+	
+	// Build author string from callsign and location
+	author := "unknown"
+	if callsign != "" {
+		if location != "" {
+			author = fmt.Sprintf("%s (%s)", callsign, location)
+		} else {
+			author = callsign
+		}
+	}
+	
+	return &RepramMessage{
+		Key:       key,
+		Content:   messageContent,
+		Author:    author,
+		Timestamp: time.Now(),
+		TTL:       3600, // Default TTL, will be updated from actual TTL
+		Source:    "fade",
 	}, nil
 }
