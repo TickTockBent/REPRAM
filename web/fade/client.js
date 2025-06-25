@@ -161,23 +161,30 @@ class RepramFadeClient {
         let onlineCount = 0;
         
         for (let i = 0; i < nodeUrls.length; i++) {
+            console.log(`Checking health of ${nodeUrls[i]}...`);
             try {
                 const response = await fetch(`${nodeUrls[i]}/health`, {
                     method: 'GET',
                     mode: 'cors'
                 });
                 
+                console.log(`Health check response for ${nodeUrls[i]}: ${response.status}`);
+                
                 if (response.ok) {
+                    console.log(`Node ${i + 1} is online, updating status...`);
                     this.updateNodeStatus(i + 1, 'online', 'Online');
                     onlineCount++;
                 } else {
+                    console.log(`Node ${i + 1} is offline (status ${response.status})`);
                     this.updateNodeStatus(i + 1, 'offline', 'Offline');
                 }
             } catch (error) {
+                console.log(`Node ${i + 1} health check failed:`, error);
                 this.updateNodeStatus(i + 1, 'offline', 'Offline');
             }
         }
         
+        console.log(`Total online nodes: ${onlineCount}`);
         document.getElementById('nodeCount').textContent = onlineCount;
     }
 
