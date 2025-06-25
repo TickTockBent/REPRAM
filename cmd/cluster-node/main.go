@@ -199,6 +199,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		// Allow specific origins
 		origin := r.Header.Get("Origin")
 		if origin == "https://fade.repram.io" || origin == "https://repram.io" || 
+		   strings.Contains(origin, "vercel.app") || strings.Contains(origin, "vercel.com") ||
 		   strings.HasPrefix(origin, "http://localhost") ||
 		   strings.Contains(origin, "192.168.") || strings.Contains(origin, "10.") || 
 		   strings.Contains(origin, "172.") {
