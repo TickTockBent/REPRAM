@@ -65,23 +65,31 @@ class RepramFadeClient {
         const modeLabel = document.getElementById('modeLabel');
         
         if (this.connectionMode === 'direct') {
-            // Direct mode - show node selection
-            if (select) {
+            // Direct mode - show node selection with actual URLs
+            if (select && this.nodes.length >= 3) {
                 select.options[0].text = 'Auto (Load Balance)';
+                select.options[0].value = '';
                 select.options[1].text = 'Node 1 Direct';
+                select.options[1].value = this.nodes[0];
                 select.options[2].text = 'Node 2 Direct';
+                select.options[2].value = this.nodes[1];
                 select.options[3].text = 'Node 3 Direct';
+                select.options[3].value = this.nodes[2];
             }
             
             if (modeLabel) modeLabel.textContent = 'DIRECT MODE';
             console.log('Direct connection mode - connecting to cluster nodes directly');
         } else {
-            // Proxy mode
+            // Proxy mode - use port numbers for preference
             if (select) {
                 select.options[0].text = 'Auto (Round Robin)';
+                select.options[0].value = '';
                 select.options[1].text = 'Prefer Node 1';
+                select.options[1].value = 'http://localhost:8081';  // This will be used as port preference
                 select.options[2].text = 'Prefer Node 2';
+                select.options[2].value = 'http://localhost:8082';
                 select.options[3].text = 'Prefer Node 3';
+                select.options[3].value = 'http://localhost:8083';
             }
             
             if (modeLabel) modeLabel.textContent = 'PROXY MODE';
