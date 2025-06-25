@@ -280,7 +280,17 @@ class RepramFadeClient {
     updateNetworkDisplay() {
         const nodes = this.nodeStatuses || [];
         const activeNodes = nodes.filter(n => n.healthy).length;
-        document.getElementById('currentNode').textContent = `${activeNodes} nodes active`;
+        
+        // Update node count instead of overwriting current node
+        const nodeCount = document.getElementById('nodeCount');
+        if (nodeCount) nodeCount.textContent = activeNodes.toString();
+        
+        // Find and display the current node
+        const currentNodeFromStatus = nodes.find(n => n.current);
+        if (currentNodeFromStatus) {
+            const currentNode = document.getElementById('currentNode');
+            if (currentNode) currentNode.textContent = currentNodeFromStatus.id;
+        }
         
         // Update a more detailed display if needed
         const nodeList = nodes.map(n => 
