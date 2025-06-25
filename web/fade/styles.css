@@ -1344,3 +1344,24 @@ button:disabled {
     border-top: 1px solid #222;
     padding-top: 15px;
 }
+
+.footer-credits {
+    font-size: 0.65rem;
+    color: #444;
+    text-align: center;
+    margin: 10px 0;
+    opacity: 0.7;
+    font-family: 'Share Tech Mono', monospace;
+    text-shadow: none;
+}
+
+.footer-credits a {
+    color: #00ff00;
+    text-decoration: none;
+    transition: all 0.3s ease;
+}
+
+.footer-credits a:hover {
+    color: #00ffff;
+    text-shadow: 0 0 5px rgba(0, 255, 255, 0.6);
+}
