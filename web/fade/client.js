@@ -22,8 +22,7 @@ class RepramFadeClient {
         // Preview key for next message
         this.previewKey = null;
         
-        // Track node information
-        this.nodes = [];
+        // Track node information (override the earlier initialization)
         this.lastUsedNode = null;
         this.preferredNode = null; // null means auto/load-balanced
     }
@@ -58,6 +57,9 @@ class RepramFadeClient {
     async init() {
         console.log('Initializing REPRAM Fade client...');
         
+        // Initialize network status display
+        this.initNetworkStatus();
+        
         // Update node selector labels based on connection mode
         const select = document.getElementById('nodeSelect');
         if (this.connectionMode === 'direct') {
@@ -67,6 +69,7 @@ class RepramFadeClient {
             select.options[2].text = 'Node 2 Direct';
             select.options[3].text = 'Node 3 Direct';
             
+            document.getElementById('modeLabel').textContent = 'DIRECT MODE';
             console.log('Direct connection mode - connecting to cluster nodes directly');
         } else {
             // Proxy mode
@@ -75,6 +78,7 @@ class RepramFadeClient {
             select.options[2].text = 'Prefer Node 2';
             select.options[3].text = 'Prefer Node 3';
             
+            document.getElementById('modeLabel').textContent = 'PROXY MODE';
             console.log('Proxy mode via ' + window.location.hostname + ' - using proxy with node preference.');
         }
         
@@ -82,7 +86,65 @@ class RepramFadeClient {
         await this.loadRecentMessages();
         this.startPolling();
         this.startTTLUpdater();
-        this.updateNetworkStatus();
+        this.checkAllNodes();
+    }
+
+    initNetworkStatus() {
+        // Initialize all nodes as connecting
+        for (let i = 1; i <= 3; i++) {
+            this.updateNodeStatus(i, 'connecting', 'CONNECTING');
+        }
+        document.getElementById('modeStatus').textContent = 'INITIALIZING...';
+        document.getElementById('nodesOnline').textContent = 'Checking nodes...';
+        document.getElementById('currentActivity').textContent = '';
+    }
+
+    updateNodeStatus(nodeNum, status, statusText) {
+        const icon = document.getElementById(`node${nodeNum}Icon`);
+        const state = document.getElementById(`node${nodeNum}State`);
+        
+        // Remove existing status classes
+        icon.classList.remove('online', 'connecting', 'offline');
+        icon.classList.add(status);
+        
+        state.textContent = statusText;
+    }
+
+    async checkAllNodes() {
+        if (this.connectionMode !== 'direct' || !this.nodes.length) return;
+        
+        let onlineCount = 0;
+        const nodePromises = this.nodes.map(async (nodeUrl, index) => {
+            try {
+                const response = await fetch(`${nodeUrl}/health`, {
+                    method: 'GET',
+                    mode: 'cors',
+                    timeout: 3000
+                });
+                if (response.ok) {
+                    this.updateNodeStatus(index + 1, 'online', 'ONLINE');
+                    onlineCount++;
+                } else {
+                    this.updateNodeStatus(index + 1, 'offline', 'ERROR');
+                }
+            } catch (error) {
+                this.updateNodeStatus(index + 1, 'offline', 'OFFLINE');
+            }
+        });
+        
+        await Promise.all(nodePromises);
+        
+        // Update summary
+        const totalNodes = this.nodes.length;
+        document.getElementById('nodesOnline').textContent = `${onlineCount}/${totalNodes} nodes online`;
+        
+        if (onlineCount === totalNodes) {
+            document.getElementById('modeStatus').textContent = 'ALL SYSTEMS OPERATIONAL';
+        } else if (onlineCount > 0) {
+            document.getElementById('modeStatus').textContent = 'PARTIAL CONNECTIVITY';
+        } else {
+            document.getElementById('modeStatus').textContent = 'CONNECTION FAILED';
+        }
     }
 
     async connectToNode() {
@@ -529,13 +591,13 @@ class RepramFadeClient {
                 return;
             }
             
-            // Rotate through different scanning messages for visual feedback
-            const scanMessages = ['SCANNING NETWORK...', 'CHECKING NODES...', 'POLLING MESSAGES...'];
-            const scanMsg = scanMessages[scanCounter % scanMessages.length];
+            // Update activity status less frequently to reduce flickering
+            if (scanCounter % 2 === 0) {
+                const activities = ['Polling messages...', 'Checking network...', 'Syncing data...'];
+                const activity = activities[Math.floor(scanCounter / 2) % activities.length];
+                document.getElementById('currentActivity').textContent = activity;
+            }
             scanCounter++;
-            
-            this.updateConnectionStatus('scanning');
-            document.getElementById('statusText').textContent = scanMsg;
             
             try {
                 // Check if node is still healthy
@@ -562,11 +624,14 @@ class RepramFadeClient {
                 
                 this.connected = true;
                 await this.loadRecentMessages();
-                // Update network status less frequently  
-                if (scanCounter % 3 === 0) {
+                
+                // Update network status and check all nodes periodically  
+                if (scanCounter % 6 === 0) {
+                    await this.checkAllNodes();
+                    document.getElementById('currentActivity').textContent = 'Network operational';
+                } else if (scanCounter % 3 === 0) {
                     await this.updateNetworkStatus();
                 }
-                this.updateConnectionStatus('connected');
             } catch (error) {
                 console.error('Polling error:', error);
                 this.connected = false;
