@@ -97,6 +97,12 @@ class RepramFadeClient {
         document.getElementById('modeStatus').textContent = 'INITIALIZING...';
         document.getElementById('nodesOnline').textContent = 'Checking nodes...';
         document.getElementById('currentActivity').textContent = '';
+        
+        // Initialize statistics
+        document.getElementById('nodeCount').textContent = '0';
+        document.getElementById('messageCount').textContent = '0';
+        document.getElementById('expiredCount').textContent = this.expiredToday.toString();
+        document.getElementById('currentNode').textContent = 'Connecting...';
     }
 
     updateNodeStatus(nodeNum, status, statusText) {
@@ -138,6 +144,9 @@ class RepramFadeClient {
         const totalNodes = this.nodes.length;
         document.getElementById('nodesOnline').textContent = `${onlineCount}/${totalNodes} nodes online`;
         
+        // Update the statistics section
+        document.getElementById('nodeCount').textContent = onlineCount;
+        
         if (onlineCount === totalNodes) {
             document.getElementById('modeStatus').textContent = 'ALL SYSTEMS OPERATIONAL';
         } else if (onlineCount > 0) {
@@ -165,7 +174,13 @@ class RepramFadeClient {
                         if (response.ok) {
                             this.baseURL = nodeUrl;
                             this.connected = true;
+                            this.lastUsedNode = { id: `node-${this.currentNodeIndex+1}`, url: nodeUrl };
                             console.log('Connected to REPRAM network via direct connection:', nodeUrl);
+                            
+                            // Update current node display
+                            const currentNodeDisplay = nodeUrl.replace('https://', '').replace('http://', '');
+                            document.getElementById('currentNode').textContent = currentNodeDisplay;
+                            
                             this.updateConnectionStatus('connected');
                             await this.updateNodeStatus();
                             return;
@@ -642,42 +657,32 @@ class RepramFadeClient {
     }
 
     updateConnectionStatus(status, nodeId = null) {
-        const icon = document.getElementById('statusIcon');
-        const text = document.getElementById('statusText');
-        const info = document.getElementById('nodeInfo');
+        // Update the new network status elements instead of the old ones
+        const modeStatus = document.getElementById('modeStatus');
+        const currentActivity = document.getElementById('currentActivity');
         
         switch(status) {
             case 'scanning':
-                icon.className = 'status-icon scanning';
-                icon.textContent = '◈';
-                text.textContent = 'SCANNING NETWORK...';
+                if (modeStatus) modeStatus.textContent = 'SCANNING NETWORK...';
+                if (currentActivity) currentActivity.textContent = 'Searching for nodes...';
                 break;
             case 'connected':
-                icon.className = 'status-icon connected';
-                icon.textContent = '◆';
-                if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-                    text.textContent = 'PROXY MODE';
-                } else {
-                    text.textContent = 'CONNECTED';
+                if (modeStatus) {
+                    if (this.connectionMode === 'direct') {
+                        modeStatus.textContent = 'DIRECT CONNECTION ACTIVE';
+                    } else {
+                        modeStatus.textContent = 'PROXY CONNECTION ACTIVE';
+                    }
                 }
-                if (this.preferredNode) {
-                    // Show preferred node
-                    info.textContent = `[Prefer: ${this.preferredNode}]`;
-                } else if (this.lastUsedNode) {
-                    info.textContent = `[Last: ${this.lastUsedNode.id}]`;
-                }
+                if (currentActivity) currentActivity.textContent = 'Network operational';
                 break;
             case 'error':
-                icon.className = 'status-icon error';
-                icon.textContent = '◇';
-                text.textContent = 'CONNECTION ERROR';
-                info.textContent = '';
+                if (modeStatus) modeStatus.textContent = 'CONNECTION ERROR';
+                if (currentActivity) currentActivity.textContent = 'Retrying connection...';
                 break;
             default:
-                icon.className = 'status-icon';
-                icon.textContent = '◆';
-                text.textContent = 'INITIALIZING...';
-                info.textContent = '';
+                if (modeStatus) modeStatus.textContent = 'INITIALIZING...';
+                if (currentActivity) currentActivity.textContent = '';
         }
     }
 
