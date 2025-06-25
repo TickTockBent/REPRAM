@@ -20,8 +20,8 @@ const FadeConfig = {
         // Default backends based on environment
         if (window.location.hostname === 'fade.repram.io' || window.location.hostname === 'repram.io' ||
             window.location.hostname.includes('vercel.app') || window.location.hostname.includes('vercel.com')) {
-            // Production - use GCP VM external IP (update with your actual IP)
-            return 'http://34.133.34.244:8081';
+            // Production - use Cloudflare tunnel HTTPS endpoints
+            return 'https://node1.repram.io';
         } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || 
                    window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.') || 
                    window.location.hostname.startsWith('172.')) {
@@ -37,11 +37,11 @@ const FadeConfig = {
     getNodes: function() {
         if (window.location.hostname === 'fade.repram.io' || window.location.hostname === 'repram.io' ||
             window.location.hostname.includes('vercel.app') || window.location.hostname.includes('vercel.com')) {
-            // Production - use GCP VM external IP (update with your actual IP)
+            // Production - use Cloudflare tunnel HTTPS endpoints
             return [
-                'http://34.133.34.244:8081',
-                'http://34.133.34.244:8082', 
-                'http://34.133.34.244:8083'
+                'https://node1.repram.io',
+                'https://node2.repram.io', 
+                'https://node3.repram.io'
             ];
         } else {
             // Local development - use same hostname as the web server
