@@ -274,26 +274,27 @@ h1::after {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 15px 10px;
+    justify-content: space-between;
+    padding: 12px 8px;
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid #333;
     border-radius: 4px;
-    min-height: 80px;
-    position: relative;
+    min-height: 70px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .node-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     justify-content: center;
     white-space: nowrap;
+    margin-bottom: 4px;
 }
 
 .node-icon {
-    font-size: 1.1rem;
+    font-size: 0.9rem;
     animation: statusPulse 2s ease-in-out infinite;
     flex-shrink: 0;
 }
@@ -314,7 +315,7 @@ h1::after {
 .node-label {
     color: #00ffff;
     font-family: 'Courier New', monospace;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: bold;
     white-space: nowrap;
     text-align: center;
@@ -323,11 +324,11 @@ h1::after {
 .node-state {
     color: #ff00ff;
     font-family: 'Courier New', monospace;
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     text-transform: uppercase;
     text-align: center;
     white-space: nowrap;
-    min-height: 1.2em;
+    line-height: 1;
 }
 
 .network-summary {
