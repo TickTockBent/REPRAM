@@ -26,44 +26,12 @@
             <p class="tagline">[ EPHEMERAL MESSAGE SYSTEM // DISTRIBUTED NETWORK ]</p>
         </header>
 
-        <!-- REPRAM Network Status -->
-        <div class="network-status-container">
-            <div class="network-status-header">
-                <h3>REPRAM NETWORK STATUS</h3>
-                <div class="connection-mode" id="connectionMode">
-                    <span class="mode-label" id="modeLabel">PROXY MODE</span>
-                    <span class="mode-status" id="modeStatus">SCANNING...</span>
-                </div>
-            </div>
-            
-            <div class="nodes-grid">
-                <div class="node-status" id="node1Status">
-                    <div class="node-indicator">
-                        <span class="node-icon" id="node1Icon">◆</span>
-                        <span class="node-label">NODE 1</span>
-                    </div>
-                    <span class="node-state" id="node1State">CONNECTING</span>
-                </div>
-                <div class="node-status" id="node2Status">
-                    <div class="node-indicator">
-                        <span class="node-icon" id="node2Icon">◆</span>
-                        <span class="node-label">NODE 2</span>
-                    </div>
-                    <span class="node-state" id="node2State">CONNECTING</span>
-                </div>
-                <div class="node-status" id="node3Status">
-                    <div class="node-indicator">
-                        <span class="node-icon" id="node3Icon">◆</span>
-                        <span class="node-label">NODE 3</span>
-                    </div>
-                    <span class="node-state" id="node3State">CONNECTING</span>
-                </div>
-            </div>
-            
-            <div class="network-summary">
-                <span class="nodes-online" id="nodesOnline">Checking nodes...</span>
-                <span class="current-activity" id="currentActivity"></span>
-            </div>
+        <!-- Simple Status Bar -->
+        <div class="simple-status-bar">
+            <span class="status-icon" id="statusIcon">◆</span>
+            <span class="mode-label" id="modeLabel">PROXY MODE</span>
+            <span class="mode-status" id="modeStatus">INITIALIZING...</span>
+            <span class="current-activity" id="currentActivity"></span>
             
             <div class="node-selector" id="nodeSelector">
                 <select id="nodeSelect" onchange="fadeClient.switchNode(this.value)">
@@ -163,6 +131,27 @@
                 </div>
                 <div class="status-item">
                     <strong>Current Node:</strong> <span id="currentNode">-</span>
+                </div>
+            </div>
+            
+            <div class="node-health-section">
+                <h4>Node Status:</h4>
+                <div class="node-health-grid">
+                    <div class="node-health-item">
+                        <span class="node-health-icon" id="node1Icon">◆</span>
+                        <span class="node-health-label">Node 1</span>
+                        <span class="node-health-status" id="node1State">Connecting</span>
+                    </div>
+                    <div class="node-health-item">
+                        <span class="node-health-icon" id="node2Icon">◆</span>
+                        <span class="node-health-label">Node 2</span>
+                        <span class="node-health-status" id="node2State">Connecting</span>
+                    </div>
+                    <div class="node-health-item">
+                        <span class="node-health-icon" id="node3Icon">◆</span>
+                        <span class="node-health-label">Node 3</span>
+                        <span class="node-health-status" id="node3State">Connecting</span>
+                    </div>
                 </div>
             </div>
         </div>
