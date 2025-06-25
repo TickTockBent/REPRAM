@@ -111,7 +111,7 @@ class RepramFadeClient {
     initNetworkStatus() {
         // Initialize all nodes as connecting
         for (let i = 1; i <= 3; i++) {
-            this.updateNodeStatus(i, 'connecting', 'Connecting');
+            this.updateNodeHealthStatus(i, 'connecting', 'Connecting');
         }
         
         // Initialize status bar
@@ -132,7 +132,8 @@ class RepramFadeClient {
         if (currentNode) currentNode.textContent = 'Connecting...';
     }
 
-    updateNodeStatus(nodeNum, status, statusText) {
+    updateNodeHealthStatus(nodeNum, status, statusText) {
+        console.log(`*** FIRST updateNodeStatus method called with parameters ***`);
         console.log(`updateNodeStatus called for node ${nodeNum} with status ${status} and text ${statusText}`);
         
         const icon = document.getElementById(`node${nodeNum}Icon`);
@@ -181,7 +182,7 @@ class RepramFadeClient {
                 if (response.ok) {
                     console.log(`Node ${i + 1} is online, updating status...`);
                     try {
-                        this.updateNodeStatus(i + 1, 'online', 'Online');
+                        this.updateNodeHealthStatus(i + 1, 'online', 'Online');
                         console.log(`Successfully called updateNodeStatus for node ${i + 1}`);
                     } catch (error) {
                         console.error(`Error calling updateNodeStatus for node ${i + 1}:`, error);
@@ -190,14 +191,14 @@ class RepramFadeClient {
                 } else {
                     console.log(`Node ${i + 1} is offline (status ${response.status})`);
                     try {
-                        this.updateNodeStatus(i + 1, 'offline', 'Offline');
+                        this.updateNodeHealthStatus(i + 1, 'offline', 'Offline');
                     } catch (error) {
                         console.error(`Error calling updateNodeStatus for node ${i + 1}:`, error);
                     }
                 }
             } catch (error) {
                 console.log(`Node ${i + 1} health check failed:`, error);
-                this.updateNodeStatus(i + 1, 'offline', 'Offline');
+                this.updateNodeHealthStatus(i + 1, 'offline', 'Offline');
             }
         }
         
