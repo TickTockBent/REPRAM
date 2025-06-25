@@ -62,23 +62,29 @@ class RepramFadeClient {
         
         // Update node selector labels based on connection mode
         const select = document.getElementById('nodeSelect');
+        const modeLabel = document.getElementById('modeLabel');
+        
         if (this.connectionMode === 'direct') {
             // Direct mode - show node selection
-            select.options[0].text = 'Auto (Load Balance)';
-            select.options[1].text = 'Node 1 Direct';
-            select.options[2].text = 'Node 2 Direct';
-            select.options[3].text = 'Node 3 Direct';
+            if (select) {
+                select.options[0].text = 'Auto (Load Balance)';
+                select.options[1].text = 'Node 1 Direct';
+                select.options[2].text = 'Node 2 Direct';
+                select.options[3].text = 'Node 3 Direct';
+            }
             
-            document.getElementById('modeLabel').textContent = 'DIRECT MODE';
+            if (modeLabel) modeLabel.textContent = 'DIRECT MODE';
             console.log('Direct connection mode - connecting to cluster nodes directly');
         } else {
             // Proxy mode
-            select.options[0].text = 'Auto (Round Robin)';
-            select.options[1].text = 'Prefer Node 1';
-            select.options[2].text = 'Prefer Node 2';
-            select.options[3].text = 'Prefer Node 3';
+            if (select) {
+                select.options[0].text = 'Auto (Round Robin)';
+                select.options[1].text = 'Prefer Node 1';
+                select.options[2].text = 'Prefer Node 2';
+                select.options[3].text = 'Prefer Node 3';
+            }
             
-            document.getElementById('modeLabel').textContent = 'PROXY MODE';
+            if (modeLabel) modeLabel.textContent = 'PROXY MODE';
             console.log('Proxy mode via ' + window.location.hostname + ' - using proxy with node preference.');
         }
         
@@ -92,17 +98,25 @@ class RepramFadeClient {
     initNetworkStatus() {
         // Initialize all nodes as connecting
         for (let i = 1; i <= 3; i++) {
-            this.updateNodeStatus(i, 'connecting', 'CONNECTING');
+            this.updateNodeStatus(i, 'connecting', 'Connecting');
         }
-        document.getElementById('modeStatus').textContent = 'INITIALIZING...';
-        document.getElementById('nodesOnline').textContent = 'Checking nodes...';
-        document.getElementById('currentActivity').textContent = '';
+        
+        // Initialize status bar
+        const modeStatus = document.getElementById('modeStatus');
+        const currentActivity = document.getElementById('currentActivity');
+        if (modeStatus) modeStatus.textContent = 'INITIALIZING...';
+        if (currentActivity) currentActivity.textContent = '';
         
         // Initialize statistics
-        document.getElementById('nodeCount').textContent = '0';
-        document.getElementById('messageCount').textContent = '0';
-        document.getElementById('expiredCount').textContent = this.expiredToday.toString();
-        document.getElementById('currentNode').textContent = 'Connecting...';
+        const nodeCount = document.getElementById('nodeCount');
+        const messageCount = document.getElementById('messageCount');
+        const expiredCount = document.getElementById('expiredCount');
+        const currentNode = document.getElementById('currentNode');
+        
+        if (nodeCount) nodeCount.textContent = '0';
+        if (messageCount) messageCount.textContent = '0';
+        if (expiredCount) expiredCount.textContent = this.expiredToday.toString();
+        if (currentNode) currentNode.textContent = 'Connecting...';
     }
 
     updateNodeStatus(nodeNum, status, statusText) {
@@ -611,7 +625,8 @@ class RepramFadeClient {
             if (scanCounter % 2 === 0) {
                 const activities = ['Polling messages...', 'Checking network...', 'Syncing data...'];
                 const activity = activities[Math.floor(scanCounter / 2) % activities.length];
-                document.getElementById('currentActivity').textContent = activity;
+                const currentActivity = document.getElementById('currentActivity');
+                if (currentActivity) currentActivity.textContent = activity;
             }
             scanCounter++;
             
@@ -644,7 +659,8 @@ class RepramFadeClient {
                 // Update network status and check all nodes periodically  
                 if (scanCounter % 6 === 0) {
                     await this.checkAllNodes();
-                    document.getElementById('currentActivity').textContent = 'Network operational';
+                    const currentActivity = document.getElementById('currentActivity');
+                    if (currentActivity) currentActivity.textContent = 'Network operational';
                 } else if (scanCounter % 3 === 0) {
                     await this.updateNetworkStatus();
                 }
