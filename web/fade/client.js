@@ -143,14 +143,12 @@ class RepramFadeClient {
     }
 
     async checkAllNodes() {
-        if (this.connectionMode !== 'direct' || !this.nodes.length) {
-            // In proxy mode, assume all nodes are healthy
-            if (this.connected) {
-                for (let i = 1; i <= 3; i++) {
-                    this.updateNodeStatus(i, 'online', 'Online');
-                }
-                document.getElementById('nodeCount').textContent = '3';
+        // If we're connected, show all nodes as online
+        if (this.connected) {
+            for (let i = 1; i <= 3; i++) {
+                this.updateNodeStatus(i, 'online', 'Online');
             }
+            document.getElementById('nodeCount').textContent = '3';
             return;
         }
         
