@@ -61,7 +61,7 @@ func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int,
 }
 
 func (cn *ClusterNode) Start(ctx context.Context, bootstrapAddresses []string) error {
-	transport := gossip.NewSimpleGRPCTransport(cn.localNode)
+	transport := gossip.NewHTTPTransport(cn.localNode)
 	cn.protocol.SetTransport(transport)
 	cn.protocol.SetMessageHandler(cn.handleGossipMessage)
 	

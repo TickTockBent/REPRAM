@@ -105,9 +105,35 @@ func main() {
 		}
 		if bootstrapStr != "" {
 			bootstrapNodes = strings.Split(bootstrapStr, ",")
-			// Clean up any whitespace
+			// Clean up any whitespace and convert to HTTP endpoints
 			for i, node := range bootstrapNodes {
-				bootstrapNodes[i] = strings.TrimSpace(node)
+				node = strings.TrimSpace(node)
+				// Convert gossip port references to HTTP ports
+				// e.g., repram-node-2:9092 -> repram-node-2:8082
+				if strings.Contains(node, ":909") {
+					// Extract host and port
+					parts := strings.Split(node, ":")
+					if len(parts) == 2 {
+						host := parts[0]
+						gossipPort := parts[1]
+						// Map gossip ports to HTTP ports
+						httpPort := ""
+						switch gossipPort {
+						case "9091":
+							httpPort = "8081"
+						case "9092":
+							httpPort = "8082"
+						case "9093":
+							httpPort = "8083"
+						default:
+							// If we can't map it, keep original
+							httpPort = gossipPort
+						}
+						node = host + ":" + httpPort
+						fmt.Printf("Converted bootstrap peer %s:%s to %s\n", host, gossipPort, node)
+					}
+				}
+				bootstrapNodes[i] = node
 			}
 		}
 	}
