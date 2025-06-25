@@ -133,20 +133,28 @@ class RepramFadeClient {
     }
 
     updateNodeStatus(nodeNum, status, statusText) {
+        console.log(`updateNodeStatus called for node ${nodeNum} with status ${status} and text ${statusText}`);
+        
         const icon = document.getElementById(`node${nodeNum}Icon`);
         const state = document.getElementById(`node${nodeNum}State`);
         
+        console.log(`Looking for elements: node${nodeNum}Icon and node${nodeNum}State`);
+        console.log(`Found icon:`, icon);
+        console.log(`Found state:`, state);
+        
         if (icon) {
+            console.log(`Updating icon classes for node ${nodeNum}`);
             // Remove existing status classes
             icon.classList.remove('online', 'connecting', 'offline');
             icon.classList.add(status);
         }
         
         if (state) {
+            console.log(`Updating state text for node ${nodeNum} to: ${statusText}`);
             state.textContent = statusText;
         }
         
-        console.log(`Updated node ${nodeNum}: ${statusText} (found icon: ${!!icon}, found state: ${!!state})`);
+        console.log(`updateNodeStatus completed for node ${nodeNum}`);
     }
 
     async checkAllNodes() {
