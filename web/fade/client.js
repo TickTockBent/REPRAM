@@ -98,6 +98,11 @@ class RepramFadeClient {
         
         await this.connectToNode();
         await this.loadRecentMessages();
+        
+        // Start periodic node health checks every minute
+        setInterval(() => {
+            this.checkAllNodes();
+        }, 60000);
         this.startPolling();
         this.startTTLUpdater();
         this.checkAllNodes();
@@ -143,37 +148,33 @@ class RepramFadeClient {
     }
 
     async checkAllNodes() {
-        // If we're connected, show all nodes as online
-        if (this.connected) {
-            for (let i = 1; i <= 3; i++) {
-                this.updateNodeStatus(i, 'online', 'Online');
-            }
-            document.getElementById('nodeCount').textContent = '3';
-            return;
-        }
+        // Simple health check against each node
+        const nodeUrls = [
+            'https://node1.repram.io',
+            'https://node2.repram.io',
+            'https://node3.repram.io'
+        ];
         
         let onlineCount = 0;
-        const nodePromises = this.nodes.map(async (nodeUrl, index) => {
+        
+        for (let i = 0; i < nodeUrls.length; i++) {
             try {
-                const response = await fetch(`${nodeUrl}/health`, {
+                const response = await fetch(`${nodeUrls[i]}/health`, {
                     method: 'GET',
-                    mode: 'cors',
-                    timeout: 3000
+                    mode: 'cors'
                 });
+                
                 if (response.ok) {
-                    this.updateNodeStatus(index + 1, 'online', 'Online');
+                    this.updateNodeStatus(i + 1, 'online', 'Online');
                     onlineCount++;
                 } else {
-                    this.updateNodeStatus(index + 1, 'offline', 'Error');
+                    this.updateNodeStatus(i + 1, 'offline', 'Offline');
                 }
             } catch (error) {
-                this.updateNodeStatus(index + 1, 'offline', 'Offline');
+                this.updateNodeStatus(i + 1, 'offline', 'Offline');
             }
-        });
+        }
         
-        await Promise.all(nodePromises);
-        
-        // Update the statistics section
         document.getElementById('nodeCount').textContent = onlineCount;
     }
 
