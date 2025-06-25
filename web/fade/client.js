@@ -180,11 +180,20 @@ class RepramFadeClient {
                 
                 if (response.ok) {
                     console.log(`Node ${i + 1} is online, updating status...`);
-                    this.updateNodeStatus(i + 1, 'online', 'Online');
+                    try {
+                        this.updateNodeStatus(i + 1, 'online', 'Online');
+                        console.log(`Successfully called updateNodeStatus for node ${i + 1}`);
+                    } catch (error) {
+                        console.error(`Error calling updateNodeStatus for node ${i + 1}:`, error);
+                    }
                     onlineCount++;
                 } else {
                     console.log(`Node ${i + 1} is offline (status ${response.status})`);
-                    this.updateNodeStatus(i + 1, 'offline', 'Offline');
+                    try {
+                        this.updateNodeStatus(i + 1, 'offline', 'Offline');
+                    } catch (error) {
+                        console.error(`Error calling updateNodeStatus for node ${i + 1}:`, error);
+                    }
                 }
             } catch (error) {
                 console.log(`Node ${i + 1} health check failed:`, error);
