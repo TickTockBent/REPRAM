@@ -150,6 +150,7 @@ class RepramFadeClient {
     }
 
     async checkAllNodes() {
+        console.log('=== checkAllNodes() called ===');
         // Simple health check against each node
         const nodeUrls = [
             'https://node1.repram.io',
