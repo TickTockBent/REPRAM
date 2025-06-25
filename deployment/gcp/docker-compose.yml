@@ -84,6 +84,25 @@ services:
       - repram-node-1
       - repram-node-2
 
+  discord-bridge:
+    build:
+      context: ../discord-bridge/
+      dockerfile: Dockerfile
+    container_name: discord-bridge
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+    volumes:
+      - ./discord-logs:/root/logs
+    restart: unless-stopped
+    networks:
+      - repram-cluster
+    depends_on:
+      - repram-node-1
+      - repram-node-2
+      - repram-node-3
+
 networks:
   repram-cluster:
     driver: bridge

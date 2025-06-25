@@ -268,6 +268,11 @@ func (b *Bridge) formatRepramMessage(msg *RepramMessage) string {
 		}
 	}
 
+	if b.config.Bridge.ShowKeys {
+		// Show the message key visibly for direct lookup
+		content += fmt.Sprintf("\n🔑 `%s`", msg.Key)
+	}
+
 	if b.config.Bridge.EmbedKeys {
 		// Embed the key as invisible text (zero-width characters)
 		content += fmt.Sprintf("\u200B%s\u200B", msg.Key)

@@ -9,9 +9,9 @@ discord:
 # REPRAM Configuration
 repram:
   nodes:
-    - "http://34.133.34.244:8081"
-    - "http://34.133.34.244:8082"
-    - "http://34.133.34.244:8083"
+    - "https://node1.repram.io"
+    - "https://node2.repram.io"
+    - "https://node3.repram.io"
   default_ttl: 3600  # 1 hour default TTL
   min_ttl: 300       # 5 minutes minimum TTL
   max_ttl: 604800    # 1 week maximum TTL
@@ -32,6 +32,9 @@ bridge:
   
   # Key embedding in Discord messages (hidden)
   embed_keys: true
+  
+  # Show message keys visibly in Discord
+  show_keys: true
   
   # Poll interval for checking REPRAM messages (seconds)
   poll_interval: 10
