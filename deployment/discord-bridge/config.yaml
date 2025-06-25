@@ -9,9 +9,9 @@ discord:
 # REPRAM Configuration
 repram:
   nodes:
-    - "http://YOUR_GCP_EXTERNAL_IP:8081"
-    - "http://YOUR_GCP_EXTERNAL_IP:8082"
-    - "http://YOUR_GCP_EXTERNAL_IP:8083"
+    - "http://34.133.34.244:8081"
+    - "http://34.133.34.244:8082"
+    - "http://34.133.34.244:8083"
   default_ttl: 3600  # 1 hour default TTL
   min_ttl: 300       # 5 minutes minimum TTL
   max_ttl: 604800    # 1 week maximum TTL
