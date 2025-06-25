@@ -205,7 +205,7 @@ class RepramFadeClient {
                             document.getElementById('currentNode').textContent = currentNodeDisplay;
                             
                             this.updateConnectionStatus('connected');
-                            await this.updateNodeStatus();
+                            await this.checkAllNodes();
                             return;
                         }
                     } catch (error) {
@@ -234,7 +234,7 @@ class RepramFadeClient {
                     this.connected = true;
                     console.log('Connected to REPRAM network via proxy');
                     this.updateConnectionStatus('connected');
-                    await this.updateNodeStatus();
+                    await this.checkAllNodes();
                     return;
                 } else {
                     console.error('Health check failed with status:', response.status);
@@ -300,11 +300,8 @@ class RepramFadeClient {
             if (currentNode) currentNode.textContent = currentNodeFromStatus.id;
         }
         
-        // Update a more detailed display if needed
-        const nodeList = nodes.map(n => 
-            `${n.id}: ${n.healthy ? '✓' : '✗'} ${n.current ? '(current)' : ''}`
-        ).join(', ');
-        console.log('Node status:', nodeList);
+        // Log simplified node status for debugging
+        console.log('Network updated - active nodes:', nodes.filter(n => n.healthy).length);
     }
 
     async submitMessage(content, ttl, callsign, location) {
