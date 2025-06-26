@@ -32,6 +32,7 @@ type WriteOperation struct {
 type Store interface {
 	Put(key string, data []byte, ttl time.Duration) error
 	Get(key string) ([]byte, bool)
+	GetWithMetadata(key string) ([]byte, time.Time, time.Duration, bool) // data, createdAt, originalTTL, exists
 	Scan() []string
 }
 
@@ -155,6 +156,10 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 
 func (cn *ClusterNode) Get(key string) ([]byte, bool) {
 	return cn.store.Get(key)
+}
+
+func (cn *ClusterNode) GetWithMetadata(key string) ([]byte, time.Time, time.Duration, bool) {
+	return cn.store.GetWithMetadata(key)
 }
 
 func (cn *ClusterNode) HandleGossipMessage(msg *gossip.Message) error {

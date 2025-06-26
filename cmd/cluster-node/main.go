@@ -375,12 +375,23 @@ func (s *HTTPServer) getHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
 	
-	data, exists := s.clusterNode.Get(key)
+	data, createdAt, originalTTL, exists := s.clusterNode.GetWithMetadata(key)
 	if !exists {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	
+	// Calculate remaining TTL
+	elapsed := time.Since(createdAt)
+	remainingTTL := originalTTL - elapsed
+	if remainingTTL < 0 {
+		remainingTTL = 0
+	}
+	
+	// Set TTL headers
+	w.Header().Set("X-Created-At", createdAt.Format(time.RFC3339))
+	w.Header().Set("X-Original-TTL", strconv.Itoa(int(originalTTL.Seconds())))
+	w.Header().Set("X-Remaining-TTL", strconv.Itoa(int(remainingTTL.Seconds())))
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
