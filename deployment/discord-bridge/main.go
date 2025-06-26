@@ -270,6 +270,10 @@ func (b *Bridge) parseTTLCommand(content string) (string, int) {
 
 // pollRepramMessages polls REPRAM for new messages and posts them to Discord
 func (b *Bridge) pollRepramMessages() {
+	// Do an initial sync immediately
+	log.Println("🔄 INITIAL SYNC // SCANNING REPRAM NETWORK...")
+	b.syncRepramToDiscord()
+	
 	ticker := time.NewTicker(time.Duration(b.config.Bridge.PollInterval) * time.Second)
 	defer ticker.Stop()
 
@@ -287,6 +291,10 @@ func (b *Bridge) syncRepramToDiscord() {
 	if err != nil {
 		log.Printf("❌ REPRAM NETWORK SCAN FAILED: %v", err)
 		return
+	}
+	
+	if len(messages) > 0 {
+		log.Printf("📊 FOUND %d MESSAGES IN REPRAM NETWORK", len(messages))
 	}
 
 	for _, msg := range messages {
