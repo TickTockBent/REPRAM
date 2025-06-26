@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -19,6 +22,13 @@ type Bridge struct {
 	repramClient   *RepramClient
 	messageTracker *MessageTracker
 	deletionQueue  chan string // Queue for rate-limited message deletion
+	
+	// Health tracking
+	messagesFromDiscord uint64
+	messagesToDiscord   uint64
+	lastActivity        time.Time
+	startTime           time.Time
+	isConnected         bool
 }
 
 func main() {
@@ -85,10 +95,18 @@ func NewBridge(config *Config) (*Bridge, error) {
 
 // Start starts the bridge
 func (b *Bridge) Start() error {
+	// Set start time
+	b.startTime = time.Now()
+	
 	// Open Discord connection
 	if err := b.discord.Open(); err != nil {
 		return fmt.Errorf("failed to open Discord connection: %w", err)
 	}
+	
+	b.isConnected = true
+
+	// Start health endpoint
+	go b.startHealthServer()
 
 	// Start background routines
 	go b.pollRepramMessages()
@@ -98,8 +116,48 @@ func (b *Bridge) Start() error {
 	return nil
 }
 
+// startHealthServer starts the HTTP health endpoint
+func (b *Bridge) startHealthServer() {
+	http.HandleFunc("/health", b.healthHandler)
+	
+	log.Println("🌐 HEALTH ENDPOINT ACTIVE // PORT 8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Printf("❌ HEALTH SERVER ERROR: %v", err)
+	}
+}
+
+// healthHandler returns bridge health status
+func (b *Bridge) healthHandler(w http.ResponseWriter, r *http.Request) {
+	uptime := time.Since(b.startTime)
+	
+	health := map[string]interface{}{
+		"status": "healthy",
+		"connected": b.isConnected,
+		"uptime_seconds": int(uptime.Seconds()),
+		"statistics": map[string]interface{}{
+			"messages_from_discord": atomic.LoadUint64(&b.messagesFromDiscord),
+			"messages_to_discord": atomic.LoadUint64(&b.messagesToDiscord),
+			"tracked_messages": b.messageTracker.Count(),
+			"last_activity": b.lastActivity.Format(time.RFC3339),
+		},
+		"discord": map[string]interface{}{
+			"channel_id": b.config.Discord.ChannelID,
+			"guild_id": b.config.Discord.GuildID,
+		},
+		"repram": map[string]interface{}{
+			"nodes": b.config.Repram.Nodes,
+		},
+		"version": "1.0.0",
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(health)
+}
+
 // Stop stops the bridge
 func (b *Bridge) Stop() {
+	b.isConnected = false
 	if b.discord != nil {
 		b.discord.Close()
 	}
@@ -156,6 +214,10 @@ func (b *Bridge) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreat
 		log.Printf("❌ TRANSMISSION FAILED // REPRAM STORAGE ERROR: %v", err)
 		return
 	}
+
+	// Update statistics
+	atomic.AddUint64(&b.messagesFromDiscord, 1)
+	b.lastActivity = time.Now()
 
 	log.Printf("✅ MESSAGE UPLOADED TO REPRAM NETWORK // KEY: %s", key)
 
@@ -247,6 +309,10 @@ func (b *Bridge) syncRepramToDiscord() {
 			log.Printf("❌ DISCORD TRANSMISSION FAILED: %v", err)
 			continue
 		}
+
+		// Update statistics
+		atomic.AddUint64(&b.messagesToDiscord, 1)
+		b.lastActivity = time.Now()
 
 		// Track the message
 		expiryTime := msg.Timestamp.Add(time.Duration(msg.TTL) * time.Second)

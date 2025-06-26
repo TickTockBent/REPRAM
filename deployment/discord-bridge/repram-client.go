@@ -218,7 +218,7 @@ func (rc *RepramClient) generateKey(msg *RepramMessage) string {
 	adjective := adjectives[timestamp%int64(len(adjectives))]
 	noun := nouns[(timestamp/10)%int64(len(nouns))]
 
-	return fmt.Sprintf("%s-%s-%d", adjective, noun, timestamp)
+	return fmt.Sprintf("discord-%s-%s-%d", adjective, noun, timestamp)
 }
 
 // parseMessage parses a message from REPRAM content
