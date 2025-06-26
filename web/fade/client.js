@@ -186,7 +186,7 @@ class RepramFadeClient {
         
         try {
             // Try to reach the Discord bridge health endpoint
-            const response = await fetch('https://node1.repram.io:8084/health', {
+            const response = await fetch('https://bridge.repram.io/health', {
                 method: 'GET',
                 mode: 'cors'
             });
