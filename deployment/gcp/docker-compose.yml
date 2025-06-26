@@ -95,6 +95,8 @@ services:
       - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
     volumes:
       - ./discord-logs:/root/logs
+    ports:
+      - "8084:8080"  # Health endpoint
     restart: unless-stopped
     networks:
       - repram-cluster

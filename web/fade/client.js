@@ -130,6 +130,49 @@ class RepramFadeClient {
         if (messageCount) messageCount.textContent = '0';
         if (expiredCount) expiredCount.textContent = this.expiredToday.toString();
         if (currentNode) currentNode.textContent = 'Connecting...';
+        
+        // Check Discord bridge status periodically
+        this.checkDiscordBridge();
+        setInterval(() => this.checkDiscordBridge(), 30000); // Check every 30 seconds
+    }
+    
+    async checkDiscordBridge() {
+        const bridgeStatus = document.getElementById('bridgeStatus');
+        if (!bridgeStatus) return;
+        
+        try {
+            // Try to reach the Discord bridge health endpoint
+            const response = await fetch('https://node1.repram.io:8084/health', {
+                method: 'GET',
+                mode: 'cors'
+            });
+            
+            if (response.ok) {
+                const health = await response.json();
+                if (health.connected) {
+                    bridgeStatus.textContent = 'Online';
+                    bridgeStatus.style.color = '#00ff00';
+                    
+                    // Update with message counts if available
+                    if (health.statistics) {
+                        const total = health.statistics.messages_from_discord + health.statistics.messages_to_discord;
+                        if (total > 0) {
+                            bridgeStatus.textContent = `Online (${total} synced)`;
+                        }
+                    }
+                } else {
+                    bridgeStatus.textContent = 'Disconnected';
+                    bridgeStatus.style.color = '#ff0000';
+                }
+            } else {
+                bridgeStatus.textContent = 'Offline';
+                bridgeStatus.style.color = '#ff0000';
+            }
+        } catch (error) {
+            // Bridge not reachable or doesn't have health endpoint yet
+            bridgeStatus.textContent = 'Unknown';
+            bridgeStatus.style.color = '#ffff00';
+        }
     }
 
     updateNodeHealthStatus(nodeNum, status, statusText) {

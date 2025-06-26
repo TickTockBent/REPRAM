@@ -48,6 +48,14 @@ func (mt *MessageTracker) IsTracked(repramKey string) bool {
 	return exists
 }
 
+// Count returns the number of tracked messages
+func (mt *MessageTracker) Count() int {
+	mt.mutex.RLock()
+	defer mt.mutex.RUnlock()
+	
+	return len(mt.messages)
+}
+
 // GetTrackedMessage retrieves a tracked message by REPRAM key
 func (mt *MessageTracker) GetTrackedMessage(repramKey string) (*TrackedMessage, bool) {
 	mt.mutex.RLock()
