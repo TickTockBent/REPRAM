@@ -29,6 +29,11 @@ type Bridge struct {
 	lastActivity        time.Time
 	startTime           time.Time
 	isConnected         bool
+	
+	// Crash recovery
+	lastPollAttempt     time.Time
+	pollCrashCount      uint64
+	cleanupCrashCount   uint64
 }
 
 func main() {
@@ -108,10 +113,11 @@ func (b *Bridge) Start() error {
 	// Start health endpoint
 	go b.startHealthServer()
 
-	// Start background routines
-	go b.pollRepramMessages()
-	go b.cleanupExpiredMessages()
+	// Start background routines with crash recovery
+	go b.pollRepramMessagesWithRecovery()
+	go b.cleanupExpiredMessagesWithRecovery()
 	go b.processDeleteQueue() // Rate-limited deletion processor
+	go b.monitorGoroutineHealth() // Health monitor
 
 	return nil
 }
@@ -139,6 +145,9 @@ func (b *Bridge) healthHandler(w http.ResponseWriter, r *http.Request) {
 			"messages_to_discord": atomic.LoadUint64(&b.messagesToDiscord),
 			"tracked_messages": b.messageTracker.Count(),
 			"last_activity": b.lastActivity.Format(time.RFC3339),
+			"last_poll_attempt": b.lastPollAttempt.Format(time.RFC3339),
+			"poll_crash_count": atomic.LoadUint64(&b.pollCrashCount),
+			"cleanup_crash_count": atomic.LoadUint64(&b.cleanupCrashCount),
 		},
 		"discord": map[string]interface{}{
 			"channel_id": b.config.Discord.ChannelID,
@@ -287,6 +296,9 @@ func (b *Bridge) pollRepramMessages() {
 
 // syncRepramToDiscord syncs messages from REPRAM to Discord
 func (b *Bridge) syncRepramToDiscord() {
+	// Update heartbeat timestamp
+	b.lastPollAttempt = time.Now()
+	
 	messages, err := b.repramClient.GetRecentMessages()
 	if err != nil {
 		log.Printf("❌ REPRAM NETWORK SCAN FAILED: %v", err)
@@ -295,6 +307,11 @@ func (b *Bridge) syncRepramToDiscord() {
 	
 	if len(messages) > 0 {
 		log.Printf("📊 FOUND %d MESSAGES IN REPRAM NETWORK", len(messages))
+	} else {
+		// Log every 10th scan attempt when no messages found (reduce noise)
+		if time.Now().Unix()%10 == 0 {
+			log.Println("🔍 NETWORK SCAN COMPLETE // NO NEW MESSAGES")
+		}
 	}
 
 	for _, msg := range messages {
@@ -439,4 +456,67 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh", int(d.Hours()))
 	}
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+// pollRepramMessagesWithRecovery wraps polling with crash recovery
+func (b *Bridge) pollRepramMessagesWithRecovery() {
+	for {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					atomic.AddUint64(&b.pollCrashCount, 1)
+					log.Printf("❌ CRITICAL: POLLING GOROUTINE CRASHED // PANIC: %v", r)
+					log.Println("🔄 RESTARTING POLLING IN 5 SECONDS...")
+					time.Sleep(5 * time.Second)
+				}
+			}()
+			
+			log.Println("🔄 POLLING GOROUTINE STARTED // MONITORING REPRAM NETWORK")
+			b.pollRepramMessages()
+		}()
+	}
+}
+
+// cleanupExpiredMessagesWithRecovery wraps cleanup with crash recovery
+func (b *Bridge) cleanupExpiredMessagesWithRecovery() {
+	for {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					atomic.AddUint64(&b.cleanupCrashCount, 1)
+					log.Printf("❌ CRITICAL: CLEANUP GOROUTINE CRASHED // PANIC: %v", r)
+					log.Println("🔄 RESTARTING CLEANUP IN 10 SECONDS...")
+					time.Sleep(10 * time.Second)
+				}
+			}()
+			
+			log.Println("🗑️ CLEANUP GOROUTINE STARTED // TTL ENFORCEMENT ACTIVE")
+			b.cleanupExpiredMessages()
+		}()
+	}
+}
+
+// monitorGoroutineHealth monitors goroutine health and logs warnings
+func (b *Bridge) monitorGoroutineHealth() {
+	ticker := time.NewTicker(60 * time.Second) // Check every minute
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			// Check if polling has stalled
+			timeSinceLastPoll := time.Since(b.lastPollAttempt)
+			if timeSinceLastPoll > 30*time.Second {
+				log.Printf("⚠️ WARNING: NO POLLING ACTIVITY FOR %v // POTENTIAL GOROUTINE FAILURE", timeSinceLastPoll)
+			}
+			
+			// Log crash counts if any
+			pollCrashes := atomic.LoadUint64(&b.pollCrashCount)
+			cleanupCrashes := atomic.LoadUint64(&b.cleanupCrashCount)
+			
+			if pollCrashes > 0 || cleanupCrashes > 0 {
+				log.Printf("📊 CRASH STATISTICS // POLL: %d, CLEANUP: %d", pollCrashes, cleanupCrashes)
+			}
+		}
+	}
 }
