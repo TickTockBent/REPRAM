@@ -47,6 +47,50 @@ class RepramFadeClient {
         });
     }
     
+    // Store message metadata for TTL calculation
+    storeMessageMetadata(key, originalTTL) {
+        const metadata = {
+            createdAt: Date.now(),
+            originalTTL: originalTTL,
+            key: key
+        };
+        localStorage.setItem(`fade_meta_${key}`, JSON.stringify(metadata));
+        
+        // Clean up expired metadata (older than 24 hours)
+        this.cleanupOldMetadata();
+    }
+    
+    // Retrieve message metadata
+    getMessageMetadata(key) {
+        try {
+            const stored = localStorage.getItem(`fade_meta_${key}`);
+            return stored ? JSON.parse(stored) : null;
+        } catch (error) {
+            console.warn(`Failed to parse metadata for ${key}:`, error);
+            return null;
+        }
+    }
+    
+    // Clean up old metadata to prevent localStorage bloat
+    cleanupOldMetadata() {
+        const cutoff = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago
+        const keys = Object.keys(localStorage);
+        
+        keys.forEach(key => {
+            if (key.startsWith('fade_meta_')) {
+                try {
+                    const metadata = JSON.parse(localStorage.getItem(key));
+                    if (metadata.createdAt < cutoff) {
+                        localStorage.removeItem(key);
+                    }
+                } catch (error) {
+                    // Remove corrupted metadata
+                    localStorage.removeItem(key);
+                }
+            }
+        });
+    }
+    
     saveCallsign(callsign, location) {
         this.callsign = callsign;
         this.location = location;
@@ -414,6 +458,9 @@ class RepramFadeClient {
                 const result = await response.text();
                 const actualKey = key; // Use the key we sent
                 
+                // Store metadata for TTL calculation on page reload
+                this.storeMessageMetadata(actualKey, parseInt(ttl));
+                
                 // Capture which node handled the request
                 const nodeId = response.headers.get('x-repram-node') || 'unknown';
                 const nodeUrl = response.headers.get('x-repram-node-url') || '';
@@ -459,10 +506,26 @@ class RepramFadeClient {
                 // Capture which node served this
                 const nodeId = response.headers.get('x-repram-node') || null;
                 
+                // Try to get stored metadata for TTL calculation
+                const metadata = this.getMessageMetadata(key);
+                let remainingTTL = 3600; // Default fallback
+                
+                if (metadata && metadata.createdAt && metadata.originalTTL) {
+                    // Calculate actual remaining TTL
+                    const elapsedSeconds = Math.floor((Date.now() - metadata.createdAt) / 1000);
+                    remainingTTL = Math.max(0, metadata.originalTTL - elapsedSeconds);
+                    
+                    // If TTL is expired, message shouldn't exist - but handle gracefully
+                    if (remainingTTL <= 0) {
+                        console.log(`Message ${key} should be expired (calculated TTL: ${remainingTTL})`);
+                        remainingTTL = 0;
+                    }
+                }
+                
                 return {
                     content: content,
-                    ttl: 3600, // Default TTL since cluster nodes don't return it
-                    remaining_ttl: 3600,
+                    ttl: metadata ? metadata.originalTTL : 3600,
+                    remaining_ttl: remainingTTL,
                     nodeId: nodeId
                 };
             } else if (response.status === 404) {
