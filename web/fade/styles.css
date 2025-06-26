@@ -1365,3 +1365,180 @@ button:disabled {
     color: #00ffff;
     text-shadow: 0 0 5px rgba(0, 255, 255, 0.6);
 }
+
+/* Discord Bridge Section */
+.discord-section {
+    background: rgba(255, 0, 255, 0.05);
+    border: 2px solid #ff00ff;
+    border-left: 4px solid #ff00ff;
+    padding: 25px;
+    margin-bottom: 30px;
+    position: relative;
+    overflow: hidden;
+}
+
+.discord-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #ff00ff, transparent);
+    animation: discordScan 4s linear infinite;
+}
+
+@keyframes discordScan {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+
+.discord-section h3 {
+    color: #ff00ff;
+    font-family: 'Orbitron', monospace;
+    font-size: 1.8rem;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    text-shadow: 0 0 15px rgba(255, 0, 255, 0.8);
+}
+
+.bridge-flow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 20px 0;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #333;
+    border-radius: 8px;
+}
+
+.flow-item {
+    flex: 1;
+    text-align: center;
+    padding: 15px;
+}
+
+.flow-icon {
+    font-size: 2rem;
+    display: block;
+    margin-bottom: 10px;
+}
+
+.flow-arrow {
+    font-size: 2rem;
+    color: #00ffff;
+    margin: 0 20px;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.discord-prefix {
+    color: #7289da;
+    font-weight: bold;
+    font-family: 'Share Tech Mono', monospace;
+}
+
+.fade-prefix {
+    color: #00ff00;
+    font-weight: bold;
+    font-family: 'Share Tech Mono', monospace;
+}
+
+.bridge-features {
+    margin: 20px 0;
+}
+
+.bridge-features ul {
+    list-style: none;
+    padding: 0;
+}
+
+.bridge-features li {
+    margin: 10px 0;
+    padding-left: 20px;
+    position: relative;
+}
+
+.bridge-features li::before {
+    content: '◆';
+    position: absolute;
+    left: 0;
+    color: #ff00ff;
+    font-weight: bold;
+}
+
+.bridge-features code {
+    background: rgba(0, 255, 0, 0.1);
+    border: 1px solid #00ff00;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Share Tech Mono', monospace;
+    color: #00ff00;
+    font-size: 0.9rem;
+}
+
+.discord-invite {
+    text-align: center;
+    margin-top: 25px;
+    padding-top: 20px;
+    border-top: 1px solid #333;
+}
+
+.discord-badge {
+    display: inline-flex;
+    align-items: center;
+    background: linear-gradient(135deg, #7289da, #5865f2);
+    color: white;
+    text-decoration: none;
+    padding: 15px 25px;
+    border-radius: 8px;
+    border: 2px solid #7289da;
+    transition: all 0.3s ease;
+    margin-top: 15px;
+    box-shadow: 0 0 15px rgba(114, 137, 218, 0.3);
+}
+
+.discord-badge:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 25px rgba(114, 137, 218, 0.6);
+    border-color: #00ffff;
+    text-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
+}
+
+.discord-logo {
+    font-size: 1.5rem;
+    margin-right: 15px;
+}
+
+.discord-text {
+    text-align: left;
+    line-height: 1.3;
+}
+
+.discord-text strong {
+    font-size: 1.1rem;
+    display: block;
+}
+
+.discord-text small {
+    font-size: 0.85rem;
+    opacity: 0.9;
+}
+
+/* Mobile responsiveness for Discord section */
+@media (max-width: 768px) {
+    .bridge-flow {
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .flow-arrow {
+        transform: rotate(90deg);
+        margin: 10px 0;
+    }
+    
+    .discord-badge {
+        padding: 12px 20px;
+    }
+}
