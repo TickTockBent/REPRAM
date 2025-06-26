@@ -503,28 +503,35 @@ class RepramFadeClient {
                 // Response is raw text data
                 const content = await response.text();
                 
-                // Capture which node served this
+                // Capture which node served this and TTL information from headers
                 const nodeId = response.headers.get('x-repram-node') || null;
+                const remainingTTLHeader = response.headers.get('x-remaining-ttl');
+                const originalTTLHeader = response.headers.get('x-original-ttl');
                 
-                // Try to get stored metadata for TTL calculation
-                const metadata = this.getMessageMetadata(key);
+                // Use TTL from headers if available (server-calculated), otherwise fallback
                 let remainingTTL = 3600; // Default fallback
+                let originalTTL = 3600;
                 
-                if (metadata && metadata.createdAt && metadata.originalTTL) {
-                    // Calculate actual remaining TTL
-                    const elapsedSeconds = Math.floor((Date.now() - metadata.createdAt) / 1000);
-                    remainingTTL = Math.max(0, metadata.originalTTL - elapsedSeconds);
-                    
-                    // If TTL is expired, message shouldn't exist - but handle gracefully
-                    if (remainingTTL <= 0) {
-                        console.log(`Message ${key} should be expired (calculated TTL: ${remainingTTL})`);
-                        remainingTTL = 0;
+                if (remainingTTLHeader && originalTTLHeader) {
+                    remainingTTL = parseInt(remainingTTLHeader);
+                    originalTTL = parseInt(originalTTLHeader);
+                    console.log(`TTL from server headers for ${key}: remaining=${remainingTTL}s, original=${originalTTL}s`);
+                } else {
+                    // Fallback to stored metadata for backwards compatibility
+                    const metadata = this.getMessageMetadata(key);
+                    if (metadata && metadata.createdAt && metadata.originalTTL) {
+                        const elapsedSeconds = Math.floor((Date.now() - metadata.createdAt) / 1000);
+                        remainingTTL = Math.max(0, metadata.originalTTL - elapsedSeconds);
+                        originalTTL = metadata.originalTTL;
+                        console.log(`TTL from local metadata for ${key}: remaining=${remainingTTL}s, original=${originalTTL}s`);
+                    } else {
+                        console.log(`No TTL information available for ${key}, using defaults`);
                     }
                 }
                 
                 return {
                     content: content,
-                    ttl: metadata ? metadata.originalTTL : 3600,
+                    ttl: originalTTL,
                     remaining_ttl: remainingTTL,
                     nodeId: nodeId
                 };

@@ -6,8 +6,10 @@ import (
 )
 
 type Entry struct {
-	Data      []byte    `json:"data"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Data      []byte        `json:"data"`
+	CreatedAt time.Time     `json:"created_at"`
+	TTL       time.Duration `json:"ttl"`
+	ExpiresAt time.Time     `json:"expires_at"`
 }
 
 type MemoryStore struct {
@@ -30,9 +32,12 @@ func (m *MemoryStore) Put(key string, data []byte, ttl time.Duration) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	
+	now := time.Now()
 	m.data[key] = &Entry{
 		Data:      data,
-		ExpiresAt: time.Now().Add(ttl),
+		CreatedAt: now,
+		TTL:       ttl,
+		ExpiresAt: now.Add(ttl),
 	}
 	return nil
 }
@@ -52,6 +57,23 @@ func (m *MemoryStore) Get(key string) ([]byte, bool) {
 	}
 	
 	return entry.Data, true
+}
+
+func (m *MemoryStore) GetWithMetadata(key string) ([]byte, time.Time, time.Duration, bool) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	
+	entry, exists := m.data[key]
+	if !exists {
+		return nil, time.Time{}, 0, false
+	}
+	
+	if time.Now().After(entry.ExpiresAt) {
+		delete(m.data, key)
+		return nil, time.Time{}, 0, false
+	}
+	
+	return entry.Data, entry.CreatedAt, entry.TTL, true
 }
 
 func (m *MemoryStore) startCleanupWorker() {
