@@ -78,6 +78,11 @@ func (rc *RepramClient) GetRecentMessages() ([]*RepramMessage, error) {
 
 	// Retrieve each message
 	for _, key := range keys {
+		// Skip Discord-origin messages (they came from us)
+		if strings.HasPrefix(key, "discord-") {
+			continue
+		}
+		
 		msg, err := rc.getMessage(key)
 		if err != nil {
 			// Skip messages that can't be retrieved (might be expired)

@@ -31,13 +31,13 @@ bridge:
   ttl_format: "⏱️ TTL: %s"
   
   # Key embedding in Discord messages (hidden)
-  embed_keys: true
+  embed_keys: false
   
   # Show message keys visibly in Discord
   show_keys: true
   
   # Poll interval for checking REPRAM messages (seconds)
-  poll_interval: 10
+  poll_interval: 3
   
   # Cleanup interval for expired messages (seconds)
   cleanup_interval: 60
