@@ -116,6 +116,43 @@
             </ul>
         </div>
 
+        <!-- Discord Bridge -->
+        <div class="discord-section">
+            <h3>DISCORD://BRIDGE</h3>
+            <p>This FADE instance is synchronized with Discord! Messages flow bidirectionally between this web interface and our Discord server:</p>
+            <div class="bridge-flow">
+                <div class="flow-item">
+                    <span class="flow-icon">📱</span>
+                    <strong>Discord → FADE</strong><br>
+                    Messages posted in Discord appear here with <span class="discord-prefix">◇ DISCORD:</span> prefix
+                </div>
+                <div class="flow-arrow">⟷</div>
+                <div class="flow-item">
+                    <span class="flow-icon">🌐</span>
+                    <strong>FADE → Discord</strong><br>
+                    Messages posted here appear in Discord with <span class="fade-prefix">◆ FADE:</span> prefix
+                </div>
+            </div>
+            <div class="bridge-features">
+                <ul>
+                    <li><strong>TTL Commands:</strong> Use <code>/ttl300 message</code> in Discord for custom expiration</li>
+                    <li><strong>Auto-Deletion:</strong> Messages automatically disappear from Discord when TTL expires</li>
+                    <li><strong>Callsign Support:</strong> Your callsign and location appear formatted in Discord</li>
+                    <li><strong>Message Keys:</strong> Discord shows REPRAM keys for direct lookup</li>
+                </ul>
+            </div>
+            <div class="discord-invite">
+                <p>Join our Discord server to participate in real-time ephemeral messaging:</p>
+                <a href="https://discord.gg/TDdyWAK7nN" target="_blank" class="discord-badge">
+                    <span class="discord-logo">📡</span>
+                    <span class="discord-text">
+                        <strong>Join REPRAM Discord</strong><br>
+                        <small>Real-time ephemeral chat</small>
+                    </span>
+                </a>
+            </div>
+        </div>
+
         <!-- Network Statistics -->
         <div class="network-status">
             <h3>Network Statistics</h3>
