@@ -57,21 +57,32 @@ make clean           # Remove all built binaries
 
 ## API Endpoints
 
-All nodes provide the same core API:
-- `PUT /data/{key}` - Store raw data with TTL (via query param `?ttl=seconds` or `X-TTL` header)
-- `GET /data/{key}` - Retrieve raw data exactly as stored
-- `GET /health` - Health check
-- `GET /status` - Detailed status including metrics, uptime, and node info
+**IMPORTANT: Node types have different endpoint availability**
+
+### Main Node (`cmd/node/main.go`) - Uses `internal/node/server.go`
+- `PUT /data/{key}` - Store data (expects JSON: `{"data": <bytes>, "ttl": <seconds>}`)
+- `GET /data/{key}` - Retrieve data 
+- `GET /health` - Basic health check
+- `GET /status` - ✅ **Detailed status with metrics, uptime, memory stats, goroutines**
 - `GET /metrics` - Prometheus metrics endpoint
 
-**Additional endpoints by node type:**
-- **Cluster Node** (`cmd/cluster-node/main.go`):
-  - `GET /scan` - List all keys
-  - `POST /gossip/message` - Gossip protocol communication
-  - `POST /bootstrap` - Node bootstrapping
-  - `PUT /cluster/put/{key}` - Alternative cluster-specific put endpoint
-  - `GET /cluster/get/{key}` - Alternative cluster-specific get endpoint
-  - `GET /cluster/scan` - Alternative cluster-specific scan endpoint
+### Cluster Node (`cmd/cluster-node/main.go`) - Custom HTTP server
+- `PUT /data/{key}` - Store raw data (TTL via query param `?ttl=seconds` or `X-TTL` header)
+- `GET /data/{key}` - Retrieve raw data exactly as stored
+- `GET /health` - Health check with node ID and discovery info
+- `GET /scan` - List all keys
+- **❌ NO `/status` endpoint** - Returns 404
+- **❌ NO `/metrics` endpoint** - Not implemented
+- `POST /gossip/message` - Gossip protocol communication
+- `POST /bootstrap` - Node bootstrapping
+- `PUT /cluster/put/{key}` - Alternative cluster-specific put endpoint
+- `GET /cluster/get/{key}` - Alternative cluster-specific get endpoint
+- `GET /cluster/scan` - Alternative cluster-specific scan endpoint
+- `POST /peer_announce` - Auto-discovery peer announcement (if enabled)
+- `POST /peer_leaving` - Auto-discovery peer departure (if enabled)
+- `GET /peers` - List active peers (if auto-discovery enabled)
+
+**Production Note:** GCP deployment uses cluster nodes, which lack `/status` and `/metrics` endpoints.
 
 ## Key Architecture Patterns
 
