@@ -1,39 +1,23 @@
-# Git files
 .git
 .gitignore
-
-# Documentation
 README.md
 docs/
 *.md
-
-# Build artifacts
 bin/
 *.exe
 *.dll
 *.so
 *.dylib
-
-# Test binaries
 *.test
-
-# Output of the go coverage tool
 *.out
-
-# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS files
 .DS_Store
 Thumbs.db
-
-# Temporary files
 *.tmp
 *.temp
-
-# Logs
 *.log
+web/

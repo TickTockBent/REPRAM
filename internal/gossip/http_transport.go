@@ -10,6 +10,27 @@ import (
 	"time"
 )
 
+// SimpleMessage is the HTTP wire format for gossip messages.
+type SimpleMessage struct {
+	Type      string          `json:"type"`
+	From      string          `json:"from"`
+	To        string          `json:"to,omitempty"`
+	Key       string          `json:"key,omitempty"`
+	Data      []byte          `json:"data,omitempty"`
+	TTL       int32           `json:"ttl,omitempty"`
+	Timestamp int64           `json:"timestamp"`
+	MessageID string          `json:"message_id"`
+	NodeInfo  *SimpleNodeInfo `json:"node_info,omitempty"`
+}
+
+// SimpleNodeInfo is the wire format for node information in gossip messages.
+type SimpleNodeInfo struct {
+	ID       string `json:"id"`
+	Address  string `json:"address"`
+	Port     int    `json:"port"`
+	HTTPPort int    `json:"http_port"`
+}
+
 // HTTPTransport implements gossip communication over HTTP
 type HTTPTransport struct {
 	localNode      *Node

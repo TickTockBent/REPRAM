@@ -21,35 +21,23 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: 📁 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🔧 Setup Pages
+      - name: Setup Pages
         uses: actions/configure-pages@v4
 
-      - name: 📋 Prepare deployment files
+      - name: Prepare deployment files
         run: |
-          echo "📦 Copying web files for deployment..."
           mkdir -p _site
           cp -r web/* _site/
-          
-          echo "📄 Creating .nojekyll file to bypass Jekyll processing..."
           touch _site/.nojekyll
-          
-          echo "🌐 Adding CNAME for custom domain (if needed)..."
-          # Uncomment and modify if you have a custom domain:
-          # echo "repram.example.com" > _site/CNAME
-          
-          echo "📊 Deployment summary:"
-          echo "  - Web root: $(ls -la _site/)"
-          echo "  - FADE demo: $(ls -la _site/fade/ 2>/dev/null || echo 'Not found')"
-          echo "  - Synth-Tree demo: $(ls -la _site/synth-tree/ 2>/dev/null || echo 'Not found')"
 
-      - name: 📤 Upload artifact
+      - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: '_site'
 
-      - name: 🚀 Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
