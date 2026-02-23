@@ -34,8 +34,7 @@ By participating in this project, you agree to maintain a respectful and collabo
 - **Read the documentation**:
   - [Core Principles](docs/core-principles.md) - MUST READ before contributing
   - [Project Overview](docs/project-overview.md)
-  - [Development Plan](docs/development-plan.md)
-  - [CLAUDE.md](CLAUDE.md) - Project-specific guidance
+  - [v2 Architecture](REPRAM-v2-Architecture.md)
 
 - **Check existing issues** to see if someone's already working on it
 - **Open an issue** to discuss significant changes before implementing
@@ -52,7 +51,6 @@ By participating in this project, you agree to maintain a respectful and collabo
 #### Testing Requirements
 - Write tests for new functionality
 - Ensure all tests pass: `make test`
-- Aim for >80% code coverage on new code
 - Include both unit and integration tests where appropriate
 
 #### Commit Guidelines
@@ -77,10 +75,8 @@ By participating in this project, you agree to maintain a respectful and collabo
 
 2. **Run all checks locally**:
    ```bash
-   make test
    make build
-   make build-raw
-   make build-cluster
+   make test
    ```
 
 3. **Push to your fork**:
@@ -93,63 +89,11 @@ By participating in this project, you agree to maintain a respectful and collabo
    - Reference any related issues
    - Describe what changed and why
    - Include testing instructions
-   - Add screenshots for UI changes
-
-5. **PR Template**:
-   ```markdown
-   ## Description
-   Brief description of changes
-
-   ## Type of Change
-   - [ ] Bug fix
-   - [ ] New feature
-   - [ ] Breaking change
-   - [ ] Documentation update
-
-   ## Testing
-   - [ ] All tests pass
-   - [ ] Added new tests
-   - [ ] Manual testing completed
-
-   ## Checklist
-   - [ ] Follows core principles
-   - [ ] Code follows project style
-   - [ ] Self-review completed
-   - [ ] Documentation updated
-   ```
-
-### 5. Review Process
-
-- All PRs require at least one review before merging
-- Address reviewer feedback promptly
-- Be patient - reviews may take a few days
-- Don't take feedback personally - it's about the code, not you
-
-## Areas for Contribution
-
-### High Priority
-- **Gossip Protocol**: Improve cluster node replication
-- **Performance**: Optimize memory usage and TTL cleanup
-- **Testing**: Increase test coverage, add benchmarks
-- **Documentation**: Improve API docs, add examples
-
-### Feature Ideas
-- **Storage Backends**: Add persistent storage options (while maintaining TTL)
-- **Monitoring**: Prometheus metrics, health dashboards
-- **SDK Languages**: Python, JavaScript, Ruby clients
-- **Security**: Additional encryption options, audit logging
-
-### Good First Issues
-Look for issues labeled:
-- `good-first-issue` - Great for newcomers
-- `help-wanted` - We need assistance
-- `documentation` - Doc improvements
-- `testing` - Test additions
 
 ## Development Setup
 
 ### Prerequisites
-- Go 1.22 or higher
+- Go 1.21 or higher
 - Make
 - Git
 - Docker (optional, for containerized testing)
@@ -160,42 +104,30 @@ Look for issues labeled:
 git clone https://github.com/YOUR_USERNAME/REPRAM.git
 cd REPRAM
 
-# Build everything
+# Build
 make build
-make build-raw
-make build-cluster
 
 # Run tests
 make test
 
 # Start a node
-make run-raw
+make run
 ```
 
-## Architecture Decisions
+## Architecture Principles
 
 When contributing, please maintain:
 1. **Zero-knowledge nodes** - Nodes never interpret data
-2. **Client-side encryption** - All crypto happens in SDK
-3. **Ephemeral by design** - Everything has a TTL
-4. **Public readability** - No auth at node level
-5. **Pure key-value** - No complex queries or indexes
+2. **Client-side encryption** - Encryption is always the client's concern
+3. **Ephemeral by design** - Everything has a TTL, expired data is permanently gone
+4. **Permissionless reads** - No auth at node level
+5. **Single binary** - One `cmd/repram` entry point, cluster-capable by default
 
 ## Questions?
 
 - Open a [GitHub Issue](https://github.com/ORIGINAL_OWNER/REPRAM/issues)
 - Check existing [Discussions](https://github.com/ORIGINAL_OWNER/REPRAM/discussions)
-- Review the [FAQ](docs/FAQ.md) (if available)
 
 ## License
 
 By contributing, you agree that your contributions will be licensed under the same license as the project (see LICENSE file).
-
-## Recognition
-
-Contributors will be recognized in:
-- GitHub's contributor graph
-- CONTRIBUTORS.md file (for significant contributions)
-- Release notes mentioning contributor handles
-
-Thank you for helping make REPRAM better! 🚀
