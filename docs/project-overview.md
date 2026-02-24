@@ -50,6 +50,12 @@ If you need confidentiality during the TTL window, encrypt data before storing i
 * **Discovery**: DNS SRV/A records for public network, static peer list for private
 * **Agent Interface**: Model Context Protocol (MCP) over stdio
 
+## Resilience Through Ephemerality
+
+REPRAM nodes don't need to be tightly coupled or consistently available. The data's lifecycle is self-limiting: a node that goes offline for an hour and comes back has simply missed some data that may have already expired anyway. There's no catch-up problem — traditional distributed systems need complex reconciliation when a node rejoins, but REPRAM doesn't, because expired data doesn't need to be synced and current data will arrive via normal gossip.
+
+This is a resilience property that falls naturally out of the ephemeral design. Partial network availability doesn't create stale state or split-brain problems. Data either exists (within TTL) or doesn't. There's no ambiguity to resolve.
+
 ## Design Constraints
 
 See [Core Principles](core-principles.md) for the full set of inviolable design rules. Key constraints:

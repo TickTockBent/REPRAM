@@ -51,13 +51,18 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 - **Quorum writes**: Writes must be acknowledged by multiple nodes
 - **No sharding**: Data is not partitioned across nodes
 
+### 4.3 Resilience Through Ephemerality
+- **Loose coupling**: Nodes don't need to be tightly coupled or consistently available. The data's lifecycle is self-limiting — a node that goes offline for an hour and comes back has simply missed some data that may have already expired anyway.
+- **No catch-up problem**: Traditional distributed systems need complex reconciliation when a node rejoins. REPRAM doesn't — expired data doesn't need to be synced, and current data will arrive via normal gossip.
+- **Graceful degradation**: Partial network availability doesn't create stale state or split-brain problems. Data either exists (within TTL) or doesn't. There's no ambiguity to resolve.
+
 ## 5. Security Principles
 
 ### 5.1 Privacy Through Transience
-- **Nodes are untrusted**: Assume nodes could be compromised
-- **No secrets on nodes**: Nodes never hold encryption keys or sensitive data
 - **Nothing accumulates**: There's nothing to breach because nothing persists beyond TTL
-- **Hostile network assumption**: Design assumes hostile infrastructure
+- **Nodes hold nothing of lasting value**: Even a compromised node reveals only data that's about to expire
+- **No secrets on nodes**: Nodes never hold encryption keys or sensitive data
+- **Hostile infrastructure is irrelevant**: The network assumes hostile environments by default, but this isn't a security posture bolted on — it's a natural consequence of storing only self-destructing data
 
 ### 5.2 Client Responsibility
 - **Encryption is a client concern**: If data needs to be encrypted, clients handle it before storing

@@ -70,6 +70,7 @@ REPRAM is a network of identical nodes that store key-value pairs in memory and 
 - **Gossip replication**: Writes propagate to peer nodes via gossip protocol with quorum confirmation.
 - **Zero-knowledge nodes**: Nodes store opaque data. They don't interpret, index, or log what you store. They *can't* — they have no schema, no indexes, no query language. Data goes in as bytes and comes out as bytes.
 - **No accounts, no auth**: Store with a PUT, retrieve with a GET. Access is controlled by knowing the key.
+- **Loosely coupled**: Nodes don't need to be tightly synchronized. A node that goes offline for an hour and comes back has simply missed data that may have already expired. There's no catch-up problem — expired data doesn't need to be synced, and current data arrives via normal gossip.
 
 ## What REPRAM Is Not
 

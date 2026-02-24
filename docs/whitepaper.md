@@ -40,6 +40,7 @@ If you need confidentiality *during* the TTL window, encrypt your data before st
 * **Permissionless**: No accounts, no API keys, no authentication — access is controlled by key knowledge
 * **Gossip-replicated**: Nodes share data via peer-to-peer gossip with quorum writes
 * **Homogeneous**: All nodes run the same binary and self-organize via DNS bootstrap
+* **Loosely coupled**: Nodes don't need to be tightly synchronized or consistently available — the data's lifecycle is self-limiting, so a node that misses an hour of writes has simply missed data that may have already expired
 
 ## Agent Usage Patterns
 
