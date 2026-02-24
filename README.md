@@ -173,6 +173,7 @@ make docker-build   # Build Docker image (repram/node:latest)
 - [Core Principles](docs/core-principles.md) — Inviolable design constraints
 - [Project Overview](docs/project-overview.md) — Architecture and rationale
 - [Whitepaper](docs/whitepaper.md) — Technical deep dive
+- [Changelog](CHANGELOG.md) — What changed and when
 
 ## License
 
