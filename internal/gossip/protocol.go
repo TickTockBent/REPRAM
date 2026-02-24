@@ -289,8 +289,42 @@ func (p *Protocol) Broadcast(ctx context.Context, msg *Message) error {
 	return nil
 }
 
+// BroadcastToEnclave sends a message only to peers in the same enclave.
+// Used for data replication (PUT messages). Topology messages (SYNC, PING)
+// use Broadcast() which reaches all peers regardless of enclave.
+func (p *Protocol) BroadcastToEnclave(ctx context.Context, msg *Message) error {
+	if p.transport == nil {
+		return fmt.Errorf("transport not set")
+	}
+
+	peers := p.GetReplicationPeers()
+	logging.Debug("[%s] Broadcasting %s to %d enclave peers (%s)", p.localNode.ID, msg.Type, len(peers), p.localNode.Enclave)
+	for _, peer := range peers {
+		logging.Debug("[%s] Sending %s to enclave peer %s", p.localNode.ID, msg.Type, peer.ID)
+		if err := p.transport.Send(ctx, peer, msg); err != nil {
+			logging.Warn("[%s] Failed to send to enclave peer %s: %v", p.localNode.ID, peer.ID, err)
+		}
+	}
+
+	return nil
+}
+
 func (p *Protocol) GetPeers() []*Node {
 	return p.getPeers()
+}
+
+// GetReplicationPeers returns only peers in the same enclave as the local node.
+func (p *Protocol) GetReplicationPeers() []*Node {
+	p.peersMutex.RLock()
+	defer p.peersMutex.RUnlock()
+
+	var peers []*Node
+	for _, peer := range p.peers {
+		if peer.Enclave == p.localNode.Enclave {
+			peers = append(peers, peer)
+		}
+	}
+	return peers
 }
 
 func (p *Protocol) SetMessageHandler(handler func(*Message) error) {

@@ -212,6 +212,7 @@ func (s *HTTPServer) Router() *mux.Router {
 	r.HandleFunc("/v1/health", s.healthHandler).Methods("GET", "OPTIONS")
 	r.HandleFunc("/v1/status", s.statusHandler).Methods("GET", "OPTIONS")
 	r.HandleFunc("/v1/metrics", promhttp.Handler().ServeHTTP).Methods("GET", "OPTIONS")
+	r.HandleFunc("/v1/topology", s.topologyHandler).Methods("GET", "OPTIONS")
 
 	// Internal gossip endpoints
 	r.HandleFunc("/v1/gossip/message", s.gossipHandler).Methods("POST", "OPTIONS")
@@ -248,6 +249,34 @@ func (s *HTTPServer) statusHandler(w http.ResponseWriter, r *http.Request) {
 			"sys":         m.Sys,
 			"num_gc":      m.NumGC,
 		},
+	})
+}
+
+func (s *HTTPServer) topologyHandler(w http.ResponseWriter, r *http.Request) {
+	peers := s.clusterNode.Topology()
+
+	type peerInfo struct {
+		ID       string `json:"id"`
+		Address  string `json:"address"`
+		HTTPPort int    `json:"http_port"`
+		Enclave  string `json:"enclave"`
+	}
+
+	peerList := make([]peerInfo, 0, len(peers))
+	for _, p := range peers {
+		peerList = append(peerList, peerInfo{
+			ID:       string(p.ID),
+			Address:  p.Address,
+			HTTPPort: p.HTTPPort,
+			Enclave:  p.Enclave,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"node_id": s.nodeID,
+		"enclave": s.clusterNode.Enclave(),
+		"peers":   peerList,
 	})
 }
 

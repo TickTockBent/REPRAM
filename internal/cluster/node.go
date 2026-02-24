@@ -17,12 +17,12 @@ import (
 var ErrQuorumTimeout = fmt.Errorf("quorum timeout: stored locally, replication pending")
 
 type ClusterNode struct {
-	localNode     *gossip.Node
-	protocol      *gossip.Protocol
-	store         Store
-	quorumSize    int
-	writeTimeout  time.Duration
-	clusterSecret string
+	localNode         *gossip.Node
+	protocol          *gossip.Protocol
+	store             Store
+	replicationFactor int
+	writeTimeout      time.Duration
+	clusterSecret     string
 
 	pendingWrites map[string]*WriteOperation
 	writesMutex   sync.RWMutex
@@ -58,20 +58,14 @@ func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int,
 
 	protocol := gossip.NewProtocol(localNode, replicationFactor, clusterSecret)
 
-	// For single node deployment, quorum size should be 1
-	quorumSize := (replicationFactor / 2) + 1
-	if quorumSize < 1 {
-		quorumSize = 1
-	}
-
 	return &ClusterNode{
-		localNode:     localNode,
-		protocol:      protocol,
-		store:         storage.NewMemoryStore(maxStorageBytes),
-		quorumSize:    quorumSize,
-		writeTimeout:  writeTimeout,
-		clusterSecret: clusterSecret,
-		pendingWrites: make(map[string]*WriteOperation),
+		localNode:         localNode,
+		protocol:          protocol,
+		store:             storage.NewMemoryStore(maxStorageBytes),
+		replicationFactor: replicationFactor,
+		writeTimeout:      writeTimeout,
+		clusterSecret:     clusterSecret,
+		pendingWrites:     make(map[string]*WriteOperation),
 	}
 }
 
@@ -104,6 +98,8 @@ func (cn *ClusterNode) Stop() error {
 }
 
 func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl time.Duration) error {
+	quorum := cn.quorumSize()
+
 	writeOp := &WriteOperation{
 		Key:           key,
 		Data:          data,
@@ -123,13 +119,13 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		return fmt.Errorf("local write failed: %w", err)
 	}
 
-	// Check if local write is sufficient for quorum
-	if writeOp.Confirmations >= cn.quorumSize {
+	// Check if local write is sufficient for quorum (single node or single-node enclave)
+	if writeOp.Confirmations >= quorum {
 		cn.writesMutex.Lock()
 		delete(cn.pendingWrites, key)
 		cn.writesMutex.Unlock()
 		close(writeOp.Complete)
-		logging.Debug("Write completed locally (quorum=%d, confirmations=%d)", cn.quorumSize, writeOp.Confirmations)
+		logging.Debug("Write completed locally (quorum=%d, confirmations=%d)", quorum, writeOp.Confirmations)
 		return nil
 	}
 
@@ -143,9 +139,9 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		MessageID: fmt.Sprintf("%s-%d", key, time.Now().UnixNano()),
 	}
 
-	logging.Debug("[%s] Broadcasting PUT for key %s to peers", cn.localNode.ID, key)
-	if err := cn.protocol.Broadcast(ctx, msg); err != nil {
-		logging.Warn("[%s] Failed to broadcast write: %v", cn.localNode.ID, err)
+	logging.Debug("[%s] Broadcasting PUT for key %s to enclave peers", cn.localNode.ID, key)
+	if err := cn.protocol.BroadcastToEnclave(ctx, msg); err != nil {
+		logging.Warn("[%s] Failed to broadcast write to enclave: %v", cn.localNode.ID, err)
 	}
 
 	select {
@@ -245,7 +241,7 @@ func (cn *ClusterNode) handleAckMessage(msg *gossip.Message) error {
 
 	writeOp.Confirmations++
 
-	if writeOp.Confirmations >= cn.quorumSize {
+	if writeOp.Confirmations >= cn.quorumSize() {
 		select {
 		case writeOp.Complete <- true:
 		default:
@@ -263,6 +259,22 @@ func (cn *ClusterNode) HandleBootstrap(req *gossip.BootstrapRequest) *gossip.Boo
 	return cn.protocol.HandleBootstrap(req)
 }
 
+// quorumSize calculates the current quorum based on enclave peer count.
+// Quorum = (min(enclaveNodes, replicationFactor) / 2) + 1
+// where enclaveNodes includes the local node.
+func (cn *ClusterNode) quorumSize() int {
+	enclaveNodes := len(cn.protocol.GetReplicationPeers()) + 1 // +1 for self
+	effective := enclaveNodes
+	if cn.replicationFactor < effective {
+		effective = cn.replicationFactor
+	}
+	q := (effective / 2) + 1
+	if q < 1 {
+		q = 1
+	}
+	return q
+}
+
 // ClusterSecret returns the configured cluster secret (empty string if open mode).
 func (cn *ClusterNode) ClusterSecret() string {
 	return cn.clusterSecret
@@ -271,4 +283,9 @@ func (cn *ClusterNode) ClusterSecret() string {
 // Enclave returns this node's enclave name.
 func (cn *ClusterNode) Enclave() string {
 	return cn.localNode.Enclave
+}
+
+// Topology returns the full peer list with enclave membership.
+func (cn *ClusterNode) Topology() []*gossip.Node {
+	return cn.protocol.GetPeers()
 }
