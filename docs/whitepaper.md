@@ -38,7 +38,7 @@ If you need confidentiality *during* the TTL window, encrypt your data before st
 * **Ephemeral**: All data has a mandatory TTL and is automatically deleted on expiration
 * **Zero-knowledge**: Nodes store opaque data without interpreting, indexing, or logging it
 * **Permissionless**: No accounts, no API keys, no authentication — access is controlled by key knowledge
-* **Gossip-replicated**: Nodes share data via peer-to-peer gossip with quorum writes
+* **Gossip-replicated**: Nodes share data via peer-to-peer gossip with quorum writes; adaptive fanout (full broadcast for small enclaves, √N probabilistic for larger ones)
 * **Homogeneous**: All nodes run the same binary and self-organize via DNS bootstrap
 * **Loosely coupled**: Nodes don't need to be tightly synchronized or consistently available — the data's lifecycle is self-limiting, so a node that misses an hour of writes has simply missed data that may have already expired
 
@@ -85,6 +85,6 @@ Soft delete via overwrite (write an empty value with short TTL) is technically p
 ## Future Directions
 
 * Public bootstrap network with DNS SRV records
-* Larger network testing and gossip protocol optimization
+* Larger network testing
 
 REPRAM is the `/tmp` of the agent web: fast, ephemeral, shared storage that requires no trust, no setup, and no cleanup.

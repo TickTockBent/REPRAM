@@ -42,14 +42,16 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 ## 4. Network Distribution Principles
 
 ### 4.1 Gossip Protocol
-- **Eventually consistent**: All nodes eventually have all key-value pairs
+- **Eventually consistent**: All nodes eventually have all key-value pairs within their enclave
 - **Peer-to-peer propagation**: No central coordinator or master node
 - **Symmetric network**: All nodes are equal participants
+- **Adaptive fanout**: Small enclaves (≤10 peers) use full broadcast; larger enclaves use probabilistic √N fanout per hop with epidemic forwarding and message deduplication
 
 ### 4.2 Replication
-- **Full replication**: Every node stores every key-value pair
-- **Quorum writes**: Writes must be acknowledged by multiple nodes
-- **No sharding**: Data is not partitioned across nodes
+- **Full replication within enclaves**: Every node stores every key-value pair from its enclave
+- **Enclave-scoped**: `REPRAM_ENCLAVE` defines replication boundaries; nodes in the same enclave replicate data, all nodes share topology
+- **Quorum writes**: Writes must be acknowledged by multiple nodes (dynamic quorum based on enclave size)
+- **No sharding**: Data is not partitioned across nodes — every enclave member holds all enclave data
 
 ### 4.3 Resilience Through Ephemerality
 - **Loose coupling**: Nodes don't need to be tightly coupled or consistently available. The data's lifecycle is self-limiting — a node that goes offline for an hour and comes back has simply missed some data that may have already expired anyway.
@@ -77,7 +79,7 @@ When evaluating new features or modifications, ask:
 2. Are nodes still zero-knowledge about stored data?
 3. Can anyone still read data by key without authentication?
 4. Is TTL still mandatory and enforced?
-5. Does gossip still replicate to all nodes?
+5. Does gossip still replicate to all enclave peers?
 6. Is there zero impact on non-participating operations?
 
 If any answer is "no", the feature violates REPRAM's core principles and must be redesigned.
