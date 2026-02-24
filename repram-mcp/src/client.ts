@@ -14,6 +14,11 @@ export interface RetrieveResult {
   originalTtlSeconds: number;
 }
 
+export interface ExistsResult {
+  exists: boolean;
+  remainingTtlSeconds: number;
+}
+
 export interface ListKeysResult {
   keys: string[];
 }
@@ -66,6 +71,23 @@ export class RepramClient {
       remainingTtlSeconds,
       originalTtlSeconds,
     };
+  }
+
+  async exists(key: string): Promise<ExistsResult> {
+    const response = await fetch(`${this.baseUrl}/v1/data/${encodeURIComponent(key)}`, {
+      method: "HEAD",
+    });
+
+    if (response.status === 404) {
+      return { exists: false, remainingTtlSeconds: 0 };
+    }
+
+    if (!response.ok) {
+      throw new Error(`REPRAM exists check failed: ${response.status} ${response.statusText}`);
+    }
+
+    const remainingTtlSeconds = parseInt(response.headers.get("X-Remaining-TTL") ?? "0", 10);
+    return { exists: true, remainingTtlSeconds };
   }
 
   async listKeys(prefix?: string): Promise<ListKeysResult> {

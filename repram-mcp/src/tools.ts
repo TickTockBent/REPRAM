@@ -57,6 +57,22 @@ Returns null if the key does not exist or has expired. Expired data is permanent
     },
   },
   {
+    name: "repram_exists",
+    description: `Check whether a key exists in the REPRAM network without retrieving its value. Returns existence status and remaining TTL.
+
+This is the right tool for the coordination-token pattern: check if a lock key is present, poll for a heartbeat signal, or verify a handoff key is still alive — without transferring the payload. For large values, this avoids unnecessary bandwidth.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key to check.",
+        },
+      },
+      required: ["key"],
+    },
+  },
+  {
     name: "repram_list_keys",
     description: `List keys currently stored in the REPRAM network. Optionally filter by prefix.
 
@@ -87,7 +103,7 @@ export async function handleToolCall(
 
       const result = await client.store(key, data, ttlSeconds);
 
-      if (result.status !== 201) {
+      if (result.status !== 201 && result.status !== 202) {
         return {
           error: `Store failed with status ${result.status}: ${result.statusText}`,
         };
@@ -117,6 +133,25 @@ export async function handleToolCall(
       return {
         data: result.data,
         created_at: result.createdAt,
+        remaining_ttl_seconds: result.remainingTtlSeconds,
+        expires_at: expiresAt,
+      };
+    }
+
+    case "repram_exists": {
+      const key = args.key as string;
+      const result = await client.exists(key);
+
+      if (!result.exists) {
+        return { exists: false };
+      }
+
+      const expiresAt = new Date(
+        Date.now() + result.remainingTtlSeconds * 1000
+      ).toISOString();
+
+      return {
+        exists: true,
         remaining_ttl_seconds: result.remainingTtlSeconds,
         expires_at: expiresAt,
       };

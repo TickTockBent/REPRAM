@@ -200,7 +200,7 @@ func (s *HTTPServer) Router() *mux.Router {
 
 	// v1 API endpoints
 	r.HandleFunc("/v1/data/{key}", s.putHandler).Methods("PUT", "OPTIONS")
-	r.HandleFunc("/v1/data/{key}", s.getHandler).Methods("GET", "OPTIONS")
+	r.HandleFunc("/v1/data/{key}", s.getHandler).Methods("GET", "HEAD", "OPTIONS")
 	r.HandleFunc("/v1/keys", s.keysHandler).Methods("GET", "OPTIONS")
 	r.HandleFunc("/v1/health", s.healthHandler).Methods("GET", "OPTIONS")
 	r.HandleFunc("/v1/status", s.statusHandler).Methods("GET", "OPTIONS")
