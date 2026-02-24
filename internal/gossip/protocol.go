@@ -48,9 +48,16 @@ const (
 	MessageTypeAck        MessageType = "ACK"
 )
 
+// MaxPingFailures is the number of consecutive failed health checks before
+// a peer is evicted from the peer list. With a 30-second ping interval this
+// means a peer is removed after ~90 seconds of unreachability. Evicted peers
+// rejoin automatically if they come back online and re-bootstrap.
+const MaxPingFailures = 3
+
 type Protocol struct {
 	localNode         *Node
 	peers             map[NodeID]*Node
+	peerFailures      map[NodeID]int // consecutive ping failures per peer
 	peersMutex        sync.RWMutex
 	replicationFactor int
 	quorumSize        int
@@ -74,6 +81,7 @@ func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *
 	return &Protocol{
 		localNode:         localNode,
 		peers:             make(map[NodeID]*Node),
+		peerFailures:      make(map[NodeID]int),
 		replicationFactor: replicationFactor,
 		quorumSize:        quorumSize,
 		clusterSecret:     clusterSecret,
@@ -123,12 +131,14 @@ func (p *Protocol) addPeer(node *Node) {
 	p.peersMutex.Lock()
 	defer p.peersMutex.Unlock()
 	p.peers[node.ID] = node
+	delete(p.peerFailures, node.ID) // reset failure counter on (re-)add
 }
 
 func (p *Protocol) removePeer(nodeID NodeID) {
 	p.peersMutex.Lock()
 	defer p.peersMutex.Unlock()
 	delete(p.peers, nodeID)
+	delete(p.peerFailures, nodeID)
 }
 
 func (p *Protocol) getPeers() []*Node {
@@ -187,18 +197,21 @@ func (p *Protocol) handlePing(msg *Message) error {
 }
 
 func (p *Protocol) handlePong(msg *Message) error {
+	p.peersMutex.Lock()
+	// Reset failure counter — peer is alive
+	delete(p.peerFailures, msg.From)
+
 	// Update peer's enclave membership if included
 	if msg.NodeInfo != nil {
 		if msg.NodeInfo.Enclave == "" {
 			msg.NodeInfo.Enclave = "default"
 		}
-		p.peersMutex.Lock()
 		if existing, ok := p.peers[msg.NodeInfo.ID]; ok && existing.Enclave != msg.NodeInfo.Enclave {
 			existing.Enclave = msg.NodeInfo.Enclave
 			logging.Debug("[%s] Updated peer %s enclave to %s via PONG", p.localNode.ID, msg.NodeInfo.ID, msg.NodeInfo.Enclave)
 		}
-		p.peersMutex.Unlock()
 	}
+	p.peersMutex.Unlock()
 	return nil
 }
 
@@ -252,6 +265,8 @@ func (p *Protocol) startHealthCheck(ctx context.Context) {
 
 func (p *Protocol) pingPeers(ctx context.Context) {
 	peers := p.getPeers()
+	var evictions []NodeID
+
 	for _, peer := range peers {
 		ping := &Message{
 			Type:      MessageTypePing,
@@ -260,7 +275,25 @@ func (p *Protocol) pingPeers(ctx context.Context) {
 			Timestamp: time.Now(),
 			MessageID: generateMessageID(),
 		}
-		p.transport.Send(ctx, peer, ping)
+		if err := p.transport.Send(ctx, peer, ping); err != nil {
+			p.peersMutex.Lock()
+			p.peerFailures[peer.ID]++
+			failures := p.peerFailures[peer.ID]
+			p.peersMutex.Unlock()
+
+			logging.Warn("[%s] Ping failed for peer %s (%d/%d): %v",
+				p.localNode.ID, peer.ID, failures, MaxPingFailures, err)
+
+			if failures >= MaxPingFailures {
+				evictions = append(evictions, peer.ID)
+			}
+		}
+	}
+
+	for _, id := range evictions {
+		p.removePeer(id)
+		logging.Info("[%s] Evicted peer %s after %d consecutive ping failures",
+			p.localNode.ID, id, MaxPingFailures)
 	}
 }
 
@@ -326,6 +359,13 @@ func (p *Protocol) GetReplicationPeers() []*Node {
 		}
 	}
 	return peers
+}
+
+// PeerFailureCount returns the number of consecutive ping failures for a peer.
+func (p *Protocol) PeerFailureCount(id NodeID) int {
+	p.peersMutex.RLock()
+	defer p.peersMutex.RUnlock()
+	return p.peerFailures[id]
 }
 
 func (p *Protocol) SetMessageHandler(handler func(*Message) error) {
