@@ -173,7 +173,8 @@ make docker-build   # Build Docker image (ticktockbent/repram-node:latest)
 
 ## Documentation
 
-- [Usage Patterns](docs/patterns.md) — Agent patterns and general-purpose primitives
+- [Usage Patterns](docs/patterns.md) — Agent patterns, general-purpose primitives, and key naming conventions
+- [Client-Side Encryption](docs/encryption-example.md) — AES-256-GCM example with opaque key derivation
 - [Core Principles](docs/core-principles.md) — Inviolable design constraints
 - [Project Overview](docs/project-overview.md) — Architecture and rationale
 - [Whitepaper](docs/whitepaper.md) — Technical deep dive
