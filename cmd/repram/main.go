@@ -49,7 +49,8 @@ func main() {
 	minTTL := envInt("REPRAM_MIN_TTL", 300)
 	maxTTL := envInt("REPRAM_MAX_TTL", 86400)
 	rateLimit := envInt("REPRAM_RATE_LIMIT", 100)
-	maxStorageMB := envInt("REPRAM_MAX_STORAGE_MB", 0) // 0 = unlimited
+	maxStorageMB := envInt("REPRAM_MAX_STORAGE_MB", 0)    // 0 = unlimited
+	writeTimeout := envInt("REPRAM_WRITE_TIMEOUT", 5)      // seconds
 	network := os.Getenv("REPRAM_NETWORK")
 	if network == "" {
 		network = "public"
@@ -72,7 +73,7 @@ func main() {
 		bootstrapNodes = append(bootstrapNodes, resolved...)
 	}
 
-	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024)
+	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024, time.Duration(writeTimeout)*time.Second)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -102,7 +103,7 @@ func main() {
 	logging.Info("REPRAM node online. Peers: %d. Network: %s", peerCount, network)
 	logging.Info("  Node ID: %s", nodeID)
 	logging.Info("  HTTP: :%d  Gossip: :%d", httpPort, gossipPort)
-	logging.Info("  Replication: %d  TTL range: %d-%ds", replicationFactor, minTTL, maxTTL)
+	logging.Info("  Replication: %d  TTL range: %d-%ds  Write timeout: %ds", replicationFactor, minTTL, maxTTL, writeTimeout)
 
 	// Graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -277,6 +278,13 @@ func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {
 	if err := s.clusterNode.Put(ctx, key, body, time.Duration(ttl)*time.Second); err != nil {
 		if errors.Is(err, storage.ErrStoreFull) {
 			http.Error(w, "Node storage capacity exceeded", http.StatusInsufficientStorage)
+			return
+		}
+		if errors.Is(err, cluster.ErrQuorumTimeout) {
+			// Data is stored locally and will propagate via gossip.
+			// 202 Accepted signals "written, replication in progress."
+			w.WriteHeader(http.StatusAccepted)
+			fmt.Fprintf(w, "Accepted (quorum pending)")
 			return
 		}
 		http.Error(w, fmt.Sprintf("Write failed: %v", err), http.StatusInternalServerError)

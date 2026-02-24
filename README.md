@@ -103,7 +103,7 @@ REPRAM is `pipe`, not `grep` — the primitive is general-purpose. See [Usage Pa
 
 ```bash
 curl -X PUT -H "X-TTL: 300" -d "your data here" http://localhost:8080/v1/data/{key}
-# Returns: 201 Created
+# Returns: 201 Created (quorum confirmed) or 202 Accepted (stored locally, replication pending)
 ```
 
 The `X-TTL` header sets expiration in seconds. TTL can also be passed as a `?ttl=300` query parameter.
@@ -157,6 +157,7 @@ curl http://localhost:8080/v1/metrics
 | `REPRAM_REPLICATION` | `3` | Quorum replication factor |
 | `REPRAM_MIN_TTL` | `300` | Minimum TTL in seconds (5 minutes) |
 | `REPRAM_MAX_TTL` | `86400` | Maximum TTL in seconds (24 hours) |
+| `REPRAM_WRITE_TIMEOUT` | `5` | Quorum confirmation timeout in seconds. Writes stored locally always succeed; timeout only affects quorum wait (201 vs 202). |
 | `REPRAM_RATE_LIMIT` | `100` | Requests per second per IP |
 | `REPRAM_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `REPRAM_MAX_STORAGE_MB` | `0` | Max data storage in MB (0 = unlimited). Rejects writes with 507 when full. |

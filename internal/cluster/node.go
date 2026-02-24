@@ -11,11 +11,17 @@ import (
 	"repram/internal/storage"
 )
 
+// ErrQuorumTimeout indicates the write was stored locally but quorum
+// confirmation was not received within the timeout window. The data
+// will still propagate via gossip — this is not a write failure.
+var ErrQuorumTimeout = fmt.Errorf("quorum timeout: stored locally, replication pending")
+
 type ClusterNode struct {
-	localNode  *gossip.Node
-	protocol   *gossip.Protocol
-	store      Store
-	quorumSize int
+	localNode    *gossip.Node
+	protocol     *gossip.Protocol
+	store        Store
+	quorumSize   int
+	writeTimeout time.Duration
 
 	pendingWrites map[string]*WriteOperation
 	writesMutex   sync.RWMutex
@@ -37,7 +43,7 @@ type Store interface {
 	Scan() []string
 }
 
-func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int, replicationFactor int, maxStorageBytes int64) *ClusterNode {
+func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int, replicationFactor int, maxStorageBytes int64, writeTimeout time.Duration) *ClusterNode {
 	localNode := &gossip.Node{
 		ID:       gossip.NodeID(nodeID),
 		Address:  address,
@@ -58,6 +64,7 @@ func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int,
 		protocol:      protocol,
 		store:         storage.NewMemoryStore(maxStorageBytes),
 		quorumSize:    quorumSize,
+		writeTimeout:  writeTimeout,
 		pendingWrites: make(map[string]*WriteOperation),
 	}
 }
@@ -142,11 +149,11 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		delete(cn.pendingWrites, key)
 		cn.writesMutex.Unlock()
 		return err
-	case <-time.After(2 * time.Second):
+	case <-time.After(cn.writeTimeout):
 		cn.writesMutex.Lock()
 		delete(cn.pendingWrites, key)
 		cn.writesMutex.Unlock()
-		return fmt.Errorf("write timeout: insufficient replicas")
+		return ErrQuorumTimeout
 	case <-ctx.Done():
 		cn.writesMutex.Lock()
 		delete(cn.pendingWrites, key)
