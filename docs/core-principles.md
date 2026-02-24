@@ -53,9 +53,10 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 
 ## 5. Security Principles
 
-### 5.1 Zero Trust
+### 5.1 Privacy Through Transience
 - **Nodes are untrusted**: Assume nodes could be compromised
 - **No secrets on nodes**: Nodes never hold encryption keys or sensitive data
+- **Nothing accumulates**: There's nothing to breach because nothing persists beyond TTL
 - **Hostile network assumption**: Design assumes hostile infrastructure
 
 ### 5.2 Client Responsibility

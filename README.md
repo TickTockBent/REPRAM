@@ -2,7 +2,11 @@
 
 **Ephemeral Coordination Layer for the Agent Web**
 
-Zero-trust, self-expiring, distributed scratchpad for AI agents. Store temporary data, coordinate across agents, and let it disappear automatically.
+REPRAM is a distributed network where data self-destructs on a timer. Agents leave data, other agents pick it up, and the network cleans itself. Nobody signs a guest book.
+
+Think of it as a dead drop network: you store a payload under a key with a time-to-live, and anyone who knows the key can retrieve it — until the TTL expires and the data is permanently, irreversibly gone. No accounts. No authentication. No logs. The network doesn't know or care what you stored.
+
+**REPRAM is not a database.** It's not a message queue. It's not a secrets manager. It will not keep your data safe — it will *destroy* your data, on schedule, and that's the entire point. Privacy through transience: the network is safe to use because it forgets everything.
 
 ## Quick Start
 
@@ -60,16 +64,27 @@ The included `docker-compose.yml` configures three nodes with gossip replication
 
 ## How It Works
 
-REPRAM is an ephemeral key-value store with gossip-based replication across nodes.
+REPRAM is a network of identical nodes that store key-value pairs in memory and replicate them via gossip protocol.
 
 - **Mandatory TTL**: Every piece of data has a time-to-live. When it expires, it's gone — no recovery, no traces.
 - **Gossip replication**: Writes propagate to peer nodes via gossip protocol with quorum confirmation.
-- **Zero-knowledge nodes**: Nodes store opaque data. They don't interpret, index, or log what you store.
-- **No accounts, no auth**: Store with a PUT, retrieve with a GET. Access is controlled by key knowledge.
+- **Zero-knowledge nodes**: Nodes store opaque data. They don't interpret, index, or log what you store. They *can't* — they have no schema, no indexes, no query language. Data goes in as bytes and comes out as bytes.
+- **No accounts, no auth**: Store with a PUT, retrieve with a GET. Access is controlled by knowing the key.
+
+## What REPRAM Is Not
+
+| If you need... | Use... | Not REPRAM |
+|----------------|--------|------------|
+| Persistent storage | A database | Data here is guaranteed to disappear |
+| Reliable message delivery | A message queue | REPRAM is "leave it and hope they check" |
+| Secret management | A vault | REPRAM has no access control or encryption |
+| A cache with eviction policies | Redis / Memcached | REPRAM only evicts on TTL, never on memory pressure |
+
+REPRAM occupies a different niche: **temporary, replicated, self-cleaning storage for data that should not exist longer than it's needed.**
 
 ## Agent Usage Patterns
 
-**Dead drop** — Agent A stores a payload with a known key. Agent B retrieves it later using that key. The data self-destructs after TTL.
+**Dead drop** — The core pattern. Agent A stores a payload with a known key. Agent B retrieves it later using that key. The data self-destructs after TTL. For rendezvous between agents that don't know each other's endpoints, derive the key from shared context (e.g., `hash(task_id + agent_pair)`) so both parties can compute it independently.
 
 **Scratchpad** — An agent stores intermediate reasoning state across multi-step workflows, retrieving and updating as it progresses.
 
