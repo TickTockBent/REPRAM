@@ -19,3 +19,4 @@ test-results/
 monitoring-results/
 node_modules/
 .mcp.json
+CLAUDE.md
