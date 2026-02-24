@@ -19,7 +19,8 @@ All notable changes to REPRAM are documented here.
 - `REPRAM_CLUSTER_SECRET` env var — HMAC-SHA256 authentication for gossip and bootstrap messages ([#22](https://github.com/TickTockBent/repram/issues/22))
 - `REPRAM_MAX_STORAGE_MB` env var — configurable capacity limit, returns HTTP 507 when full ([#20](https://github.com/TickTockBent/repram/issues/20))
 - `REPRAM_LOG_LEVEL` env var — leveled logging (debug/info/warn/error), replaces raw fmt.Printf ([#12](https://github.com/TickTockBent/repram/issues/12))
-- Test suite: 43 tests covering storage, middleware, gossip auth, peer failure detection, and proxy trust (CRUD, TTL, copy safety, capacity, concurrency with race detector, scanner blocking, client passthrough, rate limiter, IP extraction, HMAC sign/verify, eviction/rejoin) ([#11](https://github.com/TickTockBent/repram/issues/11))
+- **Integration tests** — 7 in-process tests with real HTTP transport: bootstrap discovery, write replication, quorum confirmation, enclave isolation, quorum timeout, 3-node topology, 3-node replication ([#26](https://github.com/TickTockBent/repram/issues/26))
+- Test suite: 50 tests covering storage, middleware, gossip auth, peer failure detection, proxy trust, and distributed integration (CRUD, TTL, copy safety, capacity, concurrency with race detector, scanner blocking, client passthrough, rate limiter, IP extraction, HMAC sign/verify, eviction/rejoin, bootstrap, replication, enclave isolation, quorum timeout) ([#11](https://github.com/TickTockBent/repram/issues/11), [#26](https://github.com/TickTockBent/repram/issues/26))
 - CI test workflow — runs `make build` + `go test -race` on push to main and PRs
 - CI npm publish workflow — publishes `repram-mcp` to npm on `mcp-v*` tags ([#13](https://github.com/TickTockBent/repram/issues/13))
 - `workflow_dispatch` trigger on Docker build workflow
