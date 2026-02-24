@@ -21,7 +21,8 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "^3.25 || ^4.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

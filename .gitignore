@@ -17,3 +17,4 @@ bin/
 Thumbs.db
 test-results/
 monitoring-results/
+node_modules/
