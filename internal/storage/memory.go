@@ -1,9 +1,13 @@
 package storage
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
+
+// ErrStoreFull is returned when a write would exceed the configured capacity.
+var ErrStoreFull = errors.New("store capacity exceeded")
 
 type Entry struct {
 	Data      []byte        `json:"data"`
@@ -13,17 +17,22 @@ type Entry struct {
 }
 
 type MemoryStore struct {
-	data    map[string]*Entry
-	mutex   sync.RWMutex
-	cleanup chan bool
+	data         map[string]*Entry
+	mutex        sync.RWMutex
+	cleanup      chan bool
+	maxBytes     int64 // 0 = unlimited
+	currentBytes int64
 }
 
-func NewMemoryStore() *MemoryStore {
+// NewMemoryStore creates a new store. maxBytes sets the capacity limit in bytes;
+// 0 means unlimited. When the limit is reached, writes are rejected with ErrStoreFull.
+func NewMemoryStore(maxBytes int64) *MemoryStore {
 	store := &MemoryStore{
-		data:    make(map[string]*Entry),
-		cleanup: make(chan bool),
+		data:     make(map[string]*Entry),
+		cleanup:  make(chan bool),
+		maxBytes: maxBytes,
 	}
-	
+
 	go store.startCleanupWorker()
 	return store
 }
@@ -31,49 +40,68 @@ func NewMemoryStore() *MemoryStore {
 func (m *MemoryStore) Put(key string, data []byte, ttl time.Duration) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
+	newSize := int64(len(data))
+
+	// Account for overwrites: subtract the old entry's size if the key exists
+	var oldSize int64
+	if existing, exists := m.data[key]; exists {
+		oldSize = int64(len(existing.Data))
+	}
+
+	if m.maxBytes > 0 && (m.currentBytes-oldSize+newSize) > m.maxBytes {
+		return ErrStoreFull
+	}
+
+	stored := make([]byte, len(data))
+	copy(stored, data)
+
 	now := time.Now()
 	m.data[key] = &Entry{
-		Data:      data,
+		Data:      stored,
 		CreatedAt: now,
 		TTL:       ttl,
 		ExpiresAt: now.Add(ttl),
 	}
+
+	m.currentBytes = m.currentBytes - oldSize + newSize
 	return nil
 }
 
 func (m *MemoryStore) Get(key string) ([]byte, bool) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	entry, exists := m.data[key]
 	if !exists {
 		return nil, false
 	}
-	
+
 	if time.Now().After(entry.ExpiresAt) {
-		delete(m.data, key)
 		return nil, false
 	}
-	
-	return entry.Data, true
+
+	result := make([]byte, len(entry.Data))
+	copy(result, entry.Data)
+	return result, true
 }
 
 func (m *MemoryStore) GetWithMetadata(key string) ([]byte, time.Time, time.Duration, bool) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	entry, exists := m.data[key]
 	if !exists {
 		return nil, time.Time{}, 0, false
 	}
-	
+
 	if time.Now().After(entry.ExpiresAt) {
-		delete(m.data, key)
 		return nil, time.Time{}, 0, false
 	}
-	
-	return entry.Data, entry.CreatedAt, entry.TTL, true
+
+	result := make([]byte, len(entry.Data))
+	copy(result, entry.Data)
+	return result, entry.CreatedAt, entry.TTL, true
 }
 
 func (m *MemoryStore) startCleanupWorker() {
@@ -93,10 +121,11 @@ func (m *MemoryStore) startCleanupWorker() {
 func (m *MemoryStore) cleanupExpired() {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
 	now := time.Now()
 	for key, entry := range m.data {
 		if now.After(entry.ExpiresAt) {
+			m.currentBytes -= int64(len(entry.Data))
 			delete(m.data, key)
 		}
 	}

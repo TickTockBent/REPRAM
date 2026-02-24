@@ -218,40 +218,31 @@ func (sm *SecurityMiddleware) getClientIP(r *http.Request) string {
 
 func (sm *SecurityMiddleware) isSuspiciousRequest(r *http.Request) bool {
 	userAgent := r.Header.Get("User-Agent")
-	
-	// Block common bot/scanner user agents
-	suspiciousUAs := []string{
+
+	// Block known vulnerability scanners by user-agent.
+	// Only scanner-specific tools — not general-purpose HTTP libraries.
+	// REPRAM is permissionless by design; python-requests, curl, etc. are legitimate clients.
+	scannerUAs := []string{
 		"sqlmap",
 		"nikto",
 		"nmap",
 		"masscan",
 		"gobuster",
 		"dirbuster",
-		"<script",
-		"python-requests", // Block basic scripts (unless legitimate usage)
 	}
-	
+
 	userAgentLower := strings.ToLower(userAgent)
-	for _, suspicious := range suspiciousUAs {
-		if strings.Contains(userAgentLower, suspicious) {
+	for _, scanner := range scannerUAs {
+		if strings.Contains(userAgentLower, scanner) {
 			return true
 		}
 	}
-	
-	// Check for SQL injection patterns in URL
-	url := strings.ToLower(r.URL.String())
-	sqlPatterns := []string{
-		"union", "select", "insert", "delete", "drop", "exec",
-		"script", "alert", "onerror", "onload",
-		"../", "..\\", "/etc/passwd", "/proc/",
-	}
-	
-	for _, pattern := range sqlPatterns {
-		if strings.Contains(url, pattern) {
-			return true
-		}
-	}
-	
+
+	// No URL pattern matching. REPRAM is a key-value store that treats keys and
+	// values as opaque bytes — there is no SQL layer, no HTML rendering, and no
+	// filesystem access. Substring checks on URLs would false-positive on legitimate
+	// keys like "user_selection", "drop_zone", or "script_output".
+
 	return false
 }
 

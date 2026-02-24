@@ -36,26 +36,26 @@ type Store interface {
 	Scan() []string
 }
 
-func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int, replicationFactor int) *ClusterNode {
+func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int, replicationFactor int, maxStorageBytes int64) *ClusterNode {
 	localNode := &gossip.Node{
 		ID:       gossip.NodeID(nodeID),
 		Address:  address,
 		Port:     gossipPort,
 		HTTPPort: httpPort,
 	}
-	
+
 	protocol := gossip.NewProtocol(localNode, replicationFactor)
-	
+
 	// For single node deployment, quorum size should be 1
 	quorumSize := (replicationFactor / 2) + 1
 	if quorumSize < 1 {
 		quorumSize = 1
 	}
-	
+
 	return &ClusterNode{
 		localNode:     localNode,
 		protocol:      protocol,
-		store:         storage.NewMemoryStore(),
+		store:         storage.NewMemoryStore(maxStorageBytes),
 		quorumSize:    quorumSize,
 		pendingWrites: make(map[string]*WriteOperation),
 	}

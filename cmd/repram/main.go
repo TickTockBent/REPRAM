@@ -18,9 +18,12 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"errors"
+
 	"repram/internal/cluster"
 	"repram/internal/gossip"
 	"repram/internal/node"
+	"repram/internal/storage"
 )
 
 func main() {
@@ -42,6 +45,7 @@ func main() {
 	minTTL := envInt("REPRAM_MIN_TTL", 300)
 	maxTTL := envInt("REPRAM_MAX_TTL", 86400)
 	rateLimit := envInt("REPRAM_RATE_LIMIT", 100)
+	maxStorageMB := envInt("REPRAM_MAX_STORAGE_MB", 0) // 0 = unlimited
 	network := os.Getenv("REPRAM_NETWORK")
 	if network == "" {
 		network = "public"
@@ -64,7 +68,7 @@ func main() {
 		bootstrapNodes = append(bootstrapNodes, resolved...)
 	}
 
-	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor)
+	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -267,6 +271,10 @@ func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := s.clusterNode.Put(ctx, key, body, time.Duration(ttl)*time.Second); err != nil {
+		if errors.Is(err, storage.ErrStoreFull) {
+			http.Error(w, "Node storage capacity exceeded", http.StatusInsufficientStorage)
+			return
+		}
 		http.Error(w, fmt.Sprintf("Write failed: %v", err), http.StatusInternalServerError)
 		return
 	}
