@@ -68,10 +68,23 @@ REPRAM is `pipe`, not `grep`. It stores bytes, replicates them, and destroys the
 * `REPRAM_NETWORK=private` with `REPRAM_PEERS` for isolated clusters
 * MCP server (`repram-mcp`) via npx or Docker for agent integration
 
+## Design Decisions
+
+### No DELETE
+
+REPRAM has no delete operation. This is intentional, not an omission.
+
+Every piece of data has exactly one lifecycle: it is stored, it exists for the duration of its TTL, and then it is destroyed. There is no other path. This constraint is what makes the system simple, predictable, and safe.
+
+Adding DELETE would introduce a second way for data to disappear, which breaks the guarantees that several core patterns depend on. In the heartbeat pattern, the *absence* of a fresh write is the failure signal — a DELETE would be indistinguishable from a crash. In the coordination-token pattern, key presence means "claimed" — a DELETE would create ambiguity about whether the work completed or was abandoned. The TTL is the timeout, the failure detector, and the garbage collector, all in one mechanism. DELETE would undermine all three.
+
+The practical concern — "what if I want to clean up sensitive data early?" — is addressed by the TTL itself. Choose a TTL that matches your actual need. If you're done in 30 seconds, use a 5-minute TTL, not a 24-hour one. The window of exposure is bounded and short. If even that window is unacceptable, encrypt the data client-side and discard the key when you're done — the ciphertext becomes unrecoverable junk instantly, regardless of TTL.
+
+Soft delete via overwrite (write an empty value with short TTL) is technically possible with existing primitives, but we deliberately don't promote it. The right answer is almost always "pick a shorter TTL" rather than adding cleanup logic that can itself fail.
+
 ## Future Directions
 
 * Public bootstrap network with DNS SRV records
-* Namespace conventions for cross-agent interoperability
 * Larger network testing and gossip protocol optimization
 
 REPRAM is the `/tmp` of the agent web: fast, ephemeral, shared storage that requires no trust, no setup, and no cleanup.
