@@ -104,6 +104,9 @@ func (p *Protocol) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start transport: %w", err)
 	}
 
+	// Create ticker before goroutine to avoid data race with Stop()
+	p.topologyTicker = time.NewTicker(30 * time.Second)
+
 	// Start periodic health checks
 	go p.startHealthCheck(ctx)
 
@@ -383,11 +386,9 @@ func generateMessageID() string {
 	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddUint64(&messageCounter, 1))
 }
 
-// startTopologySync periodically exchanges peer lists to fix broken topology
+// startTopologySync periodically exchanges peer lists to fix broken topology.
+// The ticker is created in Start() before this goroutine is launched.
 func (p *Protocol) startTopologySync(ctx context.Context) {
-	p.topologyTicker = time.NewTicker(30 * time.Second) // Sync every 30 seconds
-	defer p.topologyTicker.Stop()
-
 	for {
 		select {
 		case <-p.topologyTicker.C:
