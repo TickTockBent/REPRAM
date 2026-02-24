@@ -95,7 +95,7 @@ REPRAM occupies a different niche: **temporary, replicated, self-cleaning storag
 
 **State machine** — A job ID key whose value transitions through states via overwrites (`queued` → `in_progress` → `complete`). The TTL acts as a staleness guarantee: if a job writes `in_progress` with a 10-minute TTL and then crashes, the key expires and any agent polling it knows the job didn't complete. Overwrites reset the TTL, so each state transition refreshes the window.
 
-REPRAM is `pipe`, not `grep` — the primitive is general-purpose. See [Usage Patterns](docs/patterns.md) for more examples including circuit breakers, ephemeral broadcast, secure relay, and session continuity.
+REPRAM is `pipe`, not `grep` — the primitive is general-purpose. See [Usage Patterns](docs/patterns.md) for more examples including circuit breakers, ephemeral broadcast, secure relay, session continuity, and key naming conventions for agent interoperability.
 
 ## API Reference
 

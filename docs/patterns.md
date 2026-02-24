@@ -31,3 +31,60 @@ The agent patterns above are the primary motivation, but the primitive is genera
 **Distributed deduplication** — Write a key when processing an event. Before processing, check if key exists. Key present = already handled. TTL = dedup window. No dedup database, no purge logic.
 
 **Ephemeral pub/sub** — Publisher overwrites a known key on interval. Subscribers poll. No subscription management, no broker, no message ordering. Lossy by design — and for status dashboards, approximate state sync, or coordination signals, that's exactly right.
+
+## Key Naming Conventions
+
+REPRAM doesn't enforce key structure — keys are opaque strings. But consistent naming helps agents discover each other's data and avoids collisions across unrelated workloads. These conventions are suggestions, not protocol requirements.
+
+### Namespace prefixes
+
+Use a prefix to indicate the key's role:
+
+| Prefix | Purpose | Example |
+|--------|---------|---------|
+| `handoff:` | Dead drop / agent-to-agent payload | `handoff:task-742:agent-a→agent-b` |
+| `scratch:` | Working state for a single agent | `scratch:agent-c:reasoning-step-3` |
+| `lock:` | Coordination token / mutex | `lock:pipeline:stage-2` |
+| `heartbeat:` | Presence signal | `heartbeat:worker-12` |
+| `state:` | State machine / job status | `state:job-9f3a` |
+| `broadcast:` | Ephemeral broadcast channel | `broadcast:config:feature-flags` |
+
+Separate hierarchy levels with `:` (colon). This is a convention, not a separator the server understands — but it plays well with prefix-based listing (`/v1/keys?prefix=lock:`).
+
+### Key generation strategies
+
+**UUID keys** (default for `repram_store`) — Best for scratchpad and one-shot storage where the writer returns the key to the caller. No collision risk.
+
+```
+scratch:550e8400-e29b-41d4-a716-446655440000
+```
+
+**Deterministic keys** — Best for dead-drop rendezvous where both parties need to compute the key independently. Derive from shared context:
+
+```
+handoff:sha256(task_id + sender + receiver)
+lock:pipeline-name:stage-name
+heartbeat:worker-id
+```
+
+The key derivation function doesn't matter as long as both sides agree. SHA-256 of concatenated context fields is a safe default.
+
+**Human-readable keys** — Fine for development, debugging, and single-tenant deployments. Use namespacing to avoid collisions:
+
+```
+myapp:session:user-42
+myapp:cache:homepage
+```
+
+### Prefix listing for discovery
+
+The `/v1/keys?prefix=` endpoint (and `repram_list_keys` tool) makes prefixes useful for discovery:
+
+- `?prefix=heartbeat:` — list all live agents
+- `?prefix=state:` — list all active jobs
+- `?prefix=lock:pipeline:` — list all held locks in a pipeline
+- `?prefix=myapp:` — list everything in your namespace
+
+### Avoiding collisions
+
+On a shared public network, unrelated agents may store data on the same nodes. UUID keys avoid collisions by default. For deterministic keys, include enough context to be unique — a bare `lock:stage-2` could collide, but `lock:org-acme:pipeline-ingest:stage-2` won't.
