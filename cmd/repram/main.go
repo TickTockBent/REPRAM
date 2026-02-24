@@ -30,7 +30,7 @@ func main() {
 		nodeID = fmt.Sprintf("node-%d", time.Now().UnixNano())
 	}
 
-	address := os.Getenv("NODE_ADDRESS")
+	address := os.Getenv("REPRAM_ADDRESS")
 	if address == "" {
 		address = "localhost"
 	}
@@ -47,7 +47,9 @@ func main() {
 		network = "public"
 	}
 
-	// Resolve bootstrap peers
+	// Resolve bootstrap peers.
+	// REPRAM_PEERS are HTTP addresses (host:httpPort) since the bootstrap
+	// handshake is an HTTP POST to /v1/bootstrap. Example: "node2:8080,node3:8080"
 	var bootstrapNodes []string
 	if peers := os.Getenv("REPRAM_PEERS"); peers != "" {
 		bootstrapNodes = strings.Split(peers, ",")
@@ -198,10 +200,6 @@ func (s *HTTPServer) Router() *mux.Router {
 	// Internal gossip endpoints
 	r.HandleFunc("/v1/gossip/message", s.gossipHandler).Methods("POST", "OPTIONS")
 	r.HandleFunc("/v1/bootstrap", s.bootstrapHandler).Methods("POST", "OPTIONS")
-
-	// Legacy unversioned routes (temporary backwards compat during migration)
-	r.HandleFunc("/gossip/message", s.gossipHandler).Methods("POST", "OPTIONS")
-	r.HandleFunc("/bootstrap", s.bootstrapHandler).Methods("POST", "OPTIONS")
 
 	return r
 }

@@ -85,7 +85,7 @@ func (t *HTTPTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 	}
 	
 	// Send to the HTTP gossip endpoint
-	url := fmt.Sprintf("http://%s:%d/gossip/message", node.Address, node.HTTPPort)
+	url := fmt.Sprintf("http://%s:%d/v1/gossip/message", node.Address, node.HTTPPort)
 	
 	jsonData, err := json.Marshal(simpleMsg)
 	if err != nil {

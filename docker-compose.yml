@@ -8,7 +8,7 @@ services:
       - "9091:9090"
     environment:
       - REPRAM_NODE_ID=node1
-      - NODE_ADDRESS=node1
+      - REPRAM_ADDRESS=node1
       - REPRAM_HTTP_PORT=8080
       - REPRAM_GOSSIP_PORT=9090
       - REPRAM_NETWORK=private
@@ -30,7 +30,7 @@ services:
       - "9092:9090"
     environment:
       - REPRAM_NODE_ID=node2
-      - NODE_ADDRESS=node2
+      - REPRAM_ADDRESS=node2
       - REPRAM_HTTP_PORT=8080
       - REPRAM_GOSSIP_PORT=9090
       - REPRAM_NETWORK=private
@@ -54,7 +54,7 @@ services:
       - "9093:9090"
     environment:
       - REPRAM_NODE_ID=node3
-      - NODE_ADDRESS=node3
+      - REPRAM_ADDRESS=node3
       - REPRAM_HTTP_PORT=8080
       - REPRAM_GOSSIP_PORT=9090
       - REPRAM_NETWORK=private

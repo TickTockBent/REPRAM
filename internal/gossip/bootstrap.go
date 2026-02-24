@@ -67,7 +67,7 @@ func (p *Protocol) sendBootstrapRequest(ctx context.Context, seedAddr string, re
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 	
-	url := fmt.Sprintf("http://%s/bootstrap", seedAddr)
+	url := fmt.Sprintf("http://%s/v1/bootstrap", seedAddr)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

@@ -3,117 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>REPRAM - Replicated Ephemeral RAM</title>
-    <meta name="description" content="Experience the future of privacy-first storage. REPRAM delivers distributed ephemeral key-value storage with client-side encryption, automatic expiration, and zero forensic footprint.">
-    
+    <title>REPRAM - Ephemeral Coordination Layer for the Agent Web</title>
+    <meta name="description" content="Zero-trust, self-expiring, distributed scratchpad for AI agents. The missing infrastructure primitive for autonomous AI agent coordination.">
+
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://www.repram.io/">
-    <meta property="og:title" content="REPRAM - Revolutionary Ephemeral Storage">
-    <meta property="og:description" content="🚀 Privacy-First • ⚡ Lightning Fast • 🌐 Distributed • Experience true ephemeral communication with automatic data expiration and client-side encryption.">
+    <meta property="og:title" content="REPRAM - Ephemeral Coordination for AI Agents">
+    <meta property="og:description" content="Zero-trust, self-expiring, distributed scratchpad for AI agents. Store temporary data, coordinate across agents, and let it disappear automatically.">
     <meta property="og:image" content="https://www.repram.io/repram-preview.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:site_name" content="REPRAM Project">
-    
+    <meta property="og:site_name" content="REPRAM">
+
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
     <meta property="twitter:url" content="https://www.repram.io/">
-    <meta property="twitter:title" content="REPRAM - Revolutionary Ephemeral Storage">
-    <meta property="twitter:description" content="🚀 Privacy-First • ⚡ Lightning Fast • 🌐 Distributed • Experience true ephemeral communication with automatic data expiration and client-side encryption.">
+    <meta property="twitter:title" content="REPRAM - Ephemeral Coordination for AI Agents">
+    <meta property="twitter:description" content="Zero-trust, self-expiring, distributed scratchpad for AI agents. Store temporary data, coordinate across agents, and let it disappear automatically.">
     <meta property="twitter:image" content="https://www.repram.io/repram-preview.png">
-    
+
     <!-- Additional Meta Tags -->
-    <meta name="keywords" content="ephemeral storage, distributed systems, privacy, encryption, key-value, blockchain alternative, temporary data, secure communication">
+    <meta name="keywords" content="ephemeral storage, AI agents, MCP, distributed systems, agent coordination, key-value store, temporary data">
     <meta name="author" content="REPRAM Project">
     <meta name="robots" content="index, follow">
     <meta name="theme-color" content="#00ff00">
-    
+
     <link rel="stylesheet" href="styles.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f9e0;</text></svg>">
 </head>
 <body>
     <div class="container">
         <header>
             <h1>REPRAM</h1>
-            <div class="tagline">Replicated Ephemeral RAM</div>
-            <div class="subtitle">Distributed • Privacy-First • Lightning Fast</div>
+            <div class="tagline">Ephemeral Coordination Layer for the Agent Web</div>
+            <div class="subtitle">The missing infrastructure primitive for autonomous AI agents</div>
         </header>
 
         <div class="hero-section">
             <div class="hero-description">
-                <p>A revolutionary distributed ephemeral storage system that prioritizes <span class="highlight">privacy</span>, <span class="highlight">speed</span>, and <span class="highlight">decentralization</span>. Data exists only in memory, automatically expires, and remains encrypted end-to-end.</p>
+                <p>A <span class="highlight">zero-trust</span>, <span class="highlight">self-expiring</span>, distributed scratchpad for AI agents. Store temporary data, coordinate across agents, and let it disappear automatically. No accounts, no auth, no traces.</p>
             </div>
         </div>
 
         <div class="features-grid">
             <div class="feature-card">
-                <div class="feature-icon">🔒</div>
-                <h3>Client-Side Encryption</h3>
-                <p>AES-256-GCM encryption happens on your device. Nodes store encrypted blobs without knowing the content.</p>
+                <div class="feature-icon">></div>
+                <h3>Zero Configuration</h3>
+                <p>docker run repram/node and you're on the network. No setup, no accounts, no API keys. Just a node that stores and replicates.</p>
             </div>
-            
+
             <div class="feature-card">
-                <div class="feature-icon">⚡</div>
-                <h3>Memory-Only Storage</h3>
-                <p>Pure RAM storage with automatic TTL expiration. No persistence means no data forensics.</p>
+                <div class="feature-icon">~</div>
+                <h3>Self-Expiring Data</h3>
+                <p>Mandatory TTL on every write. Data disappears automatically — no cleanup, no data trails, no forensic footprint.</p>
             </div>
-            
+
             <div class="feature-card">
-                <div class="feature-icon">🌐</div>
-                <h3>Distributed Network</h3>
-                <p>Gossip protocol replication across nodes with configurable quorum for availability.</p>
+                <div class="feature-icon">@</div>
+                <h3>Agent-Native</h3>
+                <p>MCP tools for store, retrieve, and list. Designed for AI agent workflows — dead drops, scratchpads, and coordination tokens.</p>
             </div>
-            
+
             <div class="feature-card">
-                <div class="feature-icon">🚀</div>
-                <h3>High Performance</h3>
-                <p>REST API with Prometheus metrics, security middleware, and optimized for speed.</p>
+                <div class="feature-icon">#</div>
+                <h3>Distributed & Replicated</h3>
+                <p>Gossip protocol replication with quorum writes. No single point of failure. Nodes discover peers via DNS bootstrap.</p>
             </div>
         </div>
 
-        <div class="demo-section">
-            <h2>Live Demonstrations</h2>
-            <div class="demo-grid">
-                <div class="demo-card">
-                    <h3>FADE Ephemeral Chat</h3>
-                    <p>Experience ephemeral messaging with automatic expiration. Messages disappear forever after their TTL expires.</p>
-                    <div class="demo-actions">
-                        <span class="demo-btn primary disabled">Undergoing Maintenance</span>
-                        <a href="https://github.com/ticktockbent/REPRAM/tree/main/demos/fade" class="demo-btn secondary">Documentation</a>
-                    </div>
+        <div class="use-cases">
+            <h2>Use Cases</h2>
+            <div class="use-case-grid">
+                <div class="use-case">
+                    <h4>Agent-to-Agent Handoff</h4>
+                    <p>Dead drop pattern: Agent A stores a payload, Agent B retrieves it by key. Data self-destructs after TTL.</p>
                 </div>
-                
-                <div class="demo-card">
-                    <h3>Synth-Tree Visualization</h3>
-                    <p>Interactive simulation of REPRAM's tree discovery protocol showing how nodes self-organize into efficient hierarchical networks.</p>
-                    <div class="demo-actions">
-                        <a href="synth-tree/" class="demo-btn primary">Live Demo</a>
-                        <a href="https://github.com/ticktockbent/REPRAM/tree/main/demos/synth-tree" class="demo-btn secondary">Documentation</a>
-                    </div>
+                <div class="use-case">
+                    <h4>Multi-Step Reasoning</h4>
+                    <p>Scratchpad for intermediate state across complex agent workflows. Store, retrieve, update, let expire.</p>
+                </div>
+                <div class="use-case">
+                    <h4>Coordination Tokens</h4>
+                    <p>Lightweight distributed locking. Key presence means "in progress" — expiration means "available."</p>
+                </div>
+                <div class="use-case">
+                    <h4>Session State</h4>
+                    <p>Ephemeral workflow context that doesn't persist. No database, no cleanup jobs, no stale state.</p>
                 </div>
             </div>
         </div>
 
         <div class="architecture-section">
-            <h2>Architecture Overview</h2>
+            <h2>Architecture</h2>
             <div class="arch-grid">
                 <div class="arch-component">
-                    <h4>Open Source Node</h4>
-                    <p>MIT licensed server that stores unencrypted data. Run your own instances anywhere.</p>
-                    <div class="component-tech">Go • REST API • Memory Storage</div>
+                    <h4>REPRAM Node</h4>
+                    <p>In-memory key-value store with mandatory TTL, gossip replication, and quorum writes. Run anywhere — Docker, bare metal, cloud.</p>
+                    <div class="component-tech">Go / REST API / Gossip Protocol</div>
                 </div>
-                
+
                 <div class="arch-component">
-                    <h4>Proprietary SDK</h4>
-                    <p>Commercial client library handling encryption, key management, and node communication.</p>
-                    <div class="component-tech">Go • AES-256-GCM • HTTP Client</div>
-                </div>
-                
-                <div class="arch-component">
-                    <h4>Gossip Protocol</h4>
-                    <p>Peer-to-peer replication ensuring data availability across distributed node clusters.</p>
-                    <div class="component-tech">gRPC • Bootstrap • Quorum</div>
+                    <h4>MCP Server</h4>
+                    <p>Gives AI agents direct access to REPRAM via Model Context Protocol. Three tools: store, retrieve, list.</p>
+                    <div class="component-tech">TypeScript / stdio transport / npx</div>
                 </div>
             </div>
         </div>
@@ -123,77 +116,55 @@
             <div class="code-blocks">
                 <div class="code-block">
                     <h4>Run a Node</h4>
-                    <pre><code>git clone https://github.com/ticktockbent/REPRAM.git
-cd REPRAM
-make build
-./bin/node</code></pre>
+                    <pre><code>docker run -p 8080:8080 -p 9090:9090 repram/node</code></pre>
                 </div>
-                
+
                 <div class="code-block">
-                    <h4>Docker Deployment</h4>
-                    <pre><code>docker-compose up -d
-# 3-node cluster ready at localhost:8080-8082</code></pre>
+                    <h4>Give an Agent Access</h4>
+                    <pre><code>{
+  "mcpServers": {
+    "repram": {
+      "command": "npx",
+      "args": ["repram-mcp"],
+      "env": {
+        "REPRAM_URL": "http://localhost:8080"
+      }
+    }
+  }
+}</code></pre>
                 </div>
-                
+
                 <div class="code-block">
-                    <h4>Store Data (Raw API)</h4>
-                    <pre><code>curl -X PUT "http://localhost:8080/data/mykey?ttl=300" \
-  -d "sensitive data"</code></pre>
+                    <h4>Store & Retrieve</h4>
+                    <pre><code># Store with 5-minute TTL
+curl -X PUT -H "X-TTL: 300" \
+  -d "hello" http://localhost:8080/v1/data/mykey
+
+# Retrieve
+curl http://localhost:8080/v1/data/mykey
+
+# List keys
+curl http://localhost:8080/v1/keys</code></pre>
                 </div>
             </div>
         </div>
 
-        <div class="use-cases">
-            <h2>Use Cases</h2>
-            <div class="use-case-grid">
-                <div class="use-case">
-                    <h4>🔐 Secure Communications</h4>
-                    <p>Ephemeral messaging, secure file sharing, temporary credentials</p>
+        <div class="demo-section">
+            <h2>Try It</h2>
+            <div class="demo-grid">
+                <div class="demo-card">
+                    <h3>Local Cluster</h3>
+                    <p>Spin up a 3-node private cluster with docker compose. Test gossip replication, quorum writes, and TTL expiration locally.</p>
+                    <div class="demo-actions">
+                        <span class="demo-btn primary">docker compose up --build</span>
+                    </div>
                 </div>
-                <div class="use-case">
-                    <h4>🎮 Gaming & Sessions</h4>
-                    <p>Game state, user sessions, temporary matchmaking data</p>
-                </div>
-                <div class="use-case">
-                    <h4>💼 Enterprise Privacy</h4>
-                    <p>Compliance-safe data processing, temporary workflows, audit-free operations</p>
-                </div>
-                <div class="use-case">
-                    <h4>🌍 Edge Computing</h4>
-                    <p>Distributed caching, CDN replacement, regional data processing</p>
-                </div>
-            </div>
-        </div>
 
-        <div class="status-section">
-            <h2>Project Status</h2>
-            <div class="status-grid">
-                <div class="status-item">
-                    <div class="status-indicator active"></div>
-                    <div>
-                        <strong>Core Storage</strong>
-                        <span>Production Ready</span>
-                    </div>
-                </div>
-                <div class="status-item">
-                    <div class="status-indicator active"></div>
-                    <div>
-                        <strong>Gossip Protocol</strong>
-                        <span>Beta Testing</span>
-                    </div>
-                </div>
-                <div class="status-item">
-                    <div class="status-indicator development"></div>
-                    <div>
-                        <strong>SDK Distribution</strong>
-                        <span>In Development</span>
-                    </div>
-                </div>
-                <div class="status-item">
-                    <div class="status-indicator planning"></div>
-                    <div>
-                        <strong>Auto-Discovery</strong>
-                        <span>Research Phase</span>
+                <div class="demo-card">
+                    <h3>API Test</h3>
+                    <p>Store data on one node, retrieve from another. Watch it replicate via gossip and disappear when the TTL expires.</p>
+                    <div class="demo-actions">
+                        <span class="demo-btn primary">curl localhost:8081/v1/health</span>
                     </div>
                 </div>
             </div>
@@ -201,13 +172,14 @@ make build
 
         <footer>
             <div class="footer-links">
-                <a href="https://github.com/ticktockbent/REPRAM">GitHub Repository</a>
+                <a href="https://github.com/ticktockbent/REPRAM">GitHub</a>
                 <a href="https://github.com/ticktockbent/REPRAM/blob/main/docs/whitepaper.md">Whitepaper</a>
+                <a href="https://github.com/ticktockbent/REPRAM/blob/main/docs/core-principles.md">Core Principles</a>
                 <a href="https://github.com/ticktockbent/REPRAM/blob/main/LICENSE">MIT License</a>
                 <a href="https://github.com/ticktockbent/REPRAM/issues">Report Issues</a>
             </div>
             <div class="footer-version">
-                REPRAM v1.0 • Ephemeral by Design • Privacy by Default
+                REPRAM v2 / Ephemeral by Design / Zero Trust by Default
             </div>
             <div class="footer-credits">
                 Developed by <a href="https://www.clocktowerassoc.com">Clocktower and Associates</a>
