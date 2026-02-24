@@ -6,6 +6,7 @@ All notable changes to REPRAM are documented here.
 
 ### Added
 - **Peer failure detection** — evicts peers after 3 consecutive failed health checks (~90s); peers rejoin automatically via bootstrap ([#25](https://github.com/TickTockBent/repram/issues/25))
+- **Peer eviction metrics** — four Prometheus metrics for cluster health: `repram_peers_active` (gauge), `repram_peer_evictions_total`, `repram_peer_joins_total`, `repram_ping_failures_total` (counters) ([#28](https://github.com/TickTockBent/repram/issues/28))
 - **Enclave-scoped replication** — `REPRAM_ENCLAVE` env var defines replication boundaries; nodes in the same enclave replicate data, all nodes share topology; dynamic quorum based on enclave size
 - `/v1/topology` endpoint — returns full peer list with enclave membership
 - `REPRAM_TRUST_PROXY` env var — proxy headers (`X-Forwarded-For`, `X-Real-IP`) now ignored by default; set to `true` when behind a reverse proxy ([#30](https://github.com/TickTockBent/repram/issues/30))
@@ -20,7 +21,7 @@ All notable changes to REPRAM are documented here.
 - `REPRAM_MAX_STORAGE_MB` env var — configurable capacity limit, returns HTTP 507 when full ([#20](https://github.com/TickTockBent/repram/issues/20))
 - `REPRAM_LOG_LEVEL` env var — leveled logging (debug/info/warn/error), replaces raw fmt.Printf ([#12](https://github.com/TickTockBent/repram/issues/12))
 - **Integration tests** — 7 in-process tests with real HTTP transport: bootstrap discovery, write replication, quorum confirmation, enclave isolation, quorum timeout, 3-node topology, 3-node replication ([#26](https://github.com/TickTockBent/repram/issues/26))
-- Test suite: 50 tests covering storage, middleware, gossip auth, peer failure detection, proxy trust, and distributed integration (CRUD, TTL, copy safety, capacity, concurrency with race detector, scanner blocking, client passthrough, rate limiter, IP extraction, HMAC sign/verify, eviction/rejoin, bootstrap, replication, enclave isolation, quorum timeout) ([#11](https://github.com/TickTockBent/repram/issues/11), [#26](https://github.com/TickTockBent/repram/issues/26))
+- Test suite: 51 tests covering storage, middleware, gossip auth, peer failure detection, eviction metrics, proxy trust, and distributed integration ([#11](https://github.com/TickTockBent/repram/issues/11), [#26](https://github.com/TickTockBent/repram/issues/26), [#28](https://github.com/TickTockBent/repram/issues/28))
 - CI test workflow — runs `make build` + `go test -race` on push to main and PRs
 - CI npm publish workflow — publishes `repram-mcp` to npm on `mcp-v*` tags ([#13](https://github.com/TickTockBent/repram/issues/13))
 - `workflow_dispatch` trigger on Docker build workflow
