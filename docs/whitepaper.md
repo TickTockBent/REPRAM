@@ -50,6 +50,17 @@ If you need confidentiality *during* the TTL window, encrypt your data before st
 * **Heartbeat / presence**: An agent writes a key on a recurring interval with a short TTL. Key existence is the liveness signal; key expiration is the failure notification. The TTL *is* the failure detector — no health check infrastructure required.
 * **State machine**: A job ID key whose value transitions through states via overwrites. The TTL acts as a staleness guarantee — if a job writes `in_progress` with a 10-minute TTL and crashes, the key expires, signaling incompletion to any polling agent. Overwrites reset the TTL, so each state transition refreshes the window.
 
+## Beyond Agents — REPRAM as a Primitive
+
+REPRAM is `pipe`, not `grep`. It stores bytes, replicates them, and destroys them on schedule. It doesn't interpret what flows through it. The agent patterns above are the primary motivation, but the primitive is general-purpose:
+
+* **Circuit breaker**: A service writes a `healthy` key with short TTL. Consumers check before calling. Service dies → key expires → consumers back off.
+* **Ephemeral broadcast**: Write config or feature flags to a known key. Consumers poll. Stop writing and the value expires — automatic rollback.
+* **Secure relay**: Encrypt a payload, store it under a key shared through a side channel. Data self-destructs after TTL. No logs, no accounts, no metadata trail.
+* **Session continuity**: Store session state under a session ID with rolling TTL. Any edge server reads current state. User stops interacting → session expires naturally.
+* **Distributed deduplication**: Write a key when processing an event. Check before processing — key present means already handled. TTL = dedup window.
+* **Ephemeral pub/sub**: Publisher overwrites a known key on interval. Subscribers poll. No broker, no subscription management. Lossy by design.
+
 ## Deployment Model
 
 * Single Go binary, single Docker image

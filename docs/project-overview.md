@@ -47,6 +47,22 @@ If you need confidentiality during the TTL window, encrypt data before storing i
 
 Both patterns rely on silent overwrite being the defined behavior for existing keys, and reinforce why DELETE doesn't belong in the protocol — in the heartbeat pattern, the *absence* of a write is the meaningful signal. The system's only job is to faithfully forget.
 
+## Beyond Agents — REPRAM as a Primitive
+
+REPRAM is `pipe`, not `grep`. It doesn't know or care what flows through it — it stores bytes, replicates them, and destroys them on schedule. The agent patterns above are the primary use case, but the primitive is general-purpose. Any system that needs temporary, replicated, self-cleaning storage can use REPRAM without modification.
+
+**Circuit breaker** — A service writes a `healthy` key with short TTL. Consumers check before calling. Service dies → key expires → consumers back off. Distributed circuit breaking without a circuit breaker library.
+
+**Ephemeral broadcast** — Write a value to a known key; anyone polling that key gets the current state. Config distribution, feature flags, announcement channels. Stop writing and the broadcast expires — automatic rollback with zero cleanup.
+
+**Secure relay** — Encrypt a payload, store it, share the key through a side channel. Recipient retrieves it. Data self-destructs after TTL. No server logs, no accounts, no metadata trail. The infrastructure doesn't know what it carried and can't be compelled to remember. Works for anything from whistleblower drops to encrypted military communications.
+
+**Session continuity** — Store session state under a session ID, overwrite on each interaction to refresh TTL. Any edge server can read the current state. User stops interacting → session expires naturally. No session store, no garbage collection, no stale session cleanup jobs. Enterprise browser session replication without enterprise infrastructure.
+
+**Distributed deduplication** — Write a key when processing an event. Before processing, check if key exists. Key present = already handled. TTL = dedup window. No dedup database, no purge logic.
+
+**Ephemeral pub/sub** — Publisher overwrites a known key on interval. Subscribers poll. No subscription management, no broker, no message ordering. Lossy by design — and for status dashboards, approximate state sync, or coordination signals, that's exactly right.
+
 ## Technology Stack
 
 * **Language**: Go (node), TypeScript (MCP server)
