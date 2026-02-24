@@ -12,10 +12,11 @@ import (
 type NodeID string
 
 type Node struct {
-	ID         NodeID `json:"id"`
-	Address    string `json:"address"`
-	Port       int    `json:"port"`        // Gossip port
-	HTTPPort   int    `json:"http_port"`   // HTTP API port
+	ID       NodeID `json:"id"`
+	Address  string `json:"address"`
+	Port     int    `json:"port"`      // Gossip port
+	HTTPPort int    `json:"http_port"` // HTTP API port
+	Enclave  string `json:"enclave"`   // Replication boundary (default: "default")
 }
 
 func (n *Node) String() string {
@@ -171,6 +172,7 @@ func (p *Protocol) handlePing(msg *Message) error {
 		To:        msg.From,
 		Timestamp: time.Now(),
 		MessageID: generateMessageID(),
+		NodeInfo:  p.localNode, // Include our identity and enclave membership
 	}
 
 	p.peersMutex.RLock()
@@ -184,6 +186,18 @@ func (p *Protocol) handlePing(msg *Message) error {
 }
 
 func (p *Protocol) handlePong(msg *Message) error {
+	// Update peer's enclave membership if included
+	if msg.NodeInfo != nil {
+		if msg.NodeInfo.Enclave == "" {
+			msg.NodeInfo.Enclave = "default"
+		}
+		p.peersMutex.Lock()
+		if existing, ok := p.peers[msg.NodeInfo.ID]; ok && existing.Enclave != msg.NodeInfo.Enclave {
+			existing.Enclave = msg.NodeInfo.Enclave
+			logging.Debug("[%s] Updated peer %s enclave to %s via PONG", p.localNode.ID, msg.NodeInfo.ID, msg.NodeInfo.Enclave)
+		}
+		p.peersMutex.Unlock()
+	}
 	return nil
 }
 
@@ -192,15 +206,25 @@ func (p *Protocol) handleSync(msg *Message) error {
 
 	// SYNC messages carry information about new nodes
 	if msg.NodeInfo != nil {
+		// Normalize empty enclave to "default" (backwards compat with pre-enclave nodes)
+		if msg.NodeInfo.Enclave == "" {
+			msg.NodeInfo.Enclave = "default"
+		}
+
 		// Check if we already know this peer
 		p.peersMutex.RLock()
-		_, exists := p.peers[msg.NodeInfo.ID]
+		existing, exists := p.peers[msg.NodeInfo.ID]
 		p.peersMutex.RUnlock()
 
 		if !exists {
 			p.addPeer(msg.NodeInfo)
-			logging.Info("[%s] Learned about new peer %s via SYNC from %s",
-				p.localNode.ID, msg.NodeInfo.ID, msg.From)
+			logging.Info("[%s] Learned about new peer %s (enclave: %s) via SYNC from %s",
+				p.localNode.ID, msg.NodeInfo.ID, msg.NodeInfo.Enclave, msg.From)
+		} else if existing.Enclave != msg.NodeInfo.Enclave {
+			// Update enclave if it changed (e.g., node upgraded and now reports enclave)
+			p.addPeer(msg.NodeInfo)
+			logging.Info("[%s] Updated peer %s enclave: %s → %s (via SYNC from %s)",
+				p.localNode.ID, msg.NodeInfo.ID, existing.Enclave, msg.NodeInfo.Enclave, msg.From)
 		} else {
 			logging.Debug("[%s] Already know peer %s (SYNC from %s)",
 				p.localNode.ID, msg.NodeInfo.ID, msg.From)

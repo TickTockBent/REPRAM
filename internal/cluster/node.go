@@ -44,12 +44,16 @@ type Store interface {
 	Scan() []string
 }
 
-func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int, replicationFactor int, maxStorageBytes int64, writeTimeout time.Duration, clusterSecret string) *ClusterNode {
+func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int, replicationFactor int, maxStorageBytes int64, writeTimeout time.Duration, clusterSecret string, enclave string) *ClusterNode {
+	if enclave == "" {
+		enclave = "default"
+	}
 	localNode := &gossip.Node{
 		ID:       gossip.NodeID(nodeID),
 		Address:  address,
 		Port:     gossipPort,
 		HTTPPort: httpPort,
+		Enclave:  enclave,
 	}
 
 	protocol := gossip.NewProtocol(localNode, replicationFactor, clusterSecret)
@@ -262,4 +266,9 @@ func (cn *ClusterNode) HandleBootstrap(req *gossip.BootstrapRequest) *gossip.Boo
 // ClusterSecret returns the configured cluster secret (empty string if open mode).
 func (cn *ClusterNode) ClusterSecret() string {
 	return cn.clusterSecret
+}
+
+// Enclave returns this node's enclave name.
+func (cn *ClusterNode) Enclave() string {
+	return cn.localNode.Enclave
 }

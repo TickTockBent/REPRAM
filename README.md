@@ -154,6 +154,7 @@ curl http://localhost:8080/v1/metrics
 | `REPRAM_ADDRESS` | `localhost` | Advertised address for this node |
 | `REPRAM_NETWORK` | `public` | `public` for DNS bootstrap, `private` for manual peers only |
 | `REPRAM_PEERS` | _(empty)_ | Comma-separated bootstrap peers (`host:httpPort`) |
+| `REPRAM_ENCLAVE` | `default` | Enclave name. Nodes in the same enclave replicate data to each other. Nodes in different enclaves share topology but not data. |
 | `REPRAM_REPLICATION` | `3` | Quorum replication factor |
 | `REPRAM_MIN_TTL` | `300` | Minimum TTL in seconds (5 minutes) |
 | `REPRAM_MAX_TTL` | `86400` | Maximum TTL in seconds (24 hours) |

@@ -13,10 +13,11 @@ import (
 
 // BootstrapRequest is sent when a node wants to join the cluster
 type BootstrapRequest struct {
-	NodeID      string `json:"node_id"`
-	Address     string `json:"address"`
-	GossipPort  int    `json:"gossip_port"`
-	HTTPPort    int    `json:"http_port"`
+	NodeID     string `json:"node_id"`
+	Address    string `json:"address"`
+	GossipPort int    `json:"gossip_port"`
+	HTTPPort   int    `json:"http_port"`
+	Enclave    string `json:"enclave,omitempty"` // Empty treated as "default"
 }
 
 // BootstrapResponse contains the current cluster topology
@@ -34,6 +35,7 @@ func (p *Protocol) Bootstrap(ctx context.Context, seedNodes []string) error {
 		Address:    p.localNode.Address,
 		GossipPort: p.localNode.Port,
 		HTTPPort:   p.localNode.HTTPPort,
+		Enclave:    p.localNode.Enclave,
 	}
 
 	// Try each seed node until we get a successful response
@@ -105,11 +107,16 @@ func (p *Protocol) sendBootstrapRequest(ctx context.Context, seedAddr string, re
 // HandleBootstrap processes incoming bootstrap requests
 func (p *Protocol) HandleBootstrap(req *BootstrapRequest) *BootstrapResponse {
 	// Create node info from request
+	enclave := req.Enclave
+	if enclave == "" {
+		enclave = "default"
+	}
 	newNode := &Node{
 		ID:       NodeID(req.NodeID),
 		Address:  req.Address,
 		Port:     req.GossipPort,
 		HTTPPort: req.HTTPPort,
+		Enclave:  enclave,
 	}
 
 	// Add the new node as a peer

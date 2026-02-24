@@ -52,6 +52,7 @@ func main() {
 	maxStorageMB := envInt("REPRAM_MAX_STORAGE_MB", 0)    // 0 = unlimited
 	writeTimeout := envInt("REPRAM_WRITE_TIMEOUT", 5)      // seconds
 	clusterSecret := os.Getenv("REPRAM_CLUSTER_SECRET")
+	enclave := os.Getenv("REPRAM_ENCLAVE") // default: "default"
 	network := os.Getenv("REPRAM_NETWORK")
 	if network == "" {
 		network = "public"
@@ -74,7 +75,7 @@ func main() {
 		bootstrapNodes = append(bootstrapNodes, resolved...)
 	}
 
-	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024, time.Duration(writeTimeout)*time.Second, clusterSecret)
+	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024, time.Duration(writeTimeout)*time.Second, clusterSecret, enclave)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -103,7 +104,7 @@ func main() {
 	peerCount := len(bootstrapNodes)
 	logging.Info("REPRAM node online. Peers: %d. Network: %s", peerCount, network)
 	logging.Info("  Node ID: %s", nodeID)
-	logging.Info("  HTTP: :%d  Gossip: :%d", httpPort, gossipPort)
+	logging.Info("  HTTP: :%d  Gossip: :%d  Enclave: %s", httpPort, gossipPort, clusterNode.Enclave())
 	logging.Info("  Replication: %d  TTL range: %d-%ds  Write timeout: %ds", replicationFactor, minTTL, maxTTL, writeTimeout)
 	if clusterSecret != "" {
 		logging.Info("  Gossip authentication: HMAC-SHA256 (cluster secret configured)")
@@ -225,6 +226,7 @@ func (s *HTTPServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 		"status":  "healthy",
 		"node_id": s.nodeID,
 		"network": s.network,
+		"enclave": s.clusterNode.Enclave(),
 	})
 }
 
@@ -237,6 +239,7 @@ func (s *HTTPServer) statusHandler(w http.ResponseWriter, r *http.Request) {
 		"status":     "healthy",
 		"node_id":    s.nodeID,
 		"network":    s.network,
+		"enclave":    s.clusterNode.Enclave(),
 		"uptime":     time.Since(s.startTime).String(),
 		"goroutines": runtime.NumGoroutine(),
 		"memory": map[string]interface{}{
@@ -392,11 +395,16 @@ func (s *HTTPServer) gossipHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if simpleMsg.NodeInfo != nil {
+		enclave := simpleMsg.NodeInfo.Enclave
+		if enclave == "" {
+			enclave = "default"
+		}
 		gossipMsg.NodeInfo = &gossip.Node{
 			ID:       gossip.NodeID(simpleMsg.NodeInfo.ID),
 			Address:  simpleMsg.NodeInfo.Address,
 			Port:     simpleMsg.NodeInfo.Port,
 			HTTPPort: simpleMsg.NodeInfo.HTTPPort,
+			Enclave:  enclave,
 		}
 	}
 

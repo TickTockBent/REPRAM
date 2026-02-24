@@ -31,6 +31,7 @@ type SimpleNodeInfo struct {
 	Address  string `json:"address"`
 	Port     int    `json:"port"`
 	HTTPPort int    `json:"http_port"`
+	Enclave  string `json:"enclave,omitempty"` // Empty treated as "default" for backwards compat
 }
 
 // HTTPTransport implements gossip communication over HTTP
@@ -86,6 +87,7 @@ func (t *HTTPTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 			Address:  msg.NodeInfo.Address,
 			Port:     msg.NodeInfo.Port,
 			HTTPPort: msg.NodeInfo.HTTPPort,
+			Enclave:  msg.NodeInfo.Enclave,
 		}
 	}
 	
