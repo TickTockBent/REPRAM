@@ -41,6 +41,12 @@ If you need confidentiality during the TTL window, encrypt data before storing i
 
 **Coordination token** — Multiple agents treat key presence as a signal. A key existing means "task claimed" or "in progress"; its expiration means "available." Lightweight distributed locking without a lock server.
 
+**Heartbeat / presence** — An agent writes a key on a recurring interval with a short TTL. The key's existence is the liveness signal. If the writer stops writing, the key expires — and the absence is the failure notification. No health check infrastructure, no polling, no failure detector. The TTL is the failure detector.
+
+**State machine** — A job ID key whose value transitions through states via overwrites (`queued` → `in_progress` → `complete`). The TTL acts as a staleness guarantee: if a job writes `in_progress` with a 10-minute TTL and then crashes, the key expires and any agent polling it knows the job didn't complete. Overwrites reset the TTL, so each state transition refreshes the window.
+
+Both patterns rely on silent overwrite being the defined behavior for existing keys, and reinforce why DELETE doesn't belong in the protocol — in the heartbeat pattern, the *absence* of a write is the meaningful signal. The system's only job is to faithfully forget.
+
 ## Technology Stack
 
 * **Language**: Go (node), TypeScript (MCP server)

@@ -88,8 +88,12 @@
                     <p>Lightweight distributed locking. Key presence means "in progress" — expiration means "available."</p>
                 </div>
                 <div class="use-case">
-                    <h4>Session State</h4>
-                    <p>Ephemeral workflow context that doesn't persist. No database, no cleanup jobs, no stale state.</p>
+                    <h4>Heartbeat / Presence</h4>
+                    <p>Write a key on interval with short TTL. Key exists = alive. Key expires = failure detected. The TTL is the failure detector.</p>
+                </div>
+                <div class="use-case">
+                    <h4>State Machine</h4>
+                    <p>Job key transitions through states via overwrites. TTL acts as staleness guarantee — if the writer crashes, the key expires.</p>
                 </div>
             </div>
         </div>

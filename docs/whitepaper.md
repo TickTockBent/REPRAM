@@ -47,6 +47,8 @@ If you need confidentiality *during* the TTL window, encrypt your data before st
 * **Dead drop**: The core pattern. Agent A stores a payload under a key. Agent B retrieves it by that key. The data self-destructs when the TTL expires. Neither agent needs to know the other's endpoint — they coordinate through the shared key.
 * **Scratchpad**: An agent stores intermediate state across multi-step workflows, retrieves and updates it as it progresses, and lets it expire when done.
 * **Coordination token**: Key presence means "claimed" or "in progress"; expiration means "available." Lightweight distributed locking without a lock server.
+* **Heartbeat / presence**: An agent writes a key on a recurring interval with a short TTL. Key existence is the liveness signal; key expiration is the failure notification. The TTL *is* the failure detector — no health check infrastructure required.
+* **State machine**: A job ID key whose value transitions through states via overwrites. The TTL acts as a staleness guarantee — if a job writes `in_progress` with a 10-minute TTL and crashes, the key expires, signaling incompletion to any polling agent. Overwrites reset the TTL, so each state transition refreshes the window.
 
 ## Deployment Model
 
