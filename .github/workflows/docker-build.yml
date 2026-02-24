@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  IMAGE_NAME: repram/node
+  IMAGE_NAME: ticktockbent/repram-node
 
 jobs:
   build:

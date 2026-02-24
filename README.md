@@ -13,7 +13,7 @@ Think of it as a dead drop network: you store a payload under a key with a time-
 Run a node:
 
 ```bash
-docker run -p 8080:8080 -p 9090:9090 repram/node
+docker run -p 8080:8080 -p 9090:9090 ticktockbent/repram-node
 ```
 
 Give an agent access (MCP config for Claude Code, Cursor, etc.):
@@ -50,7 +50,7 @@ To run a local cluster for testing before joining the public network:
 
 ```bash
 # Set REPRAM_NETWORK=private to disable DNS-based peer discovery
-docker run -p 8080:8080 -p 9090:9090 -e REPRAM_NETWORK=private repram/node
+docker run -p 8080:8080 -p 9090:9090 -e REPRAM_NETWORK=private ticktockbent/repram-node
 ```
 
 Or spin up a 3-node cluster with docker compose:
@@ -165,7 +165,7 @@ curl http://localhost:8080/v1/metrics
 ```bash
 make build          # Build the binary to bin/repram
 make test           # Run tests
-make docker-build   # Build Docker image (repram/node:latest)
+make docker-build   # Build Docker image (ticktockbent/repram-node:latest)
 ```
 
 ## Documentation

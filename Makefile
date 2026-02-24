@@ -16,10 +16,10 @@ clean:
 	rm -rf bin/
 
 docker-build:
-	docker build -t repram/node:latest .
+	docker build -t ticktockbent/repram-node:latest .
 
 docker-run:
-	docker run -p 8080:8080 -p 9090:9090 repram/node:latest
+	docker run -p 8080:8080 -p 9090:9090 ticktockbent/repram-node:latest
 
 docker-compose-up:
 	docker-compose up --build
