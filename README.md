@@ -57,7 +57,7 @@ Or spin up a 3-node cluster with docker compose:
 
 ```bash
 docker compose up --build
-# Nodes available at localhost:8081, :8082, :8083
+# Nodes available at localhost:8091, :8092, :8093
 ```
 
 The included `docker-compose.yml` configures three nodes with gossip replication in a private network — useful for development and integration testing.

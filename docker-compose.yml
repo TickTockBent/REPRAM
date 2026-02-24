@@ -1,10 +1,8 @@
-version: '3.8'
-
 services:
   node1:
     build: .
     ports:
-      - "8081:8080"
+      - "8091:8080"
       - "9091:9090"
     environment:
       - REPRAM_NODE_ID=node1
@@ -14,6 +12,7 @@ services:
       - REPRAM_NETWORK=private
       - REPRAM_PEERS=node2:8080,node3:8080
       - REPRAM_REPLICATION=3
+      - REPRAM_ENCLAVE=enclave-a
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/v1/health"]
       interval: 30s
@@ -26,7 +25,7 @@ services:
   node2:
     build: .
     ports:
-      - "8082:8080"
+      - "8092:8080"
       - "9092:9090"
     environment:
       - REPRAM_NODE_ID=node2
@@ -36,8 +35,10 @@ services:
       - REPRAM_NETWORK=private
       - REPRAM_PEERS=node1:8080,node3:8080
       - REPRAM_REPLICATION=3
+      - REPRAM_ENCLAVE=enclave-a
     depends_on:
-      - node1
+      node1:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/v1/health"]
       interval: 30s
@@ -50,7 +51,7 @@ services:
   node3:
     build: .
     ports:
-      - "8083:8080"
+      - "8093:8080"
       - "9093:9090"
     environment:
       - REPRAM_NODE_ID=node3
@@ -60,9 +61,12 @@ services:
       - REPRAM_NETWORK=private
       - REPRAM_PEERS=node1:8080,node2:8080
       - REPRAM_REPLICATION=3
+      - REPRAM_ENCLAVE=enclave-b
     depends_on:
-      - node1
-      - node2
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/v1/health"]
       interval: 30s
