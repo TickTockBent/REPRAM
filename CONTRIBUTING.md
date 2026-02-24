@@ -34,7 +34,6 @@ By participating in this project, you agree to maintain a respectful and collabo
 - **Read the documentation**:
   - [Core Principles](docs/core-principles.md) - MUST READ before contributing
   - [Project Overview](docs/project-overview.md)
-  - [v2 Architecture](REPRAM-v2-Architecture.md)
 
 - **Check existing issues** to see if someone's already working on it
 - **Open an issue** to discuss significant changes before implementing
