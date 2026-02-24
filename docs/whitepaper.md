@@ -14,7 +14,7 @@ There's no lightweight primitive designed for data that *should not persist*. Ev
 
 REPRAM provides a simple protocol: PUT data with a key and a TTL, GET it by key, list keys by prefix. Data is replicated across nodes via gossip protocol with quorum confirmation. When the TTL expires, the data is deleted from all nodes — automatically, permanently, with no recovery mechanism.
 
-Agents access REPRAM through an MCP server that exposes three tools: `repram_store`, `repram_retrieve`, and `repram_list_keys`.
+Agents access REPRAM through an MCP server that exposes four tools: `repram_store`, `repram_retrieve`, `repram_exists`, and `repram_list_keys`.
 
 ## The Security Model: Privacy Through Transience
 

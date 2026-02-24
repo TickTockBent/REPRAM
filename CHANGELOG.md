@@ -5,22 +5,31 @@ All notable changes to REPRAM are documented here.
 ## [Unreleased]
 
 ### Added
-- `docs/patterns.md` — full usage pattern catalog (agent patterns + general-purpose primitives)
+- `docs/patterns.md` — full usage pattern catalog (agent patterns + general-purpose primitives + key naming conventions)
+- `docs/encryption-example.md` — client-side AES-256-GCM example with opaque key derivation ([#18](https://github.com/TickTockBent/repram/issues/18))
 - Heartbeat/presence and state machine agent patterns across all documentation
 - "Beyond Agents" general-purpose patterns: circuit breaker, ephemeral broadcast, secure relay, session continuity, distributed deduplication, ephemeral pub/sub
-- `REPRAM_MAX_STORAGE_MB` env var — configurable capacity limit, returns HTTP 507 when full
-- `REPRAM_LOG_LEVEL` env var — leveled logging (debug/info/warn/error), replaces raw fmt.Printf
-- Test suite: 32 tests covering storage (CRUD, TTL, copy safety, capacity, concurrency with race detector) and middleware (scanner blocking, client passthrough, rate limiter, IP extraction)
+- Key naming conventions: namespace prefixes, key generation strategies, prefix listing, collision avoidance ([#17](https://github.com/TickTockBent/repram/issues/17))
+- `repram_exists` MCP tool — lightweight HEAD-based existence check with remaining TTL, avoids transferring payload ([#14](https://github.com/TickTockBent/repram/issues/14))
+- `REPRAM_WRITE_TIMEOUT` env var — configurable quorum timeout, default 5s (was hard-coded 2s) ([#21](https://github.com/TickTockBent/repram/issues/21))
+- `REPRAM_CLUSTER_SECRET` env var — HMAC-SHA256 authentication for gossip and bootstrap messages ([#22](https://github.com/TickTockBent/repram/issues/22))
+- `REPRAM_MAX_STORAGE_MB` env var — configurable capacity limit, returns HTTP 507 when full ([#20](https://github.com/TickTockBent/repram/issues/20))
+- `REPRAM_LOG_LEVEL` env var — leveled logging (debug/info/warn/error), replaces raw fmt.Printf ([#12](https://github.com/TickTockBent/repram/issues/12))
+- Test suite: 37 tests covering storage, middleware, and gossip auth (CRUD, TTL, copy safety, capacity, concurrency with race detector, scanner blocking, client passthrough, rate limiter, IP extraction, HMAC sign/verify) ([#11](https://github.com/TickTockBent/repram/issues/11))
 - CI test workflow — runs `make build` + `go test -race` on push to main and PRs
-- CI npm publish workflow — publishes `repram-mcp` to npm on `mcp-v*` tags
+- CI npm publish workflow — publishes `repram-mcp` to npm on `mcp-v*` tags ([#13](https://github.com/TickTockBent/repram/issues/13))
 - `workflow_dispatch` trigger on Docker build workflow
+- "Design Decisions: No DELETE" section in whitepaper — documents rationale for TTL-only lifecycle ([#19](https://github.com/TickTockBent/repram/issues/19))
 
 ### Changed
-- Docker image published as `ticktockbent/repram-node` (was `repram/node`)
-- `repram-mcp` published to npm as `repram-mcp@1.0.0` — `npx repram-mcp` now works
+- Docker image published as `ticktockbent/repram-node` (was `repram/node`) ([#23](https://github.com/TickTockBent/repram/issues/23))
+- `repram-mcp` published to npm — `npx repram-mcp` now works; current version 1.1.0
+- Quorum timeout returns 202 Accepted (stored locally, replication pending) instead of 500 ([#21](https://github.com/TickTockBent/repram/issues/21))
+- HEAD requests supported on `/v1/data/{key}` for lightweight existence checks
 - README links to `docs/patterns.md` instead of inlining the full pattern catalog
 - Website uses a single-line teaser for general-purpose patterns instead of a second grid
-- CONTRIBUTING.md placeholder URLs replaced with actual GitHub links
+- CONTRIBUTING.md placeholder URLs replaced with actual GitHub links ([#24](https://github.com/TickTockBent/repram/issues/24))
+- Updated `google.golang.org/protobuf` to v1.36.6 (CVE fix, Dependabot alert #11)
 
 ### Fixed
 - **MemoryStore.Get() data race** — removed `delete()` under read lock; expired entries now returned as not-found, cleaned up by background worker ([#8](https://github.com/TickTockBent/repram/issues/8))
@@ -31,10 +40,6 @@ All notable changes to REPRAM are documented here.
 ### Removed
 - GitHub Pages deployment workflow (site is hosted on Vercel)
 - Docker Scout security scan step (requires subscription)
-
-### Known Issues
-- Write quorum timeout too aggressive at 2s ([#21](https://github.com/TickTockBent/repram/issues/21))
-- No TLS on gossip transport ([#22](https://github.com/TickTockBent/repram/issues/22))
 
 ## [2.0.0] — 2025-12-19
 
