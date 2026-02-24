@@ -223,6 +223,257 @@ func gaugeValue(g interface{ Write(*dto.Metric) error }) float64 {
 	return m.GetGauge().GetValue()
 }
 
+// --- Gossip Fanout Tests ---
+
+func TestFanoutSize(t *testing.T) {
+	tests := []struct {
+		peerCount int
+		expected  int
+	}{
+		{0, 0},
+		{1, 1},
+		{4, 2},   // √4 = 2
+		{9, 3},   // √9 = 3
+		{10, 4},  // √10 ≈ 3.16 → ceil = 4
+		{25, 5},  // √25 = 5
+		{100, 10}, // √100 = 10
+		{50, 8},  // √50 ≈ 7.07 → ceil = 8
+	}
+	for _, tc := range tests {
+		got := fanoutSize(tc.peerCount)
+		if got != tc.expected {
+			t.Errorf("fanoutSize(%d) = %d, want %d", tc.peerCount, got, tc.expected)
+		}
+	}
+}
+
+func TestSelectRandomPeers(t *testing.T) {
+	peers := make([]*Node, 10)
+	for i := 0; i < 10; i++ {
+		peers[i] = &Node{ID: NodeID(fmt.Sprintf("peer-%d", i))}
+	}
+
+	// Select fewer than available — should get exactly n
+	selected := selectRandomPeers(peers, 3, "")
+	if len(selected) != 3 {
+		t.Fatalf("expected 3 peers, got %d", len(selected))
+	}
+
+	// Select more than available — should get all
+	selected = selectRandomPeers(peers, 20, "")
+	if len(selected) != 10 {
+		t.Fatalf("expected 10 peers (all), got %d", len(selected))
+	}
+
+	// Skip a specific peer
+	selected = selectRandomPeers(peers, 20, "peer-5")
+	if len(selected) != 9 {
+		t.Fatalf("expected 9 peers (skipping peer-5), got %d", len(selected))
+	}
+	for _, p := range selected {
+		if p.ID == "peer-5" {
+			t.Fatal("peer-5 should have been skipped")
+		}
+	}
+}
+
+func TestMarkSeenDedup(t *testing.T) {
+	p, _ := newTestProtocol()
+
+	// First call: message is new
+	if seen := p.MarkSeen("msg-1"); seen {
+		t.Fatal("first MarkSeen should return false (new message)")
+	}
+
+	// Second call: message is duplicate
+	if seen := p.MarkSeen("msg-1"); !seen {
+		t.Fatal("second MarkSeen should return true (duplicate)")
+	}
+
+	// Different message: new
+	if seen := p.MarkSeen("msg-2"); seen {
+		t.Fatal("different message should return false (new)")
+	}
+}
+
+func TestBroadcastToEnclaveFullBroadcastBelowThreshold(t *testing.T) {
+	p, mt := newTestProtocol()
+
+	// Add fewer peers than FanoutThreshold — all in same enclave
+	for i := 0; i < FanoutThreshold-1; i++ {
+		peer := &Node{
+			ID:      NodeID(fmt.Sprintf("peer-%d", i)),
+			Address: fmt.Sprintf("peer-%d", i),
+			Port:    9090,
+			HTTPPort: 8080,
+			Enclave: "default",
+		}
+		p.addPeer(peer)
+	}
+
+	msg := &Message{
+		Type:      MessageTypePut,
+		From:      p.localNode.ID,
+		Key:       "test-key",
+		MessageID: "test-msg-1",
+	}
+
+	if err := p.BroadcastToEnclave(context.Background(), msg); err != nil {
+		t.Fatalf("BroadcastToEnclave error: %v", err)
+	}
+
+	// Every peer should have received exactly one send
+	for i := 0; i < FanoutThreshold-1; i++ {
+		id := NodeID(fmt.Sprintf("peer-%d", i))
+		count := mt.getSendCount(id)
+		if count != 1 {
+			t.Errorf("peer %s received %d sends, want 1", id, count)
+		}
+	}
+}
+
+func TestBroadcastToEnclaveFanoutAboveThreshold(t *testing.T) {
+	p, mt := newTestProtocol()
+
+	peerCount := FanoutThreshold + 5 // 15 peers
+	for i := 0; i < peerCount; i++ {
+		peer := &Node{
+			ID:      NodeID(fmt.Sprintf("peer-%d", i)),
+			Address: fmt.Sprintf("peer-%d", i),
+			Port:    9090,
+			HTTPPort: 8080,
+			Enclave: "default",
+		}
+		p.addPeer(peer)
+	}
+
+	msg := &Message{
+		Type:      MessageTypePut,
+		From:      p.localNode.ID,
+		Key:       "test-key",
+		MessageID: "test-msg-2",
+	}
+
+	if err := p.BroadcastToEnclave(context.Background(), msg); err != nil {
+		t.Fatalf("BroadcastToEnclave error: %v", err)
+	}
+
+	// Count total sends — should be √15 ≈ 4 (ceil), not 15
+	totalSends := 0
+	for i := 0; i < peerCount; i++ {
+		id := NodeID(fmt.Sprintf("peer-%d", i))
+		totalSends += mt.getSendCount(id)
+	}
+
+	expectedFanout := fanoutSize(peerCount)
+	if totalSends != expectedFanout {
+		t.Fatalf("total sends = %d, want %d (fanout of %d peers)", totalSends, expectedFanout, peerCount)
+	}
+}
+
+func TestForwardToEnclaveSkipsBelowThreshold(t *testing.T) {
+	p, mt := newTestProtocol()
+
+	// Add fewer peers than threshold
+	for i := 0; i < 3; i++ {
+		peer := &Node{
+			ID:      NodeID(fmt.Sprintf("peer-%d", i)),
+			Address: fmt.Sprintf("peer-%d", i),
+			Port:    9090,
+			HTTPPort: 8080,
+			Enclave: "default",
+		}
+		p.addPeer(peer)
+	}
+
+	msg := &Message{
+		Type:      MessageTypePut,
+		From:      "some-sender",
+		Key:       "test-key",
+		MessageID: "test-msg-3",
+	}
+
+	p.ForwardToEnclave(context.Background(), msg)
+
+	// No sends — originator already sent to all peers directly
+	for i := 0; i < 3; i++ {
+		id := NodeID(fmt.Sprintf("peer-%d", i))
+		if count := mt.getSendCount(id); count != 0 {
+			t.Errorf("peer %s received %d sends, want 0 (below threshold, no forwarding)", id, count)
+		}
+	}
+}
+
+func TestForwardToEnclaveAboveThreshold(t *testing.T) {
+	p, mt := newTestProtocol()
+
+	peerCount := FanoutThreshold + 5
+	for i := 0; i < peerCount; i++ {
+		peer := &Node{
+			ID:      NodeID(fmt.Sprintf("peer-%d", i)),
+			Address: fmt.Sprintf("peer-%d", i),
+			Port:    9090,
+			HTTPPort: 8080,
+			Enclave: "default",
+		}
+		p.addPeer(peer)
+	}
+
+	msg := &Message{
+		Type:      MessageTypePut,
+		From:      "peer-0", // sender is one of the peers
+		Key:       "test-key",
+		MessageID: "test-msg-4",
+	}
+
+	p.ForwardToEnclave(context.Background(), msg)
+
+	// Should have sent to √N peers, excluding the sender (peer-0)
+	totalSends := 0
+	for i := 0; i < peerCount; i++ {
+		id := NodeID(fmt.Sprintf("peer-%d", i))
+		totalSends += mt.getSendCount(id)
+	}
+
+	// peer-0 (the sender) should not have received a forward
+	if count := mt.getSendCount("peer-0"); count != 0 {
+		t.Errorf("sender peer-0 received %d forwards, want 0", count)
+	}
+
+	expectedFanout := fanoutSize(peerCount)
+	if totalSends != expectedFanout {
+		t.Fatalf("total forwards = %d, want %d (fanout of %d peers, excluding sender)", totalSends, expectedFanout, peerCount)
+	}
+}
+
+func TestBroadcastToEnclaveOnlySameEnclave(t *testing.T) {
+	p, mt := newTestProtocol() // local node is in "default" enclave
+
+	// Add peers in different enclaves
+	sameEnclave := &Node{ID: "same", Address: "same", Port: 9090, HTTPPort: 8080, Enclave: "default"}
+	diffEnclave := &Node{ID: "diff", Address: "diff", Port: 9090, HTTPPort: 8080, Enclave: "other"}
+	p.addPeer(sameEnclave)
+	p.addPeer(diffEnclave)
+
+	msg := &Message{
+		Type:      MessageTypePut,
+		From:      p.localNode.ID,
+		Key:       "enclave-test",
+		MessageID: "test-msg-5",
+	}
+
+	p.BroadcastToEnclave(context.Background(), msg)
+
+	// Same enclave peer should receive the message
+	if count := mt.getSendCount("same"); count != 1 {
+		t.Errorf("same-enclave peer received %d sends, want 1", count)
+	}
+	// Different enclave peer should NOT receive the message
+	if count := mt.getSendCount("diff"); count != 0 {
+		t.Errorf("different-enclave peer received %d sends, want 0", count)
+	}
+}
+
 func TestEvictionMetrics(t *testing.T) {
 	p, mt := newTestProtocol()
 	p.EnableMetrics()

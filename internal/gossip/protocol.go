@@ -3,6 +3,8 @@ package gossip
 import (
 	"context"
 	"fmt"
+	"math"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -94,6 +96,15 @@ const (
 // rejoin automatically if they come back online and re-bootstrap.
 const MaxPingFailures = 3
 
+// FanoutThreshold is the enclave peer count above which gossip switches from
+// full broadcast (O(N)) to probabilistic fanout (O(√N) per hop). Below this
+// threshold, every enclave peer receives each message directly.
+const FanoutThreshold = 10
+
+// seenMessageTTL is how long a message ID stays in the dedup cache.
+// Should be longer than the maximum expected propagation time.
+const seenMessageTTL = 60 * time.Second
+
 type Protocol struct {
 	localNode         *Node
 	peers             map[NodeID]*Node
@@ -107,6 +118,8 @@ type Protocol struct {
 	topologyTicker    *time.Ticker
 	stopChan          chan struct{}
 	metrics           *clusterMetrics // nil in tests (skip metrics)
+	seenMessages      map[string]time.Time // message ID → expiry time (dedup cache)
+	seenMutex         sync.Mutex
 }
 
 type Transport interface {
@@ -127,6 +140,7 @@ func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *
 		quorumSize:        quorumSize,
 		clusterSecret:     clusterSecret,
 		stopChan:          make(chan struct{}),
+		seenMessages:      make(map[string]time.Time),
 	}
 }
 
@@ -321,6 +335,7 @@ func (p *Protocol) startHealthCheck(ctx context.Context) {
 			return
 		case <-ticker.C:
 			p.pingPeers(ctx)
+			p.cleanupSeenMessages()
 		}
 	}
 }
@@ -392,24 +407,122 @@ func (p *Protocol) Broadcast(ctx context.Context, msg *Message) error {
 	return nil
 }
 
-// BroadcastToEnclave sends a message only to peers in the same enclave.
-// Used for data replication (PUT messages). Topology messages (SYNC, PING)
-// use Broadcast() which reaches all peers regardless of enclave.
+// MarkSeen records a message ID in the dedup cache. Returns true if the
+// message was already seen (duplicate), false if it's new.
+func (p *Protocol) MarkSeen(messageID string) bool {
+	p.seenMutex.Lock()
+	defer p.seenMutex.Unlock()
+
+	if _, seen := p.seenMessages[messageID]; seen {
+		return true
+	}
+	p.seenMessages[messageID] = time.Now().Add(seenMessageTTL)
+	return false
+}
+
+// cleanupSeenMessages removes expired entries from the dedup cache.
+func (p *Protocol) cleanupSeenMessages() {
+	p.seenMutex.Lock()
+	defer p.seenMutex.Unlock()
+
+	now := time.Now()
+	for id, expiry := range p.seenMessages {
+		if now.After(expiry) {
+			delete(p.seenMessages, id)
+		}
+	}
+}
+
+// fanoutSize returns the number of peers to forward to for probabilistic gossip.
+// Returns √N (rounded up, minimum 1).
+func fanoutSize(peerCount int) int {
+	if peerCount <= 0 {
+		return 0
+	}
+	f := int(math.Ceil(math.Sqrt(float64(peerCount))))
+	if f < 1 {
+		f = 1
+	}
+	return f
+}
+
+// selectRandomPeers picks n random peers from the given list, excluding skipID.
+func selectRandomPeers(peers []*Node, n int, skipID NodeID) []*Node {
+	// Filter out the node to skip (typically the sender)
+	var candidates []*Node
+	for _, p := range peers {
+		if p.ID != skipID {
+			candidates = append(candidates, p)
+		}
+	}
+	if len(candidates) <= n {
+		return candidates
+	}
+	rand.Shuffle(len(candidates), func(i, j int) {
+		candidates[i], candidates[j] = candidates[j], candidates[i]
+	})
+	return candidates[:n]
+}
+
+// BroadcastToEnclave sends a message to peers in the same enclave.
+// For small enclaves (≤ FanoutThreshold peers), sends to all peers directly.
+// For larger enclaves, uses probabilistic fanout: sends to √N random peers,
+// which forward to their own √N subset. Deduplication prevents re-processing.
 func (p *Protocol) BroadcastToEnclave(ctx context.Context, msg *Message) error {
 	if p.transport == nil {
 		return fmt.Errorf("transport not set")
 	}
 
+	// Mark as seen by the originator so we don't re-forward our own messages
+	p.MarkSeen(msg.MessageID)
+
 	peers := p.GetReplicationPeers()
-	logging.Debug("[%s] Broadcasting %s to %d enclave peers (%s)", p.localNode.ID, msg.Type, len(peers), p.localNode.Enclave)
-	for _, peer := range peers {
-		logging.Debug("[%s] Sending %s to enclave peer %s", p.localNode.ID, msg.Type, peer.ID)
-		if err := p.transport.Send(ctx, peer, msg); err != nil {
-			logging.Warn("[%s] Failed to send to enclave peer %s: %v", p.localNode.ID, peer.ID, err)
+
+	if len(peers) <= FanoutThreshold {
+		// Small enclave: full broadcast (original behavior)
+		logging.Debug("[%s] Broadcasting %s to %d enclave peers (%s)", p.localNode.ID, msg.Type, len(peers), p.localNode.Enclave)
+		for _, peer := range peers {
+			if err := p.transport.Send(ctx, peer, msg); err != nil {
+				logging.Warn("[%s] Failed to send to enclave peer %s: %v", p.localNode.ID, peer.ID, err)
+			}
+		}
+	} else {
+		// Large enclave: probabilistic fanout
+		fanout := fanoutSize(len(peers))
+		targets := selectRandomPeers(peers, fanout, "")
+		logging.Debug("[%s] Fanout %s to %d/%d enclave peers (%s)", p.localNode.ID, msg.Type, len(targets), len(peers), p.localNode.Enclave)
+		for _, peer := range targets {
+			if err := p.transport.Send(ctx, peer, msg); err != nil {
+				logging.Warn("[%s] Failed to send to enclave peer %s: %v", p.localNode.ID, peer.ID, err)
+			}
 		}
 	}
 
 	return nil
+}
+
+// ForwardToEnclave is called by receiving nodes to continue probabilistic gossip.
+// It forwards the message to √N random enclave peers (excluding the sender),
+// but only if the enclave is above the fanout threshold. For small enclaves,
+// the originator already sent to everyone, so no forwarding is needed.
+func (p *Protocol) ForwardToEnclave(ctx context.Context, msg *Message) {
+	peers := p.GetReplicationPeers()
+	if len(peers) <= FanoutThreshold {
+		return // originator already sent to all peers
+	}
+
+	fanout := fanoutSize(len(peers))
+	targets := selectRandomPeers(peers, fanout, msg.From)
+	if len(targets) == 0 {
+		return
+	}
+
+	logging.Debug("[%s] Forwarding %s (key: %s) to %d enclave peers", p.localNode.ID, msg.Type, msg.Key, len(targets))
+	for _, peer := range targets {
+		if err := p.transport.Send(ctx, peer, msg); err != nil {
+			logging.Warn("[%s] Failed to forward to enclave peer %s: %v", p.localNode.ID, peer.ID, err)
+		}
+	}
 }
 
 func (p *Protocol) GetPeers() []*Node {

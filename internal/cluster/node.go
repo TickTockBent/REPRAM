@@ -200,6 +200,13 @@ func (cn *ClusterNode) handleGossipMessage(msg *gossip.Message) error {
 }
 
 func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
+	// Dedup: if we've already processed this message, skip it.
+	// MarkSeen returns true if it was already seen.
+	if cn.protocol.MarkSeen(msg.MessageID) {
+		logging.Debug("[%s] Skipping duplicate PUT for key %s (msg %s)", cn.localNode.ID, msg.Key, msg.MessageID)
+		return nil
+	}
+
 	logging.Debug("[%s] Received PUT message for key %s from %s", cn.localNode.ID, msg.Key, msg.From)
 	ttl := time.Duration(msg.TTL) * time.Second
 	if err := cn.store.Put(msg.Key, msg.Data, ttl); err != nil {
@@ -207,6 +214,7 @@ func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
 	}
 	logging.Debug("[%s] Successfully stored replicated data for key %s", cn.localNode.ID, msg.Key)
 
+	// Send ACK directly to the originator
 	ack := &gossip.Message{
 		Type:      gossip.MessageTypeAck,
 		From:      cn.localNode.ID,
@@ -223,11 +231,14 @@ func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
 	for _, peer := range peers {
 		if peer.ID == msg.From {
 			logging.Debug("[%s] Sending ACK for key %s to %s", cn.localNode.ID, msg.Key, peer.ID)
-			return cn.protocol.Send(context.Background(), peer, ack)
+			cn.protocol.Send(context.Background(), peer, ack)
+			break
 		}
 	}
 
-	logging.Warn("[%s] Sender %s not found in peer list for ACK", cn.localNode.ID, msg.From)
+	// Continue epidemic forwarding to other enclave peers
+	cn.protocol.ForwardToEnclave(context.Background(), msg)
+
 	return nil
 }
 
