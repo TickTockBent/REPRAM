@@ -98,35 +98,8 @@
             </div>
         </div>
 
-        <div class="use-cases">
-            <h2>Beyond Agents — REPRAM as a Primitive</h2>
-            <p class="subtitle">REPRAM is <code>pipe</code>, not <code>grep</code>. It doesn't care what flows through it — bytes in, bytes out, then gone.</p>
-            <div class="use-case-grid">
-                <div class="use-case">
-                    <h4>Circuit Breaker</h4>
-                    <p>Service writes a "healthy" key with short TTL. Consumers check before calling. Service dies → key expires → consumers back off.</p>
-                </div>
-                <div class="use-case">
-                    <h4>Ephemeral Broadcast</h4>
-                    <p>Write config or feature flags to a known key. Consumers poll. Stop writing and the value expires — automatic rollback.</p>
-                </div>
-                <div class="use-case">
-                    <h4>Secure Relay</h4>
-                    <p>Encrypt a payload, store it, share the key out-of-band. Data self-destructs after TTL. No logs, no accounts, no metadata trail.</p>
-                </div>
-                <div class="use-case">
-                    <h4>Session Continuity</h4>
-                    <p>Session state under a session ID with rolling TTL. Any edge server reads current state. User leaves → session expires naturally.</p>
-                </div>
-                <div class="use-case">
-                    <h4>Distributed Dedup</h4>
-                    <p>Write a key when processing an event. Check before processing — key present means already handled. TTL = dedup window.</p>
-                </div>
-                <div class="use-case">
-                    <h4>Ephemeral Pub/Sub</h4>
-                    <p>Publisher overwrites a known key on interval. Subscribers poll. No broker, no ordering. Lossy by design — and that's the point.</p>
-                </div>
-            </div>
+        <div class="use-cases" style="padding-top: 0;">
+            <p class="subtitle">REPRAM is <code>pipe</code>, not <code>grep</code> — it doesn't care what flows through it. Circuit breakers, encrypted relay, session replication, distributed dedup — the primitive is general-purpose. <a href="https://github.com/TickTockBent/repram/blob/main/docs/patterns.md" style="color: var(--primary); text-decoration: none; border-bottom: 1px solid var(--primary);">See all usage patterns →</a></p>
         </div>
 
         <div class="architecture-section">
