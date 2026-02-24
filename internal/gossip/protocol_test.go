@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	dto "github.com/prometheus/client_model/go"
 )
 
 // mockTransport is a test transport that can be configured to fail sends.
@@ -204,5 +206,73 @@ func TestMixedPeerEviction(t *testing.T) {
 	}
 	if peers[0].ID != "alive" {
 		t.Fatalf("expected 'alive' peer to remain, got %s", peers[0].ID)
+	}
+}
+
+// counterValue reads the current value from a Prometheus counter.
+func counterValue(c interface{ Write(*dto.Metric) error }) float64 {
+	var m dto.Metric
+	c.Write(&m)
+	return m.GetCounter().GetValue()
+}
+
+// gaugeValue reads the current value from a Prometheus gauge.
+func gaugeValue(g interface{ Write(*dto.Metric) error }) float64 {
+	var m dto.Metric
+	g.Write(&m)
+	return m.GetGauge().GetValue()
+}
+
+func TestEvictionMetrics(t *testing.T) {
+	p, mt := newTestProtocol()
+	p.EnableMetrics()
+
+	peer := &Node{ID: "doomed", Address: "doomed", Port: 9090, HTTPPort: 8080, Enclave: "default"}
+	p.addPeer(peer)
+	mt.setFail("doomed", true)
+
+	// Verify active peers gauge
+	if v := gaugeValue(p.metrics.peersActive); v != 1 {
+		t.Fatalf("peersActive after addPeer = %v, want 1", v)
+	}
+
+	evictionsBefore := counterValue(p.metrics.peerEvictions)
+	pingFailuresBefore := counterValue(p.metrics.pingFailures)
+
+	// Evict the peer
+	for i := 0; i < MaxPingFailures; i++ {
+		p.pingPeers(context.Background())
+	}
+
+	// Check eviction counter incremented
+	evictionsAfter := counterValue(p.metrics.peerEvictions)
+	if evictionsAfter-evictionsBefore != 1 {
+		t.Fatalf("peerEvictions delta = %v, want 1", evictionsAfter-evictionsBefore)
+	}
+
+	// Check ping failures counter incremented (MaxPingFailures times)
+	pingFailuresAfter := counterValue(p.metrics.pingFailures)
+	if pingFailuresAfter-pingFailuresBefore != float64(MaxPingFailures) {
+		t.Fatalf("pingFailures delta = %v, want %d", pingFailuresAfter-pingFailuresBefore, MaxPingFailures)
+	}
+
+	// Check active peers gauge is now 0
+	if v := gaugeValue(p.metrics.peersActive); v != 0 {
+		t.Fatalf("peersActive after eviction = %v, want 0", v)
+	}
+
+	// Re-add the peer — should increment joins counter
+	joinsBefore := counterValue(p.metrics.peerJoins)
+	mt.setFail("doomed", false)
+	p.addPeer(peer)
+
+	joinsAfter := counterValue(p.metrics.peerJoins)
+	if joinsAfter-joinsBefore != 1 {
+		t.Fatalf("peerJoins delta = %v, want 1", joinsAfter-joinsBefore)
+	}
+
+	// Active peers gauge should be back to 1
+	if v := gaugeValue(p.metrics.peersActive); v != 1 {
+		t.Fatalf("peersActive after rejoin = %v, want 1", v)
 	}
 }

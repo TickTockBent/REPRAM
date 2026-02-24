@@ -73,6 +73,7 @@ func (cn *ClusterNode) Start(ctx context.Context, bootstrapAddresses []string) e
 	transport := gossip.NewHTTPTransport(cn.localNode, cn.clusterSecret)
 	cn.protocol.SetTransport(transport)
 	cn.protocol.SetMessageHandler(cn.handleGossipMessage)
+	cn.protocol.EnableMetrics()
 
 	// Start the gossip protocol
 	if err := cn.protocol.Start(ctx); err != nil {

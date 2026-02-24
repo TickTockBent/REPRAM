@@ -7,8 +7,48 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"repram/internal/logging"
 )
+
+// clusterMetrics tracks gossip protocol health for Prometheus.
+type clusterMetrics struct {
+	peersActive    prometheus.Gauge
+	peerEvictions  prometheus.Counter
+	peerJoins      prometheus.Counter
+	pingFailures   prometheus.Counter
+}
+
+var (
+	sharedMetrics     *clusterMetrics
+	sharedMetricsOnce sync.Once
+)
+
+func newClusterMetrics() *clusterMetrics {
+	sharedMetricsOnce.Do(func() {
+		sharedMetrics = &clusterMetrics{
+			peersActive: prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "repram_peers_active",
+				Help: "Current number of active peers in the gossip protocol",
+			}),
+			peerEvictions: prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "repram_peer_evictions_total",
+				Help: "Total number of peers evicted due to consecutive ping failures",
+			}),
+			peerJoins: prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "repram_peer_joins_total",
+				Help: "Total number of peers added (initial join or rejoin after eviction)",
+			}),
+			pingFailures: prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "repram_ping_failures_total",
+				Help: "Total number of failed ping attempts to peers",
+			}),
+		}
+		prometheus.MustRegister(sharedMetrics.peersActive, sharedMetrics.peerEvictions, sharedMetrics.peerJoins, sharedMetrics.pingFailures)
+	})
+	return sharedMetrics
+}
 
 type NodeID string
 
@@ -66,6 +106,7 @@ type Protocol struct {
 	transport         Transport
 	topologyTicker    *time.Ticker
 	stopChan          chan struct{}
+	metrics           *clusterMetrics // nil in tests (skip metrics)
 }
 
 type Transport interface {
@@ -87,6 +128,13 @@ func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *
 		clusterSecret:     clusterSecret,
 		stopChan:          make(chan struct{}),
 	}
+}
+
+// EnableMetrics registers Prometheus metrics for cluster health monitoring.
+// Call this once during production startup. Tests skip this to avoid
+// duplicate metric registration across parallel test runs.
+func (p *Protocol) EnableMetrics() {
+	p.metrics = newClusterMetrics()
 }
 
 func (p *Protocol) SetTransport(transport Transport) {
@@ -132,16 +180,27 @@ func (p *Protocol) Stop() error {
 
 func (p *Protocol) addPeer(node *Node) {
 	p.peersMutex.Lock()
-	defer p.peersMutex.Unlock()
 	p.peers[node.ID] = node
 	delete(p.peerFailures, node.ID) // reset failure counter on (re-)add
+	peerCount := len(p.peers)
+	p.peersMutex.Unlock()
+
+	if p.metrics != nil {
+		p.metrics.peersActive.Set(float64(peerCount))
+		p.metrics.peerJoins.Inc()
+	}
 }
 
 func (p *Protocol) removePeer(nodeID NodeID) {
 	p.peersMutex.Lock()
-	defer p.peersMutex.Unlock()
 	delete(p.peers, nodeID)
 	delete(p.peerFailures, nodeID)
+	peerCount := len(p.peers)
+	p.peersMutex.Unlock()
+
+	if p.metrics != nil {
+		p.metrics.peersActive.Set(float64(peerCount))
+	}
 }
 
 func (p *Protocol) getPeers() []*Node {
@@ -284,6 +343,10 @@ func (p *Protocol) pingPeers(ctx context.Context) {
 			failures := p.peerFailures[peer.ID]
 			p.peersMutex.Unlock()
 
+			if p.metrics != nil {
+				p.metrics.pingFailures.Inc()
+			}
+
 			logging.Warn("[%s] Ping failed for peer %s (%d/%d): %v",
 				p.localNode.ID, peer.ID, failures, MaxPingFailures, err)
 
@@ -295,6 +358,9 @@ func (p *Protocol) pingPeers(ctx context.Context) {
 
 	for _, id := range evictions {
 		p.removePeer(id)
+		if p.metrics != nil {
+			p.metrics.peerEvictions.Inc()
+		}
 		logging.Info("[%s] Evicted peer %s after %d consecutive ping failures",
 			p.localNode.ID, id, MaxPingFailures)
 	}
