@@ -16,17 +16,21 @@ import (
 	"syscall"
 	"time"
 
+	"errors"
+
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"errors"
 
 	"repram/internal/cluster"
 	"repram/internal/gossip"
+	"repram/internal/logging"
 	"repram/internal/node"
 	"repram/internal/storage"
 )
 
 func main() {
+	logging.Init()
+
 	// Generate a unique node ID
 	nodeID := os.Getenv("REPRAM_NODE_ID")
 	if nodeID == "" {
@@ -95,10 +99,10 @@ func main() {
 	server.securityMW = securityMW
 
 	peerCount := len(bootstrapNodes)
-	log.Printf("REPRAM node online. Peers: %d. Network: %s", peerCount, network)
-	log.Printf("  Node ID: %s", nodeID)
-	log.Printf("  HTTP: :%d  Gossip: :%d", httpPort, gossipPort)
-	log.Printf("  Replication: %d  TTL range: %d-%ds", replicationFactor, minTTL, maxTTL)
+	logging.Info("REPRAM node online. Peers: %d. Network: %s", peerCount, network)
+	logging.Info("  Node ID: %s", nodeID)
+	logging.Info("  HTTP: :%d  Gossip: :%d", httpPort, gossipPort)
+	logging.Info("  Replication: %d  TTL range: %d-%ds", replicationFactor, minTTL, maxTTL)
 
 	// Graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -106,7 +110,7 @@ func main() {
 
 	go func() {
 		<-sigChan
-		log.Println("Shutting down...")
+		logging.Info("Shutting down...")
 		securityMW.Close()
 		clusterNode.Stop()
 		cancel()
@@ -136,14 +140,14 @@ func resolveBootstrapDNS(hostname string, defaultPort int) []string {
 		for _, srv := range srvRecords {
 			peers = append(peers, fmt.Sprintf("%s:%d", strings.TrimSuffix(srv.Target, "."), srv.Port))
 		}
-		log.Printf("Resolved %d bootstrap peers via SRV", len(peers))
+		logging.Info("Resolved %d bootstrap peers via SRV", len(peers))
 		return peers
 	}
 
 	// Fall back to A/AAAA records
 	addrs, err := net.LookupHost(hostname)
 	if err != nil {
-		log.Printf("DNS bootstrap resolution failed for %s: %v (starting as first node)", hostname, err)
+		logging.Warn("DNS bootstrap resolution failed for %s: %v (starting as first node)", hostname, err)
 		return nil
 	}
 
@@ -151,7 +155,7 @@ func resolveBootstrapDNS(hostname string, defaultPort int) []string {
 	for _, addr := range addrs {
 		peers = append(peers, fmt.Sprintf("%s:%d", addr, defaultPort))
 	}
-	log.Printf("Resolved %d bootstrap peers via DNS", len(peers))
+	logging.Info("Resolved %d bootstrap peers via DNS", len(peers))
 	return peers
 }
 

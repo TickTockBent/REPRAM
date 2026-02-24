@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"repram/internal/logging"
 )
 
 // SimpleMessage is the HTTP wire format for gossip messages.
@@ -51,7 +53,7 @@ func NewHTTPTransport(localNode *Node) *HTTPTransport {
 
 // Start initializes the transport (no-op for HTTP as we use the main HTTP server)
 func (t *HTTPTransport) Start(ctx context.Context) error {
-	fmt.Printf("[HTTPTransport] Started for node %s (HTTP port: %d)\n", t.localNode.ID, t.localNode.HTTPPort)
+	logging.Info("[HTTPTransport] Started for node %s (HTTP port: %d)", t.localNode.ID, t.localNode.HTTPPort)
 	return nil
 }
 
@@ -108,7 +110,7 @@ func (t *HTTPTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 		return fmt.Errorf("message rejected by %s with status: %d", node.ID, resp.StatusCode)
 	}
 	
-	fmt.Printf("[HTTPTransport] Successfully sent %s message to %s at %s\n", msg.Type, node.ID, url)
+	logging.Debug("[HTTPTransport] Sent %s message to %s at %s", msg.Type, node.ID, url)
 	return nil
 }
 

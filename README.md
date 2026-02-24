@@ -158,6 +158,7 @@ curl http://localhost:8080/v1/metrics
 | `REPRAM_MIN_TTL` | `300` | Minimum TTL in seconds (5 minutes) |
 | `REPRAM_MAX_TTL` | `86400` | Maximum TTL in seconds (24 hours) |
 | `REPRAM_RATE_LIMIT` | `100` | Requests per second per IP |
+| `REPRAM_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `REPRAM_MAX_STORAGE_MB` | `0` | Max data storage in MB (0 = unlimited). Rejects writes with 507 when full. |
 
 ## Building from Source

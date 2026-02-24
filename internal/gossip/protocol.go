@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"repram/internal/logging"
 )
 
 type NodeID string
@@ -92,11 +94,11 @@ func (p *Protocol) Start(ctx context.Context) error {
 
 	// Start periodic health checks
 	go p.startHealthCheck(ctx)
-	
+
 	// Start periodic topology synchronization
 	go p.startTopologySync(ctx)
-	
-	fmt.Printf("[%s] Gossip protocol started\n", p.localNode.ID)
+
+	logging.Info("[%s] Gossip protocol started", p.localNode.ID)
 	return nil
 }
 
@@ -106,7 +108,7 @@ func (p *Protocol) Stop() error {
 	if p.topologyTicker != nil {
 		p.topologyTicker.Stop()
 	}
-	
+
 	if p.transport != nil {
 		return p.transport.Stop()
 	}
@@ -128,7 +130,7 @@ func (p *Protocol) removePeer(nodeID NodeID) {
 func (p *Protocol) getPeers() []*Node {
 	p.peersMutex.RLock()
 	defer p.peersMutex.RUnlock()
-	
+
 	peers := make([]*Node, 0, len(p.peers))
 	for _, peer := range p.peers {
 		peers = append(peers, peer)
@@ -160,7 +162,6 @@ func (p *Protocol) handleMessage(msg *Message) error {
 	return nil
 }
 
-
 func (p *Protocol) handlePing(msg *Message) error {
 	pong := &Message{
 		Type:      MessageTypePong,
@@ -169,11 +170,11 @@ func (p *Protocol) handlePing(msg *Message) error {
 		Timestamp: time.Now(),
 		MessageID: generateMessageID(),
 	}
-	
+
 	p.peersMutex.RLock()
 	peer := p.peers[msg.From]
 	p.peersMutex.RUnlock()
-	
+
 	if peer != nil {
 		return p.transport.Send(context.Background(), peer, pong)
 	}
@@ -184,36 +185,34 @@ func (p *Protocol) handlePong(msg *Message) error {
 	return nil
 }
 
-
 func (p *Protocol) handleSync(msg *Message) error {
-	fmt.Printf("[%s] Received SYNC message from %s\n", p.localNode.ID, msg.From)
-	
+	logging.Debug("[%s] Received SYNC message from %s", p.localNode.ID, msg.From)
+
 	// SYNC messages carry information about new nodes
 	if msg.NodeInfo != nil {
 		// Check if we already know this peer
 		p.peersMutex.RLock()
 		_, exists := p.peers[msg.NodeInfo.ID]
 		p.peersMutex.RUnlock()
-		
+
 		if !exists {
 			p.addPeer(msg.NodeInfo)
-			fmt.Printf("[%s] Learned about new peer %s via SYNC from %s\n", 
+			logging.Info("[%s] Learned about new peer %s via SYNC from %s",
 				p.localNode.ID, msg.NodeInfo.ID, msg.From)
 		} else {
-			fmt.Printf("[%s] Already know peer %s (SYNC from %s)\n", 
+			logging.Debug("[%s] Already know peer %s (SYNC from %s)",
 				p.localNode.ID, msg.NodeInfo.ID, msg.From)
 		}
 	} else {
-		fmt.Printf("[%s] SYNC message from %s has no NodeInfo\n", p.localNode.ID, msg.From)
+		logging.Debug("[%s] SYNC message from %s has no NodeInfo", p.localNode.ID, msg.From)
 	}
 	return nil
 }
 
-
 func (p *Protocol) startHealthCheck(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -249,18 +248,18 @@ func (p *Protocol) Broadcast(ctx context.Context, msg *Message) error {
 	if p.transport == nil {
 		return fmt.Errorf("transport not set")
 	}
-	
+
 	// Send to all known peers
 	peers := p.getPeers()
-	fmt.Printf("[%s] Broadcasting %s message to %d peers\n", p.localNode.ID, msg.Type, len(peers))
+	logging.Debug("[%s] Broadcasting %s message to %d peers", p.localNode.ID, msg.Type, len(peers))
 	for _, peer := range peers {
-		fmt.Printf("[%s] Sending %s to peer %s\n", p.localNode.ID, msg.Type, peer.ID)
+		logging.Debug("[%s] Sending %s to peer %s", p.localNode.ID, msg.Type, peer.ID)
 		if err := p.transport.Send(ctx, peer, msg); err != nil {
-			fmt.Printf("[%s] Failed to send to peer %s: %v\n", p.localNode.ID, peer.ID, err)
+			logging.Warn("[%s] Failed to send to peer %s: %v", p.localNode.ID, peer.ID, err)
 			// Continue to other peers even if one fails
 		}
 	}
-	
+
 	return nil
 }
 
@@ -285,7 +284,7 @@ func generateMessageID() string {
 func (p *Protocol) startTopologySync(ctx context.Context) {
 	p.topologyTicker = time.NewTicker(30 * time.Second) // Sync every 30 seconds
 	defer p.topologyTicker.Stop()
-	
+
 	for {
 		select {
 		case <-p.topologyTicker.C:
@@ -303,15 +302,15 @@ func (p *Protocol) performTopologySync(ctx context.Context) {
 	peerCount := len(p.peers)
 	expectedPeers := p.replicationFactor - 1 // Don't count ourselves
 	p.peersMutex.RUnlock()
-	
+
 	// Only sync if we have fewer peers than expected
 	if peerCount >= expectedPeers {
 		return
 	}
-	
-	fmt.Printf("[%s] Topology sync: have %d peers, expected %d - requesting peer lists\n", 
+
+	logging.Debug("[%s] Topology sync: have %d peers, expected %d - requesting peer lists",
 		p.localNode.ID, peerCount, expectedPeers)
-	
+
 	// Send SYNC requests to all known peers to get their peer lists
 	msg := &Message{
 		Type:      MessageTypeSync,
@@ -320,9 +319,9 @@ func (p *Protocol) performTopologySync(ctx context.Context) {
 		MessageID: generateMessageID(),
 		NodeInfo:  p.localNode, // Include our own node info
 	}
-	
+
 	// Broadcast to all known peers
 	if err := p.Broadcast(ctx, msg); err != nil {
-		fmt.Printf("[%s] Failed to broadcast topology sync: %v\n", p.localNode.ID, err)
+		logging.Warn("[%s] Failed to broadcast topology sync: %v", p.localNode.ID, err)
 	}
 }

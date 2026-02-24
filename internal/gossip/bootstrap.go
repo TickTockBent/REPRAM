@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"repram/internal/logging"
 )
 
 // BootstrapRequest is sent when a node wants to join the cluster
@@ -25,39 +27,39 @@ type BootstrapResponse struct {
 
 // Bootstrap connects to seed nodes and retrieves the cluster topology
 func (p *Protocol) Bootstrap(ctx context.Context, seedNodes []string) error {
-	fmt.Printf("[%s] Starting bootstrap process with %d seed nodes\n", p.localNode.ID, len(seedNodes))
-	
+	logging.Info("[%s] Starting bootstrap process with %d seed nodes", p.localNode.ID, len(seedNodes))
+
 	req := &BootstrapRequest{
 		NodeID:     string(p.localNode.ID),
 		Address:    p.localNode.Address,
 		GossipPort: p.localNode.Port,
 		HTTPPort:   p.localNode.HTTPPort,
 	}
-	
+
 	// Try each seed node until we get a successful response
 	for _, seed := range seedNodes {
-		fmt.Printf("[%s] Attempting to bootstrap from %s\n", p.localNode.ID, seed)
-		
+		logging.Debug("[%s] Attempting to bootstrap from %s", p.localNode.ID, seed)
+
 		peers, err := p.sendBootstrapRequest(ctx, seed, req)
 		if err != nil {
-			fmt.Printf("[%s] Failed to bootstrap from %s: %v\n", p.localNode.ID, seed, err)
+			logging.Warn("[%s] Failed to bootstrap from %s: %v", p.localNode.ID, seed, err)
 			continue
 		}
-		
+
 		// Add all discovered peers
 		for _, peer := range peers {
 			if peer.ID != p.localNode.ID {
 				p.addPeer(peer)
-				fmt.Printf("[%s] Discovered peer %s via bootstrap\n", p.localNode.ID, peer.ID)
+				logging.Info("[%s] Discovered peer %s via bootstrap", p.localNode.ID, peer.ID)
 			}
 		}
-		
-		fmt.Printf("[%s] Bootstrap successful, discovered %d peers\n", p.localNode.ID, len(peers))
+
+		logging.Info("[%s] Bootstrap successful, discovered %d peers", p.localNode.ID, len(peers))
 		return nil
 	}
-	
+
 	// If no seed nodes responded, we might be the first node
-	fmt.Printf("[%s] No seed nodes available, starting as first node\n", p.localNode.ID)
+	logging.Info("[%s] No seed nodes available, starting as first node", p.localNode.ID)
 	return nil
 }
 
@@ -66,34 +68,34 @@ func (p *Protocol) sendBootstrapRequest(ctx context.Context, seedAddr string, re
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
-	
+
 	url := fmt.Sprintf("http://%s/v1/bootstrap", seedAddr)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	
+
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("bootstrap rejected with status: %d", resp.StatusCode)
 	}
-	
+
 	var bootstrapResp BootstrapResponse
 	if err := json.NewDecoder(resp.Body).Decode(&bootstrapResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	if !bootstrapResp.Success {
 		return nil, fmt.Errorf("bootstrap failed")
 	}
-	
+
 	return bootstrapResp.Peers, nil
 }
 
@@ -106,20 +108,20 @@ func (p *Protocol) HandleBootstrap(req *BootstrapRequest) *BootstrapResponse {
 		Port:     req.GossipPort,
 		HTTPPort: req.HTTPPort,
 	}
-	
+
 	// Add the new node as a peer
 	p.addPeer(newNode)
-	fmt.Printf("[%s] Node %s joined via bootstrap\n", p.localNode.ID, req.NodeID)
-	
+	logging.Info("[%s] Node %s joined via bootstrap", p.localNode.ID, req.NodeID)
+
 	// Notify all existing peers about the new node
 	// This ensures all nodes know about each other
 	go p.notifyPeersAboutNewNode(newNode)
-	
+
 	// Return current cluster topology
 	peers := p.getPeers()
 	// Include ourselves in the response
 	allPeers := append(peers, p.localNode)
-	
+
 	return &BootstrapResponse{
 		Success: true,
 		Peers:   allPeers,
@@ -139,7 +141,7 @@ func (p *Protocol) notifyPeersAboutNewNode(newNode *Node) {
 				MessageID: generateMessageID(),
 				NodeInfo:  newNode,
 			}
-			
+
 			// Retry SYNC messages with exponential backoff
 			go p.sendSyncWithRetry(peer, msg, newNode.ID, 3)
 		}
@@ -151,17 +153,17 @@ func (p *Protocol) sendSyncWithRetry(peer *Node, msg *Message, newNodeID NodeID,
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if err := p.Send(context.Background(), peer, msg); err != nil {
 			if attempt == maxRetries-1 {
-				fmt.Printf("[%s] Failed to notify %s about new node %s after %d attempts: %v\n", 
+				logging.Error("[%s] Failed to notify %s about new node %s after %d attempts: %v",
 					p.localNode.ID, peer.ID, newNodeID, maxRetries, err)
 			} else {
 				// Exponential backoff: 1s, 2s, 4s
 				delay := time.Duration(1<<attempt) * time.Second
-				fmt.Printf("[%s] Failed to notify %s about new node %s (attempt %d/%d), retrying in %v: %v\n", 
+				logging.Warn("[%s] Failed to notify %s about new node %s (attempt %d/%d), retrying in %v: %v",
 					p.localNode.ID, peer.ID, newNodeID, attempt+1, maxRetries, delay, err)
 				time.Sleep(delay)
 			}
 		} else {
-			fmt.Printf("[%s] Notified %s about new node %s (attempt %d)\n", 
+			logging.Debug("[%s] Notified %s about new node %s (attempt %d)",
 				p.localNode.ID, peer.ID, newNodeID, attempt+1)
 			return
 		}

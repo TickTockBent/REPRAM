@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"repram/internal/gossip"
+	"repram/internal/logging"
 	"repram/internal/storage"
 )
 
@@ -15,7 +16,7 @@ type ClusterNode struct {
 	protocol   *gossip.Protocol
 	store      Store
 	quorumSize int
-	
+
 	pendingWrites map[string]*WriteOperation
 	writesMutex   sync.RWMutex
 }
@@ -65,23 +66,23 @@ func (cn *ClusterNode) Start(ctx context.Context, bootstrapAddresses []string) e
 	transport := gossip.NewHTTPTransport(cn.localNode)
 	cn.protocol.SetTransport(transport)
 	cn.protocol.SetMessageHandler(cn.handleGossipMessage)
-	
+
 	// Start the gossip protocol
 	if err := cn.protocol.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start gossip protocol: %w", err)
 	}
-	
+
 	// Bootstrap from seed nodes
 	if len(bootstrapAddresses) > 0 {
-		fmt.Printf("[%s] Bootstrapping from %d seed nodes\n", cn.localNode.ID, len(bootstrapAddresses))
+		logging.Info("[%s] Bootstrapping from %d seed nodes", cn.localNode.ID, len(bootstrapAddresses))
 		if err := cn.protocol.Bootstrap(ctx, bootstrapAddresses); err != nil {
 			// Bootstrap failure is not fatal - we might be the first node
-			fmt.Printf("[%s] Bootstrap completed with warning: %v\n", cn.localNode.ID, err)
+			logging.Warn("[%s] Bootstrap completed with warning: %v", cn.localNode.ID, err)
 		}
 	} else {
-		fmt.Printf("[%s] Starting as first node (no bootstrap addresses)\n", cn.localNode.ID)
+		logging.Info("[%s] Starting as first node (no bootstrap addresses)", cn.localNode.ID)
 	}
-	
+
 	return nil
 }
 
@@ -97,28 +98,28 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		Confirmations: 1, // Count local write
 		Complete:      make(chan bool, 1),
 	}
-	
+
 	cn.writesMutex.Lock()
 	cn.pendingWrites[key] = writeOp
 	cn.writesMutex.Unlock()
-	
+
 	if err := cn.store.Put(key, data, ttl); err != nil {
 		cn.writesMutex.Lock()
 		delete(cn.pendingWrites, key)
 		cn.writesMutex.Unlock()
 		return fmt.Errorf("local write failed: %w", err)
 	}
-	
+
 	// Check if local write is sufficient for quorum
 	if writeOp.Confirmations >= cn.quorumSize {
 		cn.writesMutex.Lock()
 		delete(cn.pendingWrites, key)
 		cn.writesMutex.Unlock()
 		close(writeOp.Complete)
-		fmt.Printf("Write completed locally (quorum=%d, confirmations=%d)\n", cn.quorumSize, writeOp.Confirmations)
+		logging.Debug("Write completed locally (quorum=%d, confirmations=%d)", cn.quorumSize, writeOp.Confirmations)
 		return nil
 	}
-	
+
 	msg := &gossip.Message{
 		Type:      gossip.MessageTypePut,
 		From:      cn.localNode.ID,
@@ -128,12 +129,12 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		Timestamp: time.Now(),
 		MessageID: fmt.Sprintf("%s-%d", key, time.Now().UnixNano()),
 	}
-	
-	fmt.Printf("[%s] Broadcasting PUT for key %s to peers\n", cn.localNode.ID, key)
+
+	logging.Debug("[%s] Broadcasting PUT for key %s to peers", cn.localNode.ID, key)
 	if err := cn.protocol.Broadcast(ctx, msg); err != nil {
-		fmt.Printf("[%s] Failed to broadcast write: %v\n", cn.localNode.ID, err)
+		logging.Warn("[%s] Failed to broadcast write: %v", cn.localNode.ID, err)
 	}
-	
+
 	select {
 	case <-writeOp.Complete:
 		cn.writesMutex.Lock()
@@ -178,10 +179,7 @@ func (cn *ClusterNode) handleGossipMessage(msg *gossip.Message) error {
 	// First let the protocol handle system messages
 	switch msg.Type {
 	case gossip.MessageTypePing, gossip.MessageTypePong, gossip.MessageTypeSync:
-		// These are handled by the protocol layer, not the application
-		// The protocol's message handler is already set, so this should not happen
-		// but we'll handle it gracefully
-		fmt.Printf("[%s] Unexpected %s message in cluster handler\n", cn.localNode.ID, msg.Type)
+		logging.Warn("[%s] Unexpected %s message in cluster handler", cn.localNode.ID, msg.Type)
 		return nil
 	case gossip.MessageTypePut:
 		return cn.handlePutMessage(msg)
@@ -192,13 +190,13 @@ func (cn *ClusterNode) handleGossipMessage(msg *gossip.Message) error {
 }
 
 func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
-	fmt.Printf("[%s] Received PUT message for key %s from %s\n", cn.localNode.ID, msg.Key, msg.From)
+	logging.Debug("[%s] Received PUT message for key %s from %s", cn.localNode.ID, msg.Key, msg.From)
 	ttl := time.Duration(msg.TTL) * time.Second
 	if err := cn.store.Put(msg.Key, msg.Data, ttl); err != nil {
 		return fmt.Errorf("failed to store replicated data: %w", err)
 	}
-	fmt.Printf("[%s] Successfully stored replicated data for key %s\n", cn.localNode.ID, msg.Key)
-	
+	logging.Debug("[%s] Successfully stored replicated data for key %s", cn.localNode.ID, msg.Key)
+
 	ack := &gossip.Message{
 		Type:      gossip.MessageTypeAck,
 		From:      cn.localNode.ID,
@@ -207,40 +205,40 @@ func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
 		MessageID: msg.MessageID,
 		Timestamp: time.Now(),
 	}
-	
+
 	cn.writesMutex.RLock()
 	peers := cn.protocol.GetPeers()
 	cn.writesMutex.RUnlock()
-	
+
 	for _, peer := range peers {
 		if peer.ID == msg.From {
-			fmt.Printf("[%s] Sending ACK for key %s to %s\n", cn.localNode.ID, msg.Key, peer.ID)
+			logging.Debug("[%s] Sending ACK for key %s to %s", cn.localNode.ID, msg.Key, peer.ID)
 			return cn.protocol.Send(context.Background(), peer, ack)
 		}
 	}
-	
-	fmt.Printf("[%s] Warning: sender %s not found in peer list for ACK\n", cn.localNode.ID, msg.From)
+
+	logging.Warn("[%s] Sender %s not found in peer list for ACK", cn.localNode.ID, msg.From)
 	return nil
 }
 
 func (cn *ClusterNode) handleAckMessage(msg *gossip.Message) error {
 	cn.writesMutex.Lock()
 	defer cn.writesMutex.Unlock()
-	
+
 	writeOp, exists := cn.pendingWrites[msg.Key]
 	if !exists {
 		return nil
 	}
-	
+
 	writeOp.Confirmations++
-	
+
 	if writeOp.Confirmations >= cn.quorumSize {
 		select {
 		case writeOp.Complete <- true:
 		default:
 		}
 	}
-	
+
 	return nil
 }
 
