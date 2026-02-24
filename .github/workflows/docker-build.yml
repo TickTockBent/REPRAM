@@ -58,11 +58,5 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Security scan
-      if: github.event_name != 'pull_request'
-      uses: docker/scout-action@v1
-      with:
-        command: cves
-        image: ${{ env.IMAGE_NAME }}:latest
-        only-severities: critical,high
-        exit-code: true
+    # Docker Scout security scan can be enabled once a Docker Scout
+    # subscription is configured for the repository.
