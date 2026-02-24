@@ -22,7 +22,7 @@ By participating in this project, you agree to maintain a respectful and collabo
    ```
 3. **Add upstream remote**:
    ```bash
-   git remote add upstream https://github.com/ORIGINAL_OWNER/REPRAM.git
+   git remote add upstream https://github.com/TickTockBent/REPRAM.git
    ```
 4. **Create a feature branch**:
    ```bash
@@ -117,15 +117,15 @@ make run
 
 When contributing, please maintain:
 1. **Zero-knowledge nodes** - Nodes never interpret data
-2. **Client-side encryption** - Encryption is always the client's concern
+2. **Privacy through transience** - The network is safe because it forgets; encryption is the client's concern
 3. **Ephemeral by design** - Everything has a TTL, expired data is permanently gone
 4. **Permissionless reads** - No auth at node level
 5. **Single binary** - One `cmd/repram` entry point, cluster-capable by default
 
 ## Questions?
 
-- Open a [GitHub Issue](https://github.com/ORIGINAL_OWNER/REPRAM/issues)
-- Check existing [Discussions](https://github.com/ORIGINAL_OWNER/REPRAM/discussions)
+- Open a [GitHub Issue](https://github.com/TickTockBent/REPRAM/issues)
+- Check existing [Discussions](https://github.com/TickTockBent/REPRAM/discussions)
 
 ## License
 
