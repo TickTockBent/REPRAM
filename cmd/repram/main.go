@@ -51,6 +51,7 @@ func main() {
 	rateLimit := envInt("REPRAM_RATE_LIMIT", 100)
 	maxStorageMB := envInt("REPRAM_MAX_STORAGE_MB", 0)    // 0 = unlimited
 	writeTimeout := envInt("REPRAM_WRITE_TIMEOUT", 5)      // seconds
+	clusterSecret := os.Getenv("REPRAM_CLUSTER_SECRET")
 	network := os.Getenv("REPRAM_NETWORK")
 	if network == "" {
 		network = "public"
@@ -73,7 +74,7 @@ func main() {
 		bootstrapNodes = append(bootstrapNodes, resolved...)
 	}
 
-	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024, time.Duration(writeTimeout)*time.Second)
+	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024, time.Duration(writeTimeout)*time.Second, clusterSecret)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -104,6 +105,11 @@ func main() {
 	logging.Info("  Node ID: %s", nodeID)
 	logging.Info("  HTTP: :%d  Gossip: :%d", httpPort, gossipPort)
 	logging.Info("  Replication: %d  TTL range: %d-%ds  Write timeout: %ds", replicationFactor, minTTL, maxTTL, writeTimeout)
+	if clusterSecret != "" {
+		logging.Info("  Gossip authentication: HMAC-SHA256 (cluster secret configured)")
+	} else {
+		logging.Info("  Gossip authentication: none (open mode)")
+	}
 
 	// Graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -340,10 +346,31 @@ func (s *HTTPServer) keysHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *HTTPServer) verifyGossipSignature(w http.ResponseWriter, r *http.Request, body []byte) bool {
+	secret := s.clusterNode.ClusterSecret()
+	if secret == "" {
+		return true // open mode
+	}
+	sig := r.Header.Get("X-Repram-Signature")
+	if sig == "" {
+		http.Error(w, "Missing signature", http.StatusForbidden)
+		return false
+	}
+	if !gossip.VerifyBody(secret, body, sig) {
+		http.Error(w, "Invalid signature", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 func (s *HTTPServer) gossipHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	if !s.verifyGossipSignature(w, r, body) {
 		return
 	}
 
@@ -386,6 +413,10 @@ func (s *HTTPServer) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	if !s.verifyGossipSignature(w, r, body) {
 		return
 	}
 

@@ -38,13 +38,16 @@ type HTTPTransport struct {
 	localNode      *Node
 	messageHandler func(*Message) error
 	client         *http.Client
+	clusterSecret  string
 	mu             sync.RWMutex
 }
 
-// NewHTTPTransport creates a new HTTP-based transport
-func NewHTTPTransport(localNode *Node) *HTTPTransport {
+// NewHTTPTransport creates a new HTTP-based transport.
+// If clusterSecret is non-empty, all outgoing messages are HMAC-signed.
+func NewHTTPTransport(localNode *Node, clusterSecret string) *HTTPTransport {
 	return &HTTPTransport{
-		localNode: localNode,
+		localNode:     localNode,
+		clusterSecret: clusterSecret,
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -99,7 +102,10 @@ func (t *HTTPTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	
+	if t.clusterSecret != "" {
+		req.Header.Set("X-Repram-Signature", SignBody(t.clusterSecret, jsonData))
+	}
+
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send message to %s: %w", url, err)

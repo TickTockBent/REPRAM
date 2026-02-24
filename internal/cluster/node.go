@@ -17,11 +17,12 @@ import (
 var ErrQuorumTimeout = fmt.Errorf("quorum timeout: stored locally, replication pending")
 
 type ClusterNode struct {
-	localNode    *gossip.Node
-	protocol     *gossip.Protocol
-	store        Store
-	quorumSize   int
-	writeTimeout time.Duration
+	localNode     *gossip.Node
+	protocol      *gossip.Protocol
+	store         Store
+	quorumSize    int
+	writeTimeout  time.Duration
+	clusterSecret string
 
 	pendingWrites map[string]*WriteOperation
 	writesMutex   sync.RWMutex
@@ -43,7 +44,7 @@ type Store interface {
 	Scan() []string
 }
 
-func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int, replicationFactor int, maxStorageBytes int64, writeTimeout time.Duration) *ClusterNode {
+func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int, replicationFactor int, maxStorageBytes int64, writeTimeout time.Duration, clusterSecret string) *ClusterNode {
 	localNode := &gossip.Node{
 		ID:       gossip.NodeID(nodeID),
 		Address:  address,
@@ -51,7 +52,7 @@ func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int,
 		HTTPPort: httpPort,
 	}
 
-	protocol := gossip.NewProtocol(localNode, replicationFactor)
+	protocol := gossip.NewProtocol(localNode, replicationFactor, clusterSecret)
 
 	// For single node deployment, quorum size should be 1
 	quorumSize := (replicationFactor / 2) + 1
@@ -65,12 +66,13 @@ func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int,
 		store:         storage.NewMemoryStore(maxStorageBytes),
 		quorumSize:    quorumSize,
 		writeTimeout:  writeTimeout,
+		clusterSecret: clusterSecret,
 		pendingWrites: make(map[string]*WriteOperation),
 	}
 }
 
 func (cn *ClusterNode) Start(ctx context.Context, bootstrapAddresses []string) error {
-	transport := gossip.NewHTTPTransport(cn.localNode)
+	transport := gossip.NewHTTPTransport(cn.localNode, cn.clusterSecret)
 	cn.protocol.SetTransport(transport)
 	cn.protocol.SetMessageHandler(cn.handleGossipMessage)
 
@@ -255,4 +257,9 @@ func (cn *ClusterNode) Scan() []string {
 
 func (cn *ClusterNode) HandleBootstrap(req *gossip.BootstrapRequest) *gossip.BootstrapResponse {
 	return cn.protocol.HandleBootstrap(req)
+}
+
+// ClusterSecret returns the configured cluster secret (empty string if open mode).
+func (cn *ClusterNode) ClusterSecret() string {
+	return cn.clusterSecret
 }

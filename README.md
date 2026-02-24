@@ -158,6 +158,7 @@ curl http://localhost:8080/v1/metrics
 | `REPRAM_MIN_TTL` | `300` | Minimum TTL in seconds (5 minutes) |
 | `REPRAM_MAX_TTL` | `86400` | Maximum TTL in seconds (24 hours) |
 | `REPRAM_WRITE_TIMEOUT` | `5` | Quorum confirmation timeout in seconds. Writes stored locally always succeed; timeout only affects quorum wait (201 vs 202). |
+| `REPRAM_CLUSTER_SECRET` | _(empty)_ | Shared secret for gossip HMAC-SHA256 authentication. If set, all inter-node messages are signed and verified. If empty, gossip is open (suitable for private/firewalled clusters). |
 | `REPRAM_RATE_LIMIT` | `100` | Requests per second per IP |
 | `REPRAM_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `REPRAM_MAX_STORAGE_MB` | `0` | Max data storage in MB (0 = unlimited). Rejects writes with 507 when full. |

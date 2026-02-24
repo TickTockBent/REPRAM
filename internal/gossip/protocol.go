@@ -47,15 +47,16 @@ const (
 )
 
 type Protocol struct {
-	localNode      *Node
-	peers          map[NodeID]*Node
-	peersMutex     sync.RWMutex
+	localNode         *Node
+	peers             map[NodeID]*Node
+	peersMutex        sync.RWMutex
 	replicationFactor int
-	quorumSize     int
-	messageHandler func(*Message) error
-	transport      Transport
-	topologyTicker *time.Ticker
-	stopChan       chan struct{}
+	quorumSize        int
+	clusterSecret     string
+	messageHandler    func(*Message) error
+	transport         Transport
+	topologyTicker    *time.Ticker
+	stopChan          chan struct{}
 }
 
 type Transport interface {
@@ -66,14 +67,15 @@ type Transport interface {
 	SetMessageHandler(handler func(*Message) error)
 }
 
-func NewProtocol(localNode *Node, replicationFactor int) *Protocol {
+func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *Protocol {
 	quorumSize := (replicationFactor / 2) + 1
 	return &Protocol{
 		localNode:         localNode,
-		peers:            make(map[NodeID]*Node),
+		peers:             make(map[NodeID]*Node),
 		replicationFactor: replicationFactor,
-		quorumSize:       quorumSize,
-		stopChan:         make(chan struct{}),
+		quorumSize:        quorumSize,
+		clusterSecret:     clusterSecret,
+		stopChan:          make(chan struct{}),
 	}
 }
 

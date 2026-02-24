@@ -75,6 +75,9 @@ func (p *Protocol) sendBootstrapRequest(ctx context.Context, seedAddr string, re
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if p.clusterSecret != "" {
+		httpReq.Header.Set("X-Repram-Signature", SignBody(p.clusterSecret, jsonData))
+	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(httpReq)
