@@ -5,6 +5,10 @@ All notable changes to REPRAM are documented here.
 ## [Unreleased]
 
 ### Added
+- **Peer failure detection** — evicts peers after 3 consecutive failed health checks (~90s); peers rejoin automatically via bootstrap ([#25](https://github.com/TickTockBent/repram/issues/25))
+- **Enclave-scoped replication** — `REPRAM_ENCLAVE` env var defines replication boundaries; nodes in the same enclave replicate data, all nodes share topology; dynamic quorum based on enclave size
+- `/v1/topology` endpoint — returns full peer list with enclave membership
+- `REPRAM_TRUST_PROXY` env var — proxy headers (`X-Forwarded-For`, `X-Real-IP`) now ignored by default; set to `true` when behind a reverse proxy ([#30](https://github.com/TickTockBent/repram/issues/30))
 - `docs/patterns.md` — full usage pattern catalog (agent patterns + general-purpose primitives + key naming conventions)
 - `docs/encryption-example.md` — client-side AES-256-GCM example with opaque key derivation ([#18](https://github.com/TickTockBent/repram/issues/18))
 - Heartbeat/presence and state machine agent patterns across all documentation
@@ -15,7 +19,7 @@ All notable changes to REPRAM are documented here.
 - `REPRAM_CLUSTER_SECRET` env var — HMAC-SHA256 authentication for gossip and bootstrap messages ([#22](https://github.com/TickTockBent/repram/issues/22))
 - `REPRAM_MAX_STORAGE_MB` env var — configurable capacity limit, returns HTTP 507 when full ([#20](https://github.com/TickTockBent/repram/issues/20))
 - `REPRAM_LOG_LEVEL` env var — leveled logging (debug/info/warn/error), replaces raw fmt.Printf ([#12](https://github.com/TickTockBent/repram/issues/12))
-- Test suite: 37 tests covering storage, middleware, and gossip auth (CRUD, TTL, copy safety, capacity, concurrency with race detector, scanner blocking, client passthrough, rate limiter, IP extraction, HMAC sign/verify) ([#11](https://github.com/TickTockBent/repram/issues/11))
+- Test suite: 43 tests covering storage, middleware, gossip auth, peer failure detection, and proxy trust (CRUD, TTL, copy safety, capacity, concurrency with race detector, scanner blocking, client passthrough, rate limiter, IP extraction, HMAC sign/verify, eviction/rejoin) ([#11](https://github.com/TickTockBent/repram/issues/11))
 - CI test workflow — runs `make build` + `go test -race` on push to main and PRs
 - CI npm publish workflow — publishes `repram-mcp` to npm on `mcp-v*` tags ([#13](https://github.com/TickTockBent/repram/issues/13))
 - `workflow_dispatch` trigger on Docker build workflow
@@ -26,16 +30,22 @@ All notable changes to REPRAM are documented here.
 - `repram-mcp` published to npm — `npx repram-mcp` now works; current version 1.1.0
 - Quorum timeout returns 202 Accepted (stored locally, replication pending) instead of 500 ([#21](https://github.com/TickTockBent/repram/issues/21))
 - HEAD requests supported on `/v1/data/{key}` for lightweight existence checks
+- Rate limiter no longer trusts `X-Forwarded-For` / `X-Real-IP` by default — requires `REPRAM_TRUST_PROXY=true` ([#30](https://github.com/TickTockBent/repram/issues/30))
+- Message IDs use atomic counter suffix to prevent theoretical same-nanosecond collisions ([#29](https://github.com/TickTockBent/repram/issues/29))
+- Docker Compose uses `condition: service_healthy` for proper startup ordering; ports remapped to 8091-8093
 - README links to `docs/patterns.md` instead of inlining the full pattern catalog
 - Website uses a single-line teaser for general-purpose patterns instead of a second grid
 - CONTRIBUTING.md placeholder URLs replaced with actual GitHub links ([#24](https://github.com/TickTockBent/repram/issues/24))
 - Updated `google.golang.org/protobuf` to v1.36.6 (CVE fix, Dependabot alert #11)
+- Documented `/v1/keys` cleanup granularity — listings may include keys up to 30s past TTL; direct GET always enforces TTL precisely ([#27](https://github.com/TickTockBent/repram/issues/27))
 
 ### Fixed
 - **MemoryStore.Get() data race** — removed `delete()` under read lock; expired entries now returned as not-found, cleaned up by background worker ([#8](https://github.com/TickTockBent/repram/issues/8))
 - **MemoryStore returns mutable references** — Get/GetWithMetadata return byte slice copies; Put copies input ([#10](https://github.com/TickTockBent/repram/issues/10))
 - **Suspicious request filter false-positives** — removed `python-requests` from blocked UAs; removed URL pattern matching that blocked legitimate keys containing words like `select`, `delete`, `drop` ([#9](https://github.com/TickTockBent/repram/issues/9))
 - **Unbounded memory growth** — MemoryStore now enforces configurable capacity limit with proper size tracking through overwrites and expiration ([#20](https://github.com/TickTockBent/repram/issues/20))
+- **Dead peers degrade write latency** — peers now evicted after 3 consecutive failed pings; gossip broadcasts no longer accumulate timeouts against unreachable nodes ([#25](https://github.com/TickTockBent/repram/issues/25))
+- **Docker Compose bootstrap race** — nodes now wait for dependencies to pass healthchecks before starting
 
 ### Removed
 - GitHub Pages deployment workflow (site is hosted on Vercel)
