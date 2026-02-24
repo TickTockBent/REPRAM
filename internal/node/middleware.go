@@ -105,6 +105,7 @@ func (rl *RateLimiter) Close() {
 type SecurityMiddleware struct {
 	rateLimiter    *RateLimiter
 	maxRequestSize int64
+	trustProxy     bool
 	metrics        *SecurityMetrics
 }
 
@@ -114,7 +115,7 @@ type SecurityMetrics struct {
 	suspiciousRequests    prometheus.Counter
 }
 
-func NewSecurityMiddleware(rateLimit, burst int, maxRequestSize int64) *SecurityMiddleware {
+func NewSecurityMiddleware(rateLimit, burst int, maxRequestSize int64, trustProxy bool) *SecurityMiddleware {
 	metrics := &SecurityMetrics{
 		rateLimitedRequests: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "repram_rate_limited_requests_total",
@@ -139,6 +140,7 @@ func NewSecurityMiddleware(rateLimit, burst int, maxRequestSize int64) *Security
 	return &SecurityMiddleware{
 		rateLimiter:    NewRateLimiter(rateLimit, burst),
 		maxRequestSize: maxRequestSize,
+		trustProxy:     trustProxy,
 		metrics:        metrics,
 	}
 }
@@ -192,23 +194,22 @@ func (sm *SecurityMiddleware) applySecurityHeaders(w http.ResponseWriter) {
 }
 
 func (sm *SecurityMiddleware) getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header first (for proxies)
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		// Take the first IP in the chain
-		ips := strings.Split(xff, ",")
-		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
+	// Only trust proxy headers when explicitly configured.
+	// X-Forwarded-For and X-Real-IP are trivially spoofable by clients
+	// in direct-exposure deployments.
+	if sm.trustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			ips := strings.Split(xff, ",")
+			if len(ips) > 0 {
+				return strings.TrimSpace(ips[0])
+			}
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return xri
 		}
 	}
-	
-	// Check X-Real-IP header
-	xri := r.Header.Get("X-Real-IP")
-	if xri != "" {
-		return xri
-	}
-	
-	// Fall back to RemoteAddr
+
+	// Use direct connection IP
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

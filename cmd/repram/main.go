@@ -52,6 +52,7 @@ func main() {
 	maxStorageMB := envInt("REPRAM_MAX_STORAGE_MB", 0)    // 0 = unlimited
 	writeTimeout := envInt("REPRAM_WRITE_TIMEOUT", 5)      // seconds
 	clusterSecret := os.Getenv("REPRAM_CLUSTER_SECRET")
+	trustProxy := strings.EqualFold(os.Getenv("REPRAM_TRUST_PROXY"), "true")
 	enclave := os.Getenv("REPRAM_ENCLAVE") // default: "default"
 	network := os.Getenv("REPRAM_NETWORK")
 	if network == "" {
@@ -98,6 +99,7 @@ func main() {
 		rateLimit,
 		rateLimit*2, // burst = 2x rate
 		10*1024*1024, // 10MB max request size
+		trustProxy,
 	)
 	server.securityMW = securityMW
 

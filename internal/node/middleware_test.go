@@ -137,6 +137,7 @@ func TestRateLimiterPerIP(t *testing.T) {
 
 func TestGetClientIPFromXForwardedFor(t *testing.T) {
 	sm := newTestMiddleware()
+	sm.trustProxy = true
 	defer sm.Close()
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -150,6 +151,7 @@ func TestGetClientIPFromXForwardedFor(t *testing.T) {
 
 func TestGetClientIPFromXRealIP(t *testing.T) {
 	sm := newTestMiddleware()
+	sm.trustProxy = true
 	defer sm.Close()
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -158,6 +160,21 @@ func TestGetClientIPFromXRealIP(t *testing.T) {
 	ip := sm.getClientIP(req)
 	if ip != "10.0.0.5" {
 		t.Fatalf("getClientIP = %q, want %q", ip, "10.0.0.5")
+	}
+}
+
+func TestGetClientIPIgnoresProxyHeadersByDefault(t *testing.T) {
+	sm := newTestMiddleware()
+	defer sm.Close()
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Forwarded-For", "10.0.0.1")
+	req.Header.Set("X-Real-IP", "10.0.0.5")
+	// httptest.NewRequest sets RemoteAddr to "192.0.2.1:1234"
+
+	ip := sm.getClientIP(req)
+	if ip != "192.0.2.1" {
+		t.Fatalf("getClientIP = %q, want %q (should ignore proxy headers when trustProxy=false)", ip, "192.0.2.1")
 	}
 }
 

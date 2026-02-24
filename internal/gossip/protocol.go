@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"repram/internal/logging"
@@ -336,8 +337,10 @@ func (p *Protocol) HandleMessage(msg *Message) error {
 	return p.handleMessage(msg)
 }
 
+var messageCounter uint64
+
 func generateMessageID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddUint64(&messageCounter, 1))
 }
 
 // startTopologySync periodically exchanges peer lists to fix broken topology

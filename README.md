@@ -124,6 +124,8 @@ curl http://localhost:8080/v1/keys?prefix=myapp/
 # Returns: {"keys": ["key1", "key2", ...]}
 ```
 
+Note: Key listing is based on periodic background cleanup (every 30s). Keys may appear in listings for up to 30 seconds after TTL expiration. Direct retrieval via `GET /v1/data/{key}` always enforces TTL precisely.
+
 ### Health check
 
 ```bash
@@ -160,7 +162,8 @@ curl http://localhost:8080/v1/metrics
 | `REPRAM_MAX_TTL` | `86400` | Maximum TTL in seconds (24 hours) |
 | `REPRAM_WRITE_TIMEOUT` | `5` | Quorum confirmation timeout in seconds. Writes stored locally always succeed; timeout only affects quorum wait (201 vs 202). |
 | `REPRAM_CLUSTER_SECRET` | _(empty)_ | Shared secret for gossip HMAC-SHA256 authentication. If set, all inter-node messages are signed and verified. If empty, gossip is open (suitable for private/firewalled clusters). |
-| `REPRAM_RATE_LIMIT` | `100` | Requests per second per IP |
+| `REPRAM_RATE_LIMIT` | `100` | Requests per second per IP. When behind a reverse proxy, set `REPRAM_TRUST_PROXY=true` so the rate limiter uses `X-Forwarded-For` / `X-Real-IP` headers. When exposed directly, leave it `false` to prevent header spoofing. |
+| `REPRAM_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` and `X-Real-IP` headers for client IP detection. Set to `true` when running behind a reverse proxy (nginx, Cloudflare, etc.). |
 | `REPRAM_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `REPRAM_MAX_STORAGE_MB` | `0` | Max data storage in MB (0 = unlimited). Rejects writes with 507 when full. |
 
