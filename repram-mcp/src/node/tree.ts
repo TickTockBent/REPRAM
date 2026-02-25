@@ -18,6 +18,7 @@ import type { Logger } from "./logger.js";
 import type { NodeInfo } from "./types.js";
 import {
   WebSocketConnection,
+  connectToSubstrate,
   type AttachmentMessage,
   type HelloPayload,
   type WelcomePayload,
@@ -77,6 +78,15 @@ export class TreeManager {
   /** Timers for ACK route cleanup (keyed by messageId). */
   private ackRouteTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  /**
+   * Callback invoked when a new parent connection is established during
+   * reattachment. Allows the server layer to set up message routing.
+   */
+  private onReattachCallback: ((conn: WebSocketConnection) => void) | null = null;
+
+  /** Whether a reattachment attempt is currently in progress. */
+  private reattaching = false;
+
   constructor(
     localNode: NodeInfo,
     gossip: GossipProtocol,
@@ -120,6 +130,14 @@ export class TreeManager {
 
   isInboundCapable(): boolean {
     return this.inboundCapable;
+  }
+
+  /**
+   * Register a callback for when a new parent connection is established
+   * during reattachment. The server uses this to wire up message routing.
+   */
+  setReattachCallback(cb: (conn: WebSocketConnection) => void): void {
+    this.onReattachCallback = cb;
   }
 
   // --- Server-side: handle incoming attachments ---
@@ -324,7 +342,7 @@ export class TreeManager {
       this.parentConnection = null;
     });
 
-    // Handle goodbye from parent (graceful shutdown)
+    // Handle goodbye from parent (graceful shutdown → proactive migration)
     conn.on("attachment", (msg: AttachmentMessage) => {
       if (msg.type === "goodbye") {
         const payload = msg.payload as GoodbyePayload;
@@ -332,8 +350,12 @@ export class TreeManager {
           `Substrate node sent goodbye: ${payload.reason} ` +
             `(${payload.alternative_parents.length} alternatives)`,
         );
-        // Store alternatives for reconnection (handled by #65)
         this.parentConnection = null;
+
+        // Proactive migration — try alternatives before falling back to bootstrap
+        if (payload.alternative_parents.length > 0) {
+          this.reattachToAlternative(payload.alternative_parents);
+        }
       }
     });
 
@@ -350,6 +372,62 @@ export class TreeManager {
     }
 
     return welcome;
+  }
+
+  // --- Reattachment ---
+
+  /**
+   * Attempt to reattach to an alternative substrate node after receiving
+   * a goodbye from the current parent. Tries each alternative in order,
+   * falls back to logged warning if all fail.
+   *
+   * This is fire-and-forget — the transient node continues operating
+   * with local storage while reattachment is in progress.
+   */
+  private async reattachToAlternative(
+    alternatives: GoodbyePayload["alternative_parents"],
+  ): Promise<void> {
+    if (this.reattaching) return; // prevent concurrent reattachment
+    this.reattaching = true;
+
+    try {
+      for (const alt of alternatives) {
+        try {
+          this.logger.info(
+            `Attempting reattachment to ${alt.id} (${alt.address}:${alt.http_port})`,
+          );
+
+          const conn = await connectToSubstrate(
+            alt.address,
+            alt.http_port,
+            this.options.clusterSecret,
+            this.logger,
+            10_000,
+          );
+
+          const welcome = await this.attach(conn);
+          if (welcome) {
+            this.logger.info(`Reattached to ${alt.id} — gossip resumed`);
+
+            // Notify server to set up message routing on new connection
+            this.onReattachCallback?.(conn);
+            conn.startHeartbeat();
+            return;
+          }
+
+          conn.close();
+        } catch (err) {
+          this.logger.warn(`Reattachment to ${alt.id} failed: ${err}`);
+        }
+      }
+
+      this.logger.warn(
+        "All alternative substrate nodes failed — operating in degraded mode " +
+          "(local store only until heartbeat-based reattachment or restart)",
+      );
+    } finally {
+      this.reattaching = false;
+    }
   }
 
   // --- Relay: ACK routing ---

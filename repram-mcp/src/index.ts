@@ -14,7 +14,7 @@ import { HTTPServer, loadConfig, type ServerConfig } from "./node/server.js";
 import { HTTPTransport } from "./node/transport.js";
 import { Logger } from "./node/logger.js";
 import { bootstrapFromPeers, resolveBootstrapDNS } from "./node/bootstrap.js";
-import { connectToSubstrate } from "./node/ws-transport.js";
+import { connectToSubstrate, type WebSocketConnection } from "./node/ws-transport.js";
 
 const isStandalone =
   process.env.REPRAM_MODE === "standalone" ||
@@ -98,11 +98,14 @@ async function attachToSubstrate(
         logger.info(`WebSocket attachment established — transient node active`);
 
         // Route incoming gossip from substrate through cluster
-        conn.on("message", (msg) => {
-          server.clusterNode.gossip.handleMessage(msg);
+        setupParentRouting(server, conn);
+        conn.startHeartbeat();
+
+        // Set up reattach callback for goodbye-triggered migration
+        server.treeManager.setReattachCallback((newConn) => {
+          setupParentRouting(server, newConn);
         });
 
-        conn.startHeartbeat();
         return; // attached successfully
       }
 
@@ -120,6 +123,16 @@ async function attachToSubstrate(
     "No bootstrap node supports WebSocket — NAT traversal unavailable. " +
       "Operating with HTTP-only gossip (degraded for NAT-bound nodes).",
   );
+}
+
+/**
+ * Wire up message routing on a parent (substrate) WebSocket connection.
+ * Incoming gossip messages from the parent flow through the cluster node.
+ */
+function setupParentRouting(server: HTTPServer, conn: WebSocketConnection): void {
+  conn.on("message", (msg) => {
+    server.clusterNode.gossip.handleMessage(msg);
+  });
 }
 
 // ─── Standalone mode (HTTP server only, no MCP) ─────────────────────
