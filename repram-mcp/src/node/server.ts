@@ -35,10 +35,14 @@ export interface ServerConfig {
   logLevel: string;
 }
 
-export function loadConfig(): ServerConfig {
+/**
+ * Load config from REPRAM_* env vars. When `embedded` is true (MCP mode),
+ * defaults are conservative: port 0 (auto-select), 50MB storage cap, warn log level.
+ */
+export function loadConfig(embedded = false): ServerConfig {
   return {
-    httpPort: envInt("REPRAM_HTTP_PORT", 8080),
-    gossipPort: envInt("REPRAM_GOSSIP_PORT", 9090),
+    httpPort: envInt("REPRAM_HTTP_PORT", embedded ? 0 : 8080),
+    gossipPort: envInt("REPRAM_GOSSIP_PORT", embedded ? 0 : 9090),
     address: process.env.REPRAM_ADDRESS ?? "localhost",
     nodeId: process.env.REPRAM_NODE_ID ?? `node-${Date.now()}`,
     network: process.env.REPRAM_NETWORK ?? "public",
@@ -50,8 +54,8 @@ export function loadConfig(): ServerConfig {
     clusterSecret: process.env.REPRAM_CLUSTER_SECRET ?? "",
     rateLimit: envInt("REPRAM_RATE_LIMIT", 100),
     trustProxy: (process.env.REPRAM_TRUST_PROXY ?? "").toLowerCase() === "true",
-    maxStorageBytes: envInt("REPRAM_MAX_STORAGE_MB", 0) * 1024 * 1024,
-    logLevel: process.env.REPRAM_LOG_LEVEL ?? "info",
+    maxStorageBytes: envInt("REPRAM_MAX_STORAGE_MB", embedded ? 50 : 0) * 1024 * 1024,
+    logLevel: process.env.REPRAM_LOG_LEVEL ?? (embedded ? "warn" : "info"),
   };
 }
 
