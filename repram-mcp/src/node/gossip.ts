@@ -446,6 +446,12 @@ export class GossipProtocol {
     }
   }
 
+  /** Send a message to a specific node. */
+  async send(target: NodeInfo, msg: Message): Promise<void> {
+    if (!this.transport) throw new Error("transport not set");
+    await this.transport.send(target, msg);
+  }
+
   /** Broadcast to ALL known peers (not enclave-scoped). Used by topology sync. */
   async broadcast(msg: Message): Promise<void> {
     if (!this.transport) throw new Error("transport not set");
