@@ -8,6 +8,8 @@ All notable changes to REPRAM are documented here.
 - **Peer failure detection** — evicts peers after 3 consecutive failed health checks (~90s); peers rejoin automatically via bootstrap ([#25](https://github.com/TickTockBent/repram/issues/25))
 - **Peer eviction metrics** — four Prometheus metrics for cluster health: `repram_peers_active` (gauge), `repram_peer_evictions_total`, `repram_peer_joins_total`, `repram_ping_failures_total` (counters) ([#28](https://github.com/TickTockBent/repram/issues/28))
 - **Probabilistic gossip fanout** — enclaves with >10 peers switch from full broadcast O(N) to √N random fanout per hop with epidemic forwarding and message deduplication ([#31](https://github.com/TickTockBent/repram/issues/31))
+- **Topology sync peer propagation** — SYNC responses now include the responder's full peer list, enabling transitive peer discovery after partitions and node churn ([#36](https://github.com/TickTockBent/repram/issues/36))
+- **Bounded dedup cache** — `seenMessages` capped at 100k entries; evicts expired then oldest half on overflow ([#37](https://github.com/TickTockBent/repram/issues/37))
 - **Enclave-scoped replication** — `REPRAM_ENCLAVE` env var defines replication boundaries; nodes in the same enclave replicate data, all nodes share topology; dynamic quorum based on enclave size
 - `/v1/topology` endpoint — returns full peer list with enclave membership
 - `REPRAM_TRUST_PROXY` env var — proxy headers (`X-Forwarded-For`, `X-Real-IP`) now ignored by default; set to `true` when behind a reverse proxy ([#30](https://github.com/TickTockBent/repram/issues/30))
@@ -22,7 +24,7 @@ All notable changes to REPRAM are documented here.
 - `REPRAM_MAX_STORAGE_MB` env var — configurable capacity limit, returns HTTP 507 when full ([#20](https://github.com/TickTockBent/repram/issues/20))
 - `REPRAM_LOG_LEVEL` env var — leveled logging (debug/info/warn/error), replaces raw fmt.Printf ([#12](https://github.com/TickTockBent/repram/issues/12))
 - **Integration tests** — 7 in-process tests with real HTTP transport: bootstrap discovery, write replication, quorum confirmation, enclave isolation, quorum timeout, 3-node topology, 3-node replication ([#26](https://github.com/TickTockBent/repram/issues/26))
-- Test suite: 59 tests covering storage, middleware, gossip auth, peer failure detection, eviction metrics, proxy trust, gossip fanout, and distributed integration ([#11](https://github.com/TickTockBent/repram/issues/11), [#26](https://github.com/TickTockBent/repram/issues/26), [#28](https://github.com/TickTockBent/repram/issues/28), [#31](https://github.com/TickTockBent/repram/issues/31))
+- Test suite: 63 tests covering storage, middleware, gossip auth, peer failure detection, eviction metrics, proxy trust, gossip fanout, topology sync, and distributed integration ([#11](https://github.com/TickTockBent/repram/issues/11), [#26](https://github.com/TickTockBent/repram/issues/26), [#28](https://github.com/TickTockBent/repram/issues/28), [#31](https://github.com/TickTockBent/repram/issues/31), [#36](https://github.com/TickTockBent/repram/issues/36))
 - CI test workflow — runs `make build` + `go test -race` on push to main and PRs
 - CI npm publish workflow — publishes `repram-mcp` to npm on `mcp-v*` tags ([#13](https://github.com/TickTockBent/repram/issues/13))
 - `workflow_dispatch` trigger on Docker build workflow
@@ -46,6 +48,7 @@ All notable changes to REPRAM are documented here.
 - **Graceful shutdown** — signal handler now calls `server.Shutdown()` with 10s drain timeout instead of `os.Exit(0)`; in-flight requests complete before process exits ([#33](https://github.com/TickTockBent/repram/issues/33))
 - **Quorum tracking for concurrent writes** — `pendingWrites` map keyed on message ID instead of data key; concurrent writes to the same key now track quorum independently ([#34](https://github.com/TickTockBent/repram/issues/34))
 - **Request body size enforcement** — `MaxRequestSizeMiddleware` (with `http.MaxBytesReader`) wired into router; previously only `ContentLength` header was checked, which clients could omit ([#35](https://github.com/TickTockBent/repram/issues/35))
+- **CORS policy documented** — README now explicitly states that any origin is accepted by design, consistent with permissionless access model ([#38](https://github.com/TickTockBent/repram/issues/38))
 - **MemoryStore.Get() data race** — removed `delete()` under read lock; expired entries now returned as not-found, cleaned up by background worker ([#8](https://github.com/TickTockBent/repram/issues/8))
 - **MemoryStore returns mutable references** — Get/GetWithMetadata return byte slice copies; Put copies input ([#10](https://github.com/TickTockBent/repram/issues/10))
 - **Suspicious request filter false-positives** — removed `python-requests` from blocked UAs; removed URL pattern matching that blocked legitimate keys containing words like `select`, `delete`, `drop` ([#9](https://github.com/TickTockBent/repram/issues/9))
