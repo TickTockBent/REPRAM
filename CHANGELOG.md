@@ -43,6 +43,9 @@ All notable changes to REPRAM are documented here.
 - Documented `/v1/keys` cleanup granularity — listings may include keys up to 30s past TTL; direct GET always enforces TTL precisely ([#27](https://github.com/TickTockBent/repram/issues/27))
 
 ### Fixed
+- **Graceful shutdown** — signal handler now calls `server.Shutdown()` with 10s drain timeout instead of `os.Exit(0)`; in-flight requests complete before process exits ([#33](https://github.com/TickTockBent/repram/issues/33))
+- **Quorum tracking for concurrent writes** — `pendingWrites` map keyed on message ID instead of data key; concurrent writes to the same key now track quorum independently ([#34](https://github.com/TickTockBent/repram/issues/34))
+- **Request body size enforcement** — `MaxRequestSizeMiddleware` (with `http.MaxBytesReader`) wired into router; previously only `ContentLength` header was checked, which clients could omit ([#35](https://github.com/TickTockBent/repram/issues/35))
 - **MemoryStore.Get() data race** — removed `delete()` under read lock; expired entries now returned as not-found, cleaned up by background worker ([#8](https://github.com/TickTockBent/repram/issues/8))
 - **MemoryStore returns mutable references** — Get/GetWithMetadata return byte slice copies; Put copies input ([#10](https://github.com/TickTockBent/repram/issues/10))
 - **Suspicious request filter false-positives** — removed `python-requests` from blocked UAs; removed URL pattern matching that blocked legitimate keys containing words like `select`, `delete`, `drop` ([#9](https://github.com/TickTockBent/repram/issues/9))
