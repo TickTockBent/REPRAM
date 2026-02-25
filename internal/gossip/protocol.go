@@ -105,6 +105,10 @@ const FanoutThreshold = 10
 // Should be longer than the maximum expected propagation time.
 const seenMessageTTL = 60 * time.Second
 
+// maxSeenMessages caps the dedup cache to prevent unbounded growth under
+// sustained high write throughput between cleanup cycles.
+const maxSeenMessages = 100000
+
 type Protocol struct {
 	localNode         *Node
 	peers             map[NodeID]*Node
@@ -408,6 +412,8 @@ func (p *Protocol) Broadcast(ctx context.Context, msg *Message) error {
 
 // MarkSeen records a message ID in the dedup cache. Returns true if the
 // message was already seen (duplicate), false if it's new.
+// If the cache is at capacity, expired entries are evicted first. If still
+// full, the oldest half is dropped to make room.
 func (p *Protocol) MarkSeen(messageID string) bool {
 	p.seenMutex.Lock()
 	defer p.seenMutex.Unlock()
@@ -415,8 +421,43 @@ func (p *Protocol) MarkSeen(messageID string) bool {
 	if _, seen := p.seenMessages[messageID]; seen {
 		return true
 	}
+
+	// Enforce capacity bound
+	if len(p.seenMessages) >= maxSeenMessages {
+		p.evictSeenLocked()
+	}
+
 	p.seenMessages[messageID] = time.Now().Add(seenMessageTTL)
 	return false
+}
+
+// evictSeenLocked removes expired entries, then drops the oldest half if
+// still at capacity. Must be called with seenMutex held.
+func (p *Protocol) evictSeenLocked() {
+	now := time.Now()
+	for id, expiry := range p.seenMessages {
+		if now.After(expiry) {
+			delete(p.seenMessages, id)
+		}
+	}
+
+	// If expired cleanup wasn't enough, drop the oldest half
+	if len(p.seenMessages) >= maxSeenMessages {
+		// Find the median expiry (oldest entries have earliest expiry)
+		earliest := now.Add(seenMessageTTL) // start with max possible
+		for _, expiry := range p.seenMessages {
+			if expiry.Before(earliest) {
+				earliest = expiry
+			}
+		}
+		midpoint := earliest.Add(now.Add(seenMessageTTL).Sub(earliest) / 2)
+
+		for id, expiry := range p.seenMessages {
+			if expiry.Before(midpoint) {
+				delete(p.seenMessages, id)
+			}
+		}
+	}
 }
 
 // cleanupSeenMessages removes expired entries from the dedup cache.

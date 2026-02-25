@@ -147,6 +147,10 @@ curl http://localhost:8080/v1/metrics
 # Returns: Prometheus-format metrics
 ```
 
+### CORS
+
+REPRAM accepts requests from any origin. This is intentional — REPRAM is permissionless by design, with no authentication or access control, so restricting CORS origins would add complexity without meaningful security benefit. Any client that can reach the node's HTTP port can already read and write data regardless of browser origin policy. If you need to restrict browser-based access, place REPRAM behind a reverse proxy with CORS rules.
+
 ## Configuration
 
 | Variable | Default | Description |

@@ -292,6 +292,38 @@ func TestMarkSeenDedup(t *testing.T) {
 	}
 }
 
+func TestSeenMessagesCacheBounded(t *testing.T) {
+	p, _ := newTestProtocol()
+
+	// Fill the cache to capacity
+	for i := 0; i < maxSeenMessages; i++ {
+		p.MarkSeen(fmt.Sprintf("msg-%d", i))
+	}
+
+	// Verify cache is at capacity
+	p.seenMutex.Lock()
+	sizeAtCap := len(p.seenMessages)
+	p.seenMutex.Unlock()
+	if sizeAtCap != maxSeenMessages {
+		t.Fatalf("cache size = %d, want %d", sizeAtCap, maxSeenMessages)
+	}
+
+	// Add one more — should trigger eviction and stay bounded
+	p.MarkSeen("overflow-msg")
+
+	p.seenMutex.Lock()
+	sizeAfter := len(p.seenMessages)
+	p.seenMutex.Unlock()
+	if sizeAfter >= maxSeenMessages {
+		t.Fatalf("cache size after eviction = %d, should be < %d", sizeAfter, maxSeenMessages)
+	}
+
+	// The new message should still be present
+	if !p.MarkSeen("overflow-msg") {
+		t.Fatal("overflow-msg should be in the cache after eviction")
+	}
+}
+
 func TestBroadcastToEnclaveFullBroadcastBelowThreshold(t *testing.T) {
 	p, mt := newTestProtocol()
 
