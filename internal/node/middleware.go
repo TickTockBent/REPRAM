@@ -121,33 +121,42 @@ type SecurityMetrics struct {
 	suspiciousRequests    prometheus.Counter
 }
 
+var (
+	sharedSecurityMetrics     *SecurityMetrics
+	sharedSecurityMetricsOnce sync.Once
+)
+
+func newSecurityMetrics() *SecurityMetrics {
+	sharedSecurityMetricsOnce.Do(func() {
+		sharedSecurityMetrics = &SecurityMetrics{
+			rateLimitedRequests: prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "repram_rate_limited_requests_total",
+				Help: "Total number of rate-limited requests",
+			}),
+			oversizedRequests: prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "repram_oversized_requests_total",
+				Help: "Total number of oversized requests rejected",
+			}),
+			suspiciousRequests: prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "repram_suspicious_requests_total",
+				Help: "Total number of suspicious requests detected",
+			}),
+		}
+		prometheus.MustRegister(
+			sharedSecurityMetrics.rateLimitedRequests,
+			sharedSecurityMetrics.oversizedRequests,
+			sharedSecurityMetrics.suspiciousRequests,
+		)
+	})
+	return sharedSecurityMetrics
+}
+
 func NewSecurityMiddleware(rateLimit, burst int, maxRequestSize int64, trustProxy bool) *SecurityMiddleware {
-	metrics := &SecurityMetrics{
-		rateLimitedRequests: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "repram_rate_limited_requests_total",
-			Help: "Total number of rate-limited requests",
-		}),
-		oversizedRequests: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "repram_oversized_requests_total",
-			Help: "Total number of oversized requests rejected",
-		}),
-		suspiciousRequests: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "repram_suspicious_requests_total",
-			Help: "Total number of suspicious requests detected",
-		}),
-	}
-	
-	prometheus.MustRegister(
-		metrics.rateLimitedRequests,
-		metrics.oversizedRequests,
-		metrics.suspiciousRequests,
-	)
-	
 	return &SecurityMiddleware{
 		rateLimiter:    NewRateLimiter(rateLimit, burst),
 		maxRequestSize: maxRequestSize,
 		trustProxy:     trustProxy,
-		metrics:        metrics,
+		metrics:        newSecurityMetrics(),
 	}
 }
 
