@@ -42,6 +42,20 @@ function silentLogger(): Logger {
   return new Logger("error");
 }
 
+function makeTestMsg(overrides: Partial<Message> = {}): Message {
+  return {
+    type: "PUT",
+    from: "test-node",
+    to: "",
+    key: "test-key",
+    data: Buffer.from("test"),
+    ttl: 300,
+    timestamp: new Date(),
+    messageId: "test-msg",
+    ...overrides,
+  };
+}
+
 /** Make an HTTP request to the test server. */
 function request(
   server: HTTPServer,
@@ -562,6 +576,61 @@ describe("WebSocket upgrade on /v1/ws", () => {
     ws.close();
     await new Promise<void>((r) => ws.on("close", () => r()));
     await wsServer.stop();
+  });
+
+  it("handles HMAC-signed WS messages when cluster secret is set", async () => {
+    const hmacServer = new HTTPServer(
+      testConfig({ clusterSecret: "ws-test-secret" }),
+      silentLogger(),
+    );
+    hmacServer.setTransport(mockTransport());
+    await hmacServer.start();
+
+    const hmacPort = getServerPort(hmacServer);
+    const ws = new WebSocket(`ws://127.0.0.1:${hmacPort}/v1/ws`);
+    await new Promise<void>((resolve) => ws.on("open", resolve));
+
+    // Send a properly signed message
+    const { signBody } = await import("./auth.js");
+    const putMsg: Message = {
+      type: "PUT",
+      from: "hmac-writer",
+      to: "",
+      key: "hmac-ws-key",
+      data: Buffer.from("signed-data"),
+      ttl: 300,
+      timestamp: new Date(),
+      messageId: "hmac-ws-1",
+    };
+
+    const wireMsg = messageToWire(putMsg);
+    const payloadJson = JSON.stringify(wireMsg);
+    const signature = signBody("ws-test-secret", Buffer.from(payloadJson));
+
+    ws.send(JSON.stringify({
+      type: "put",
+      signature,
+      payload: wireMsg,
+    }));
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    const stored = hmacServer.clusterNode.get("hmac-ws-key");
+    expect(stored).not.toBeNull();
+    expect(stored!.toString()).toBe("signed-data");
+
+    // Now send unsigned — should be rejected
+    const unsignedWire = messageToWire(
+      makeTestMsg({ key: "unsigned-key", messageId: "unsigned-1" }),
+    );
+    ws.send(JSON.stringify({ type: "put", payload: unsignedWire }));
+
+    await new Promise((r) => setTimeout(r, 100));
+    expect(hmacServer.clusterNode.get("unsigned-key")).toBeNull();
+
+    ws.close();
+    await new Promise<void>((r) => ws.on("close", () => r()));
+    await hmacServer.stop();
   });
 
   it("cleans up WS connections on server shutdown", async () => {
