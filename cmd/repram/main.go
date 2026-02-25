@@ -114,20 +114,37 @@ func main() {
 		logging.Info("  Gossip authentication: none (open mode)")
 	}
 
-	// Graceful shutdown
+	// Create HTTP server for graceful shutdown support
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", httpPort),
+		Handler: server.Router(),
+	}
+
+	// Graceful shutdown: drain in-flight requests before exiting
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		<-sigChan
-		logging.Info("Shutting down...")
+		logging.Info("Shutting down — draining in-flight requests...")
+
+		// Give in-flight requests up to 10 seconds to complete
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			logging.Warn("HTTP server shutdown error: %v", err)
+		}
+
 		securityMW.Close()
 		clusterNode.Stop()
 		cancel()
-		os.Exit(0)
 	}()
 
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", httpPort), server.Router()))
+	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
+		log.Fatalf("HTTP server error: %v", err)
+	}
+	logging.Info("Shutdown complete.")
 }
 
 // envInt reads an environment variable as int with a default fallback.
@@ -205,6 +222,7 @@ func (s *HTTPServer) Router() *mux.Router {
 	// Apply middleware
 	r.Use(corsMiddleware)
 	r.Use(s.securityMW.Middleware)
+	r.Use(node.MaxRequestSizeMiddleware(s.securityMW.MaxRequestSize()))
 	r.Use(node.TimeoutMiddleware(30 * time.Second))
 
 	// v1 API endpoints

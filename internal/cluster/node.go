@@ -101,35 +101,6 @@ func (cn *ClusterNode) Stop() error {
 func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl time.Duration) error {
 	quorum := cn.quorumSize()
 
-	writeOp := &WriteOperation{
-		Key:           key,
-		Data:          data,
-		TTL:           ttl,
-		Confirmations: 1, // Count local write
-		Complete:      make(chan bool, 1),
-	}
-
-	cn.writesMutex.Lock()
-	cn.pendingWrites[key] = writeOp
-	cn.writesMutex.Unlock()
-
-	if err := cn.store.Put(key, data, ttl); err != nil {
-		cn.writesMutex.Lock()
-		delete(cn.pendingWrites, key)
-		cn.writesMutex.Unlock()
-		return fmt.Errorf("local write failed: %w", err)
-	}
-
-	// Check if local write is sufficient for quorum (single node or single-node enclave)
-	if writeOp.Confirmations >= quorum {
-		cn.writesMutex.Lock()
-		delete(cn.pendingWrites, key)
-		cn.writesMutex.Unlock()
-		close(writeOp.Complete)
-		logging.Debug("Write completed locally (quorum=%d, confirmations=%d)", quorum, writeOp.Confirmations)
-		return nil
-	}
-
 	msg := &gossip.Message{
 		Type:      gossip.MessageTypePut,
 		From:      cn.localNode.ID,
@@ -138,6 +109,37 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		TTL:       int(ttl.Seconds()),
 		Timestamp: time.Now(),
 		MessageID: fmt.Sprintf("%s-%d", key, time.Now().UnixNano()),
+	}
+
+	writeOp := &WriteOperation{
+		Key:           key,
+		Data:          data,
+		TTL:           ttl,
+		Confirmations: 1, // Count local write
+		Complete:      make(chan bool, 1),
+	}
+
+	// Key on MessageID so concurrent writes to the same key don't
+	// collide — each write tracks its own quorum independently.
+	cn.writesMutex.Lock()
+	cn.pendingWrites[msg.MessageID] = writeOp
+	cn.writesMutex.Unlock()
+
+	if err := cn.store.Put(key, data, ttl); err != nil {
+		cn.writesMutex.Lock()
+		delete(cn.pendingWrites, msg.MessageID)
+		cn.writesMutex.Unlock()
+		return fmt.Errorf("local write failed: %w", err)
+	}
+
+	// Check if local write is sufficient for quorum (single node or single-node enclave)
+	if writeOp.Confirmations >= quorum {
+		cn.writesMutex.Lock()
+		delete(cn.pendingWrites, msg.MessageID)
+		cn.writesMutex.Unlock()
+		close(writeOp.Complete)
+		logging.Debug("Write completed locally (quorum=%d, confirmations=%d)", quorum, writeOp.Confirmations)
+		return nil
 	}
 
 	logging.Debug("[%s] Broadcasting PUT for key %s to enclave peers", cn.localNode.ID, key)
@@ -149,17 +151,17 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 	case <-writeOp.Complete:
 		cn.writesMutex.Lock()
 		err := writeOp.Error
-		delete(cn.pendingWrites, key)
+		delete(cn.pendingWrites, msg.MessageID)
 		cn.writesMutex.Unlock()
 		return err
 	case <-time.After(cn.writeTimeout):
 		cn.writesMutex.Lock()
-		delete(cn.pendingWrites, key)
+		delete(cn.pendingWrites, msg.MessageID)
 		cn.writesMutex.Unlock()
 		return ErrQuorumTimeout
 	case <-ctx.Done():
 		cn.writesMutex.Lock()
-		delete(cn.pendingWrites, key)
+		delete(cn.pendingWrites, msg.MessageID)
 		cn.writesMutex.Unlock()
 		return ctx.Err()
 	}
@@ -246,7 +248,7 @@ func (cn *ClusterNode) handleAckMessage(msg *gossip.Message) error {
 	cn.writesMutex.Lock()
 	defer cn.writesMutex.Unlock()
 
-	writeOp, exists := cn.pendingWrites[msg.Key]
+	writeOp, exists := cn.pendingWrites[msg.MessageID]
 	if !exists {
 		return nil
 	}

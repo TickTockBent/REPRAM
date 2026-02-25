@@ -247,6 +247,11 @@ func (sm *SecurityMiddleware) isSuspiciousRequest(r *http.Request) bool {
 	return false
 }
 
+// MaxRequestSize returns the configured maximum request body size in bytes.
+func (sm *SecurityMiddleware) MaxRequestSize() int64 {
+	return sm.maxRequestSize
+}
+
 func (sm *SecurityMiddleware) Close() {
 	if sm.rateLimiter != nil {
 		sm.rateLimiter.Close()
