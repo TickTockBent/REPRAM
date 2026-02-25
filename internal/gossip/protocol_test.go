@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	dto "github.com/prometheus/client_model/go"
 )
@@ -14,7 +15,13 @@ type mockTransport struct {
 	mu             sync.Mutex
 	failFor        map[NodeID]bool // peers whose sends should fail
 	sendCount      map[NodeID]int
+	sentMessages   []*sentMessage // ordered log of all sent messages
 	messageHandler func(*Message) error
+}
+
+type sentMessage struct {
+	To  NodeID
+	Msg *Message
 }
 
 func newMockTransport() *mockTransport {
@@ -31,10 +38,19 @@ func (t *mockTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.sendCount[node.ID]++
+	t.sentMessages = append(t.sentMessages, &sentMessage{To: node.ID, Msg: msg})
 	if t.failFor[node.ID] {
 		return fmt.Errorf("connection refused")
 	}
 	return nil
+}
+
+func (t *mockTransport) getSentMessages() []*sentMessage {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cp := make([]*sentMessage, len(t.sentMessages))
+	copy(cp, t.sentMessages)
+	return cp
 }
 
 func (t *mockTransport) SetMessageHandler(handler func(*Message) error) {
@@ -217,6 +233,124 @@ func gaugeValue(g interface{ Write(*dto.Metric) error }) float64 {
 	var m dto.Metric
 	g.Write(&m)
 	return m.GetGauge().GetValue()
+}
+
+// --- Topology Sync Tests ---
+
+func TestSyncPropagatesPeerList(t *testing.T) {
+	// Node A knows B but not C. When A sends SYNC to B, B should respond
+	// with SYNC messages containing C's info so A can discover C.
+	nodeC := &Node{ID: "node-c", Address: "c", Port: 9090, HTTPPort: 8080, Enclave: "default"}
+
+	// Set up protocol for node B (the responder)
+	localB := &Node{ID: "node-b", Address: "b", Port: 9090, HTTPPort: 8080, Enclave: "default"}
+	protocolB := NewProtocol(localB, 3, "")
+	mtB := newMockTransport()
+	protocolB.SetTransport(mtB)
+
+	// B knows A and C
+	nodeA := &Node{ID: "node-a", Address: "a", Port: 9090, HTTPPort: 8080, Enclave: "default"}
+	protocolB.addPeer(nodeA)
+	protocolB.addPeer(nodeC)
+
+	// A sends a SYNC to B (introducing itself)
+	syncMsg := &Message{
+		Type:      MessageTypeSync,
+		From:      "node-a",
+		Timestamp: time.Now(),
+		MessageID: "sync-1",
+		NodeInfo:  nodeA, // From == NodeInfo.ID, so this is a direct SYNC
+	}
+
+	if err := protocolB.handleSync(syncMsg); err != nil {
+		t.Fatalf("handleSync error: %v", err)
+	}
+
+	// B should have sent SYNC responses back to A with info about:
+	// - node-b (itself)
+	// - node-c (peer that A might not know)
+	// It should NOT send info about node-a back to node-a.
+	sent := mtB.getSentMessages()
+
+	nodeInfosSent := make(map[NodeID]bool)
+	for _, sm := range sent {
+		if sm.To == "node-a" && sm.Msg.Type == MessageTypeSync && sm.Msg.NodeInfo != nil {
+			nodeInfosSent[sm.Msg.NodeInfo.ID] = true
+		}
+	}
+
+	if !nodeInfosSent["node-b"] {
+		t.Error("B should have sent its own info to A")
+	}
+	if !nodeInfosSent["node-c"] {
+		t.Error("B should have sent C's info to A")
+	}
+	if nodeInfosSent["node-a"] {
+		t.Error("B should NOT have sent A's info back to A")
+	}
+}
+
+func TestSyncDoesNotAmplifyPropagatedInfo(t *testing.T) {
+	// When B receives a SYNC from A that contains C's info (propagated,
+	// not direct), B should NOT respond with its full peer list.
+	// This prevents amplification loops.
+	localB := &Node{ID: "node-b", Address: "b", Port: 9090, HTTPPort: 8080, Enclave: "default"}
+	protocolB := NewProtocol(localB, 3, "")
+	mtB := newMockTransport()
+	protocolB.SetTransport(mtB)
+
+	nodeA := &Node{ID: "node-a", Address: "a", Port: 9090, HTTPPort: 8080, Enclave: "default"}
+	protocolB.addPeer(nodeA)
+
+	// A sends a SYNC about C (propagated info — From != NodeInfo.ID)
+	nodeC := &Node{ID: "node-c", Address: "c", Port: 9090, HTTPPort: 8080, Enclave: "default"}
+	syncMsg := &Message{
+		Type:      MessageTypeSync,
+		From:      "node-a", // Sender is A
+		Timestamp: time.Now(),
+		MessageID: "sync-2",
+		NodeInfo:  nodeC, // But info is about C — propagated, not direct
+	}
+
+	if err := protocolB.handleSync(syncMsg); err != nil {
+		t.Fatalf("handleSync error: %v", err)
+	}
+
+	// B should have added C as a peer
+	if len(protocolB.GetPeers()) != 2 { // A + C
+		t.Fatalf("expected 2 peers, got %d", len(protocolB.GetPeers()))
+	}
+
+	// B should NOT have sent any SYNC responses (no amplification)
+	sent := mtB.getSentMessages()
+	for _, sm := range sent {
+		if sm.Msg.Type == MessageTypeSync {
+			t.Errorf("B should not send SYNC responses for propagated info, but sent to %s about %s",
+				sm.To, sm.Msg.NodeInfo.ID)
+		}
+	}
+}
+
+func TestSyncSkipsSelf(t *testing.T) {
+	// If a SYNC arrives with our own NodeInfo, we should ignore it
+	// (don't add ourselves as a peer).
+	p, _ := newTestProtocol() // local node ID is "local"
+
+	syncMsg := &Message{
+		Type:      MessageTypeSync,
+		From:      "some-peer",
+		Timestamp: time.Now(),
+		MessageID: "sync-3",
+		NodeInfo:  &Node{ID: "local", Address: "localhost", Port: 9090, HTTPPort: 8080, Enclave: "default"},
+	}
+
+	if err := p.handleSync(syncMsg); err != nil {
+		t.Fatalf("handleSync error: %v", err)
+	}
+
+	if len(p.GetPeers()) != 0 {
+		t.Fatal("should not add ourselves as a peer via SYNC")
+	}
 }
 
 // --- Gossip Fanout Tests ---

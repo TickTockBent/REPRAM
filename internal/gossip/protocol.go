@@ -297,11 +297,17 @@ func (p *Protocol) handlePong(msg *Message) error {
 func (p *Protocol) handleSync(msg *Message) error {
 	logging.Debug("[%s] Received SYNC message from %s", p.localNode.ID, msg.From)
 
-	// SYNC messages carry information about new nodes
+	// SYNC messages carry information about a node (either the sender
+	// introducing itself, or a peer propagating knowledge of a third node).
 	if msg.NodeInfo != nil {
 		// Normalize empty enclave to "default" (backwards compat with pre-enclave nodes)
 		if msg.NodeInfo.Enclave == "" {
 			msg.NodeInfo.Enclave = "default"
+		}
+
+		// Don't add ourselves as a peer
+		if msg.NodeInfo.ID == p.localNode.ID {
+			return nil
 		}
 
 		// Check if we already know this peer
@@ -325,7 +331,58 @@ func (p *Protocol) handleSync(msg *Message) error {
 	} else {
 		logging.Debug("[%s] SYNC message from %s has no NodeInfo", p.localNode.ID, msg.From)
 	}
+
+	// Respond with our peer list so the sender can discover peers
+	// it doesn't know about yet. Only respond to direct SYNC messages
+	// (where From == NodeInfo sender), not to propagated peer info,
+	// to prevent amplification loops.
+	if msg.NodeInfo != nil && msg.NodeInfo.ID == msg.From {
+		p.respondWithPeerList(msg.From)
+	}
+
 	return nil
+}
+
+// respondWithPeerList sends a SYNC message for each known peer (including
+// ourselves) to the given node. This propagates peer knowledge transitively:
+// if A knows B and C, but D only knows A, D will learn about B and C when
+// A responds to D's SYNC.
+func (p *Protocol) respondWithPeerList(targetID NodeID) {
+	p.peersMutex.RLock()
+	target, exists := p.peers[targetID]
+	if !exists {
+		p.peersMutex.RUnlock()
+		return
+	}
+	// Snapshot the peer list while holding the lock
+	peers := make([]*Node, 0, len(p.peers))
+	for _, peer := range p.peers {
+		peers = append(peers, peer)
+	}
+	p.peersMutex.RUnlock()
+
+	// Send a SYNC for each peer we know about (including ourselves)
+	allNodes := append(peers, p.localNode)
+	for _, node := range allNodes {
+		// Don't tell the target about itself
+		if node.ID == targetID {
+			continue
+		}
+
+		syncMsg := &Message{
+			Type:      MessageTypeSync,
+			From:      p.localNode.ID,
+			Timestamp: time.Now(),
+			MessageID: generateMessageID(),
+			NodeInfo:  node,
+		}
+
+		ctx := context.Background()
+		if err := p.transport.Send(ctx, target, syncMsg); err != nil {
+			logging.Debug("[%s] Failed to send peer info for %s to %s: %v",
+				p.localNode.ID, node.ID, targetID, err)
+		}
+	}
 }
 
 func (p *Protocol) startHealthCheck(ctx context.Context) {
