@@ -187,15 +187,25 @@ export class ClusterNode {
       });
     });
 
-    // Step 5: Broadcast PUT to enclave peers (async, non-blocking)
-    this.logger.debug(
-      `[${this.localNode.id}] Broadcasting PUT for key ${key} to enclave peers`,
-    );
-    this.gossip.broadcastToEnclave(msg).catch((err) => {
-      this.logger.warn(
-        `[${this.localNode.id}] Failed to broadcast write to enclave: ${err}`,
+    // Step 5: Send PUT to network
+    // If attached to a substrate parent, send via WS (parent handles mesh fanout).
+    // Otherwise, broadcast directly to enclave peers via HTTP.
+    const parentConn = this.treeManager?.parent;
+    if (parentConn && !parentConn.isClosed) {
+      this.logger.debug(
+        `[${this.localNode.id}] Sending PUT for key ${key} to substrate parent`,
       );
-    });
+      parentConn.sendGossipMessage(msg);
+    } else {
+      this.logger.debug(
+        `[${this.localNode.id}] Broadcasting PUT for key ${key} to enclave peers`,
+      );
+      this.gossip.broadcastToEnclave(msg).catch((err) => {
+        this.logger.warn(
+          `[${this.localNode.id}] Failed to broadcast write to enclave: ${err}`,
+        );
+      });
+    }
 
     return writePromise;
   }

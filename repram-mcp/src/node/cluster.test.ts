@@ -746,6 +746,123 @@ describe("ClusterNode relay forwarding", () => {
   });
 });
 
+// --- Transient node: PUT via parent (#64) ---
+
+describe("ClusterNode transient PUT via parent", () => {
+  it("sends PUT to substrate parent instead of mesh broadcast", async () => {
+    const node = new ClusterNode(
+      defaultOptions({ nodeId: "transient-1", writeTimeoutMs: 200 }),
+      silentLogger(),
+    );
+    const { transport, sentMessages } = createMockTransport();
+    node.setTransport(transport);
+
+    // Add a mesh peer (simulates peers discovered via bootstrap)
+    node.gossip.addPeer({
+      id: "mesh-peer",
+      address: "localhost",
+      port: 9091,
+      httpPort: 8081,
+      enclave: "default",
+    });
+
+    // Set up TreeManager with a mock parent connection
+    const tree = new TreeManager(node.localNode, node.gossip, silentLogger(), {
+      inbound: "false",
+      maxChildren: 0,
+      clusterSecret: "",
+    });
+    node.setTreeManager(tree);
+
+    // Create mock parent connection
+    const { conn: parentConn, sentMessages: parentSent } = createMockWSConnection("substrate-1");
+    // Manually set parent (in real code, attach() does this)
+    (tree as any).parentConnection = parentConn;
+    (tree as any).resolvedRole = "transient";
+
+    // Write data
+    const writePromise = node.put("test-key", Buffer.from("test-data"), 300);
+
+    // Wait for async operations
+    await new Promise((r) => setTimeout(r, 10));
+
+    // PUT should go to parent, NOT to mesh peers
+    const parentPuts = parentSent.filter((m) => m.type === "PUT");
+    expect(parentPuts.length).toBe(1);
+    expect(parentPuts[0].key).toBe("test-key");
+
+    // Mesh peer should NOT receive the PUT directly
+    const meshPuts = sentMessages.filter((s) => s.msg.type === "PUT");
+    expect(meshPuts.length).toBe(0);
+
+    // Simulate ACK from parent (substrate's local store)
+    node.gossip.handleMessage({
+      type: "ACK",
+      from: "substrate-1",
+      to: "transient-1",
+      key: "test-key",
+      data: Buffer.alloc(0),
+      ttl: 0,
+      messageId: parentPuts[0].messageId,
+      timestamp: new Date(),
+    });
+
+    const result = await writePromise;
+    expect(result.status).toBe(WRITE_STATUS_CREATED);
+
+    // Data should also be stored locally
+    expect(node.get("test-key")?.toString()).toBe("test-data");
+
+    node.stop();
+    tree.stop();
+  });
+
+  it("falls back to mesh broadcast when parent disconnected", async () => {
+    const node = new ClusterNode(
+      defaultOptions({ nodeId: "transient-1", writeTimeoutMs: 200 }),
+      silentLogger(),
+    );
+    const { transport, sentMessages } = createMockTransport();
+    node.setTransport(transport);
+
+    node.gossip.addPeer({
+      id: "mesh-peer",
+      address: "localhost",
+      port: 9091,
+      httpPort: 8081,
+      enclave: "default",
+    });
+
+    const tree = new TreeManager(node.localNode, node.gossip, silentLogger(), {
+      inbound: "false",
+      maxChildren: 0,
+      clusterSecret: "",
+    });
+    node.setTreeManager(tree);
+
+    // Parent connection is closed
+    const { conn: parentConn } = createMockWSConnection("substrate-1");
+    (parentConn as any).isClosed = true;
+    (tree as any).parentConnection = parentConn;
+
+    const writePromise = node.put("test-key", Buffer.from("test-data"), 300);
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Should fall back to mesh broadcast
+    const meshPuts = sentMessages.filter((s) => s.msg.type === "PUT");
+    expect(meshPuts.length).toBe(1);
+    expect(meshPuts[0].target.id).toBe("mesh-peer");
+
+    // Resolve with timeout since no ACK will come
+    const result = await writePromise;
+    expect(result.status).toBe(WRITE_STATUS_ACCEPTED);
+
+    node.stop();
+    tree.stop();
+  });
+});
+
 // --- ACK reverse-routing (#63) ---
 
 describe("ClusterNode ACK reverse-routing", () => {
