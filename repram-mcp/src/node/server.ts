@@ -217,8 +217,9 @@ export class HTTPServer {
   private putHandler(req: IncomingMessage, res: ServerResponse, key: string): void {
     readBody(req, (err, body) => {
       if (err) {
-        res.writeHead(400, { "Content-Type": "text/plain" });
-        res.end("Failed to read request body");
+        const status = err.message === "Request body too large" ? 413 : 400;
+        res.writeHead(status, { "Content-Type": "text/plain" });
+        res.end(err.message);
         return;
       }
 
@@ -364,8 +365,9 @@ export class HTTPServer {
   private gossipHandler(req: IncomingMessage, res: ServerResponse): void {
     readBody(req, (err, body) => {
       if (err) {
-        res.writeHead(400, { "Content-Type": "text/plain" });
-        res.end("Failed to read request body");
+        const status = err.message === "Request body too large" ? 413 : 400;
+        res.writeHead(status, { "Content-Type": "text/plain" });
+        res.end(err.message);
         return;
       }
 
@@ -390,8 +392,9 @@ export class HTTPServer {
   private bootstrapHandler(req: IncomingMessage, res: ServerResponse): void {
     readBody(req, (err, body) => {
       if (err) {
-        res.writeHead(400, { "Content-Type": "text/plain" });
-        res.end("Failed to read request body");
+        const status = err.message === "Request body too large" ? 413 : 400;
+        res.writeHead(status, { "Content-Type": "text/plain" });
+        res.end(err.message);
         return;
       }
 
@@ -485,11 +488,31 @@ function sendJSON(
 function readBody(
   req: IncomingMessage,
   callback: (err: Error | null, body: Buffer) => void,
+  maxBytes = 10 * 1024 * 1024, // 10MB default, matches SecurityMiddleware
 ): void {
   const chunks: Buffer[] = [];
-  req.on("data", (chunk: Buffer) => chunks.push(chunk));
-  req.on("end", () => callback(null, Buffer.concat(chunks)));
-  req.on("error", (err) => callback(err, Buffer.alloc(0)));
+  let totalBytes = 0;
+  let exceeded = false;
+
+  req.on("data", (chunk: Buffer) => {
+    if (exceeded) return; // stop accumulating, let stream drain
+    totalBytes += chunk.length;
+    if (totalBytes > maxBytes) {
+      exceeded = true;
+      // Resume to drain remaining data so the socket stays usable for the response.
+      // Don't destroy — that kills the shared socket and prevents writing 413.
+      req.resume();
+      callback(new Error("Request body too large"), Buffer.alloc(0));
+      return;
+    }
+    chunks.push(chunk);
+  });
+  req.on("end", () => {
+    if (!exceeded) callback(null, Buffer.concat(chunks));
+  });
+  req.on("error", (err) => {
+    if (!exceeded) callback(err, Buffer.alloc(0));
+  });
 }
 
 /**

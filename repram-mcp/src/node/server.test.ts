@@ -359,6 +359,51 @@ describe("gossip with cluster secret", () => {
   });
 });
 
+// --- Request body size enforcement ---
+
+describe("request body size limit", () => {
+  let smallServer: HTTPServer;
+
+  beforeAll(async () => {
+    // Server with a tiny 1KB max request size for easy testing
+    smallServer = new HTTPServer(
+      testConfig({
+        httpPort: 0,
+        rateLimit: 1000,
+        // maxRequestSize in SecurityMiddleware is separate from readBody's limit,
+        // but readBody uses 10MB default. We test via direct oversized body.
+      }),
+      silentLogger(),
+    );
+    smallServer.setTransport(mockTransport());
+    await smallServer.start();
+  });
+
+  afterAll(async () => {
+    await smallServer.stop();
+  });
+
+  it("rejects PUT with body exceeding 10MB", async () => {
+    // We can't easily send 10MB+ in a unit test, but we can verify the
+    // readBody function enforces limits by testing with the default server.
+    // Send a body without Content-Length header to bypass middleware check.
+    const oversizedBody = Buffer.alloc(11 * 1024 * 1024, "x"); // 11MB
+    const res = await request(server, "PUT", "/v1/data/oversized", {
+      body: oversizedBody,
+    });
+    expect(res.status).toBe(413);
+    expect(res.body).toContain("Request body too large");
+  });
+
+  it("accepts PUT with body under the limit", async () => {
+    const normalBody = Buffer.alloc(1024, "y"); // 1KB
+    const res = await request(server, "PUT", "/v1/data/normal-size", {
+      body: normalBody,
+    });
+    expect(res.status).toBe(201);
+  });
+});
+
 // --- 404 ---
 
 describe("routing", () => {
