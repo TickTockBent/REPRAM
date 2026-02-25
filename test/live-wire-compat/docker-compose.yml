@@ -1,0 +1,98 @@
+# Live wire compatibility test cluster.
+# 2 Go nodes + 1 TS node, same enclave, shared cluster secret.
+# Verifies cross-implementation gossip, bootstrap, and data replication.
+
+services:
+  go-node1:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      - REPRAM_NODE_ID=go-node1
+      - REPRAM_ADDRESS=go-node1
+      - REPRAM_HTTP_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPRAM_NETWORK=private
+      - REPRAM_PEERS=go-node2:8080
+      - REPRAM_REPLICATION=3
+      - REPRAM_ENCLAVE=compat-test
+      - REPRAM_CLUSTER_SECRET=live-test-secret-42
+      - REPRAM_LOG_LEVEL=info
+      - REPRAM_MIN_TTL=10
+    ports:
+      - "18091:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/v1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - compat-net
+
+  go-node2:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      - REPRAM_NODE_ID=go-node2
+      - REPRAM_ADDRESS=go-node2
+      - REPRAM_HTTP_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPRAM_NETWORK=private
+      - REPRAM_PEERS=go-node1:8080
+      - REPRAM_REPLICATION=3
+      - REPRAM_ENCLAVE=compat-test
+      - REPRAM_CLUSTER_SECRET=live-test-secret-42
+      - REPRAM_LOG_LEVEL=info
+      - REPRAM_MIN_TTL=10
+    ports:
+      - "18092:8080"
+    depends_on:
+      go-node1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/v1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - compat-net
+
+  ts-node1:
+    build:
+      context: ../../repram-mcp
+      dockerfile: Dockerfile
+    command: ["node", "dist/index.js", "--standalone"]
+    environment:
+      - REPRAM_NODE_ID=ts-node1
+      - REPRAM_ADDRESS=ts-node1
+      - REPRAM_HTTP_PORT=8080
+      - REPRAM_GOSSIP_PORT=9090
+      - REPRAM_NETWORK=private
+      - REPRAM_PEERS=go-node1:8080,go-node2:8080
+      - REPRAM_REPLICATION=3
+      - REPRAM_ENCLAVE=compat-test
+      - REPRAM_CLUSTER_SECRET=live-test-secret-42
+      - REPRAM_LOG_LEVEL=info
+      - REPRAM_MIN_TTL=10
+    ports:
+      - "18093:8080"
+    depends_on:
+      go-node1:
+        condition: service_healthy
+      go-node2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/v1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - compat-net
+
+networks:
+  compat-net:
+    driver: bridge

@@ -4,6 +4,24 @@ All notable changes to REPRAM are documented here.
 
 ## [Unreleased]
 
+### Added — Unified TypeScript Node ([#45](https://github.com/TickTockBent/repram/issues/45))
+Complete TypeScript reimplementation of the REPRAM node, merged into `repram-mcp` so a single `npx repram-mcp` provides both a full node and MCP agent tools.
+- **Storage layer** — MemoryStore with TTL expiration, background cleanup, capacity limits ([#46](https://github.com/TickTockBent/repram/issues/46))
+- **Auth + Logging** — HMAC-SHA256 signing/verification, leveled logger ([#47](https://github.com/TickTockBent/repram/issues/47))
+- **HTTP transport** — gossip wire format with base64-encoded data, JSON serialization ([#48](https://github.com/TickTockBent/repram/issues/48))
+- **Bootstrap** — DNS SRV/A resolution and cluster join handshake ([#49](https://github.com/TickTockBent/repram/issues/49))
+- **Gossip protocol** — peer management, √N probabilistic fanout, bounded dedup cache (100k max), health checks, topology sync ([#50](https://github.com/TickTockBent/repram/issues/50))
+- **Cluster node** — quorum writes with MessageID tracking, dynamic quorum, ACK routing ([#51](https://github.com/TickTockBent/repram/issues/51))
+- **Wire compatibility tests** — 34 tests validating Go ↔ TS JSON parity and HMAC cross-verification using Go-generated test vectors ([#52](https://github.com/TickTockBent/repram/issues/52))
+- **Middleware** — rate limiting (token bucket per IP), scanner detection, security headers, CORS ([#53](https://github.com/TickTockBent/repram/issues/53))
+- **HTTP server** — full v1 API (PUT/GET/HEAD /v1/data/{key}, /v1/keys with pagination, /v1/health, /v1/status, /v1/topology, /v1/gossip/message, /v1/bootstrap) ([#54](https://github.com/TickTockBent/repram/issues/54))
+- **MCP in-process integration** — InProcessClient bypasses HTTP for embedded mode ([#55](https://github.com/TickTockBent/repram/issues/55))
+- **Standalone mode** — `REPRAM_MODE=standalone` or `--standalone` runs HTTP server without MCP transport ([#56](https://github.com/TickTockBent/repram/issues/56))
+- **Embedded defaults** — port 0 (auto-select), 50MB storage cap, warn log level in MCP mode
+- **Lazy MCP imports** — `@modelcontextprotocol/sdk` only loaded when needed (not in standalone mode)
+- **248 TypeScript tests** across 13 test files (storage, auth, transport, bootstrap, gossip, cluster, wire compat, middleware, server, in-process client, tools, HTTP client)
+- Version bumped to 2.0.0
+
 ### Added
 - **Peer failure detection** — evicts peers after 3 consecutive failed health checks (~90s); peers rejoin automatically via bootstrap ([#25](https://github.com/TickTockBent/repram/issues/25))
 - **Peer eviction metrics** — four Prometheus metrics for cluster health: `repram_peers_active` (gauge), `repram_peer_evictions_total`, `repram_peer_joins_total`, `repram_ping_failures_total` (counters) ([#28](https://github.com/TickTockBent/repram/issues/28))
@@ -27,7 +45,7 @@ All notable changes to REPRAM are documented here.
 - **Cursor-based pagination for `/v1/keys`** — `?limit=N&cursor=X` parameters for paging through large key sets; keys returned in stable lexicographic order; `next_cursor` in response when more pages available ([#43](https://github.com/TickTockBent/repram/issues/43))
 - **Handler-level HTTP tests** — 20 tests for PUT/GET/HEAD/keys/health/status covering TTL parsing, clamping, metadata headers, prefix filtering, overwrite behavior, pagination ([#39](https://github.com/TickTockBent/repram/issues/39), [#43](https://github.com/TickTockBent/repram/issues/43))
 - **MCP server tests** — 35 vitest tests covering all 4 tool handlers (store, retrieve, exists, list_keys) and HTTP client (URL construction, header parsing, error handling, null safety) ([#40](https://github.com/TickTockBent/repram/issues/40))
-- Test suite: 83 Go tests + 35 MCP server tests (118 total) covering storage, middleware, gossip auth, peer failure detection, eviction metrics, proxy trust, gossip fanout, topology sync, handler edge cases, pagination, MCP tool handlers, and distributed integration ([#11](https://github.com/TickTockBent/repram/issues/11), [#26](https://github.com/TickTockBent/repram/issues/26), [#28](https://github.com/TickTockBent/repram/issues/28), [#31](https://github.com/TickTockBent/repram/issues/31), [#36](https://github.com/TickTockBent/repram/issues/36), [#39](https://github.com/TickTockBent/repram/issues/39), [#40](https://github.com/TickTockBent/repram/issues/40), [#43](https://github.com/TickTockBent/repram/issues/43))
+- Test suite: 83 Go tests + 248 TypeScript tests (331 total) covering storage, middleware, gossip auth, peer failure detection, eviction metrics, proxy trust, gossip fanout, topology sync, handler edge cases, pagination, MCP tool handlers, wire compatibility, cluster quorum, and distributed integration ([#11](https://github.com/TickTockBent/repram/issues/11), [#26](https://github.com/TickTockBent/repram/issues/26), [#28](https://github.com/TickTockBent/repram/issues/28), [#31](https://github.com/TickTockBent/repram/issues/31), [#36](https://github.com/TickTockBent/repram/issues/36), [#39](https://github.com/TickTockBent/repram/issues/39), [#40](https://github.com/TickTockBent/repram/issues/40), [#43](https://github.com/TickTockBent/repram/issues/43), [#45](https://github.com/TickTockBent/repram/issues/45))
 - CI test workflow — runs `make build` + `go test -race` on push to main and PRs
 - CI npm publish workflow — publishes `repram-mcp` to npm on `mcp-v*` tags ([#13](https://github.com/TickTockBent/repram/issues/13))
 - `workflow_dispatch` trigger on Docker build workflow
@@ -35,7 +53,7 @@ All notable changes to REPRAM are documented here.
 
 ### Changed
 - Docker image published as `ticktockbent/repram-node` (was `repram/node`) ([#23](https://github.com/TickTockBent/repram/issues/23))
-- `repram-mcp` published to npm — `npx repram-mcp` now works; current version 1.1.0
+- `repram-mcp` published to npm — `npx repram-mcp` now works; current version 2.0.0 (embedded node + MCP server)
 - Quorum timeout returns 202 Accepted (stored locally, replication pending) instead of 500 ([#21](https://github.com/TickTockBent/repram/issues/21))
 - HEAD requests supported on `/v1/data/{key}` for lightweight existence checks
 - Rate limiter no longer trusts `X-Forwarded-For` / `X-Real-IP` by default — requires `REPRAM_TRUST_PROXY=true` ([#30](https://github.com/TickTockBent/repram/issues/30))

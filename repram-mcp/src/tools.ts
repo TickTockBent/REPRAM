@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { RepramClient } from "./client.js";
+import type { RepramClientInterface } from "./client.js";
 
 export interface ToolDefinition {
   name: string;
@@ -91,7 +91,7 @@ Use this to discover what data is available, check if a coordination key exists,
 ];
 
 export async function handleToolCall(
-  client: RepramClient,
+  client: RepramClientInterface,
   toolName: string,
   args: Record<string, unknown>
 ): Promise<unknown> {

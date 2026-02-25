@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleToolCall } from "./tools.js";
-import type { RepramClient } from "./client.js";
+import type { RepramClientInterface } from "./client.js";
 
 // Mock client — each test configures the methods it needs.
-function createMockClient(overrides: Partial<RepramClient> = {}): RepramClient {
+function createMockClient(overrides: Partial<RepramClientInterface> = {}): RepramClientInterface {
   return {
     store: vi.fn().mockResolvedValue({ status: 201, statusText: "Created" }),
     retrieve: vi.fn().mockResolvedValue(null),
     exists: vi.fn().mockResolvedValue({ exists: false, remainingTtlSeconds: 0 }),
     listKeys: vi.fn().mockResolvedValue({ keys: [] }),
     ...overrides,
-  } as unknown as RepramClient;
+  } as unknown as RepramClientInterface;
 }
 
 // --- repram_store ---
@@ -82,7 +82,7 @@ describe("repram_store", () => {
   it("accepts 202 (quorum timeout) as success", async () => {
     const client = createMockClient({
       store: vi.fn().mockResolvedValue({ status: 202, statusText: "Accepted" }),
-    } as Partial<RepramClient>);
+    });
 
     const result = (await handleToolCall(client, "repram_store", {
       data: "test",
@@ -96,7 +96,7 @@ describe("repram_store", () => {
   it("returns error on non-201/202 status", async () => {
     const client = createMockClient({
       store: vi.fn().mockResolvedValue({ status: 507, statusText: "Insufficient Storage" }),
-    } as Partial<RepramClient>);
+    });
 
     const result = (await handleToolCall(client, "repram_store", {
       data: "test",
@@ -113,7 +113,7 @@ describe("repram_retrieve", () => {
   it("returns null for missing/expired key", async () => {
     const client = createMockClient({
       retrieve: vi.fn().mockResolvedValue(null),
-    } as Partial<RepramClient>);
+    });
 
     const result = await handleToolCall(client, "repram_retrieve", {
       key: "nonexistent",
@@ -133,7 +133,7 @@ describe("repram_retrieve", () => {
         remainingTtlSeconds: 500,
         originalTtlSeconds: 3600,
       }),
-    } as Partial<RepramClient>);
+    });
 
     const result = (await handleToolCall(client, "repram_retrieve", {
       key: "my-key",
@@ -160,7 +160,7 @@ describe("repram_exists", () => {
   it("returns exists: false for missing key", async () => {
     const client = createMockClient({
       exists: vi.fn().mockResolvedValue({ exists: false, remainingTtlSeconds: 0 }),
-    } as Partial<RepramClient>);
+    });
 
     const result = (await handleToolCall(client, "repram_exists", {
       key: "gone",
@@ -176,7 +176,7 @@ describe("repram_exists", () => {
 
     const client = createMockClient({
       exists: vi.fn().mockResolvedValue({ exists: true, remainingTtlSeconds: 120 }),
-    } as Partial<RepramClient>);
+    });
 
     const result = (await handleToolCall(client, "repram_exists", {
       key: "alive",
@@ -196,7 +196,7 @@ describe("repram_list_keys", () => {
   it("returns keys without prefix filter", async () => {
     const client = createMockClient({
       listKeys: vi.fn().mockResolvedValue({ keys: ["key-a", "key-b", "key-c"] }),
-    } as Partial<RepramClient>);
+    });
 
     const result = (await handleToolCall(client, "repram_list_keys", {})) as Record<
       string,
@@ -210,7 +210,7 @@ describe("repram_list_keys", () => {
   it("passes prefix to client", async () => {
     const client = createMockClient({
       listKeys: vi.fn().mockResolvedValue({ keys: ["ns-foo"] }),
-    } as Partial<RepramClient>);
+    });
 
     const result = (await handleToolCall(client, "repram_list_keys", {
       prefix: "ns-",

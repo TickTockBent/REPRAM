@@ -41,15 +41,29 @@ By participating in this project, you agree to maintain a respectful and collabo
 ### 3. Development Guidelines
 
 #### Code Standards
-- Write clean, maintainable Go code
+
+**Go** (node binary):
 - Follow [Effective Go](https://golang.org/doc/effective_go.html) guidelines
 - Use `gofmt` for code formatting
 - Add comments for exported functions and types
+
+**TypeScript** (MCP server / unified node):
+- Strict TypeScript (`strict: true` in tsconfig)
+- Use descriptive variable names
+- Prefer interfaces over type aliases for public contracts
+- No `any` unless interfacing with untyped external APIs
+
+Both languages:
 - Keep functions focused and small
+- Test new functionality with unit tests
 
 #### Testing Requirements
 - Write tests for new functionality
-- Ensure all tests pass: `make test` (Go) and `cd repram-mcp && npm test` (MCP server)
+- Ensure all tests pass:
+  ```bash
+  make test                             # Go (83 tests)
+  cd repram-mcp && npm test             # TypeScript (248 tests)
+  ```
 - Include both unit and integration tests where appropriate
 
 #### Commit Guidelines
@@ -108,11 +122,14 @@ cd REPRAM
 make build
 make test
 
-# Build and test the MCP server
+# Build and test the TypeScript node / MCP server
 cd repram-mcp && npm install && npm run build && npm test
 
-# Start a node
+# Start a Go node
 make run
+
+# Or start a TypeScript node (standalone HTTP server)
+cd repram-mcp && npx repram-mcp --standalone
 ```
 
 ## Architecture Principles
