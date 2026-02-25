@@ -2,19 +2,48 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { RepramClient } from "./client.js";
+import { RepramClient, InProcessClient, type RepramClientInterface } from "./client.js";
 import { toolDefinitions, handleToolCall } from "./tools.js";
 import { z } from "zod";
+import { HTTPServer, loadConfig } from "./node/server.js";
+import { HTTPTransport } from "./node/transport.js";
+import { Logger } from "./node/logger.js";
 
-const client = new RepramClient(process.env.REPRAM_URL);
+let client: RepramClientInterface;
+let embeddedServer: HTTPServer | null = null;
 
-const server = new McpServer({
+async function createClient(): Promise<RepramClientInterface> {
+  // If REPRAM_URL is set, connect to an external node (backwards compatible)
+  if (process.env.REPRAM_URL) {
+    return new RepramClient(process.env.REPRAM_URL);
+  }
+
+  // Otherwise, start an embedded REPRAM node
+  const config = loadConfig();
+  const logger = new Logger(config.logLevel);
+
+  embeddedServer = new HTTPServer(config, logger);
+
+  // Set up gossip transport
+  const transport = new HTTPTransport(
+    embeddedServer.clusterNode.localNode,
+    config.clusterSecret,
+    logger,
+  );
+  embeddedServer.setTransport(transport);
+
+  await embeddedServer.start();
+
+  return new InProcessClient(embeddedServer.clusterNode);
+}
+
+const mcpServer = new McpServer({
   name: "repram-mcp",
-  version: "1.0.0",
+  version: "2.0.0",
 });
 
 // Register repram_store
-server.tool(
+mcpServer.tool(
   "repram_store",
   toolDefinitions.find((t) => t.name === "repram_store")!.description,
   {
@@ -37,7 +66,7 @@ server.tool(
 );
 
 // Register repram_retrieve
-server.tool(
+mcpServer.tool(
   "repram_retrieve",
   toolDefinitions.find((t) => t.name === "repram_retrieve")!.description,
   {
@@ -56,8 +85,23 @@ server.tool(
   }
 );
 
+// Register repram_exists
+mcpServer.tool(
+  "repram_exists",
+  toolDefinitions.find((t) => t.name === "repram_exists")!.description,
+  {
+    key: z.string().describe("The key to check."),
+  },
+  async (args) => {
+    const result = await handleToolCall(client, "repram_exists", args);
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
 // Register repram_list_keys
-server.tool(
+mcpServer.tool(
   "repram_list_keys",
   toolDefinitions.find((t) => t.name === "repram_list_keys")!.description,
   {
@@ -75,9 +119,22 @@ server.tool(
 );
 
 async function main() {
+  client = await createClient();
+
   const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await mcpServer.connect(transport);
 }
+
+// Graceful shutdown
+process.on("SIGTERM", async () => {
+  if (embeddedServer) await embeddedServer.stop();
+  process.exit(0);
+});
+
+process.on("SIGINT", async () => {
+  if (embeddedServer) await embeddedServer.stop();
+  process.exit(0);
+});
 
 main().catch((error) => {
   console.error("Fatal error:", error);

@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleToolCall } from "./tools.js";
-import type { RepramClient } from "./client.js";
+import type { RepramClientInterface } from "./client.js";
 
 // Mock client — each test configures the methods it needs.
-function createMockClient(overrides: Partial<RepramClient> = {}): RepramClient {
+function createMockClient(overrides: Partial<RepramClientInterface> = {}): RepramClientInterface {
   return {
     store: vi.fn().mockResolvedValue({ status: 201, statusText: "Created" }),
     retrieve: vi.fn().mockResolvedValue(null),
     exists: vi.fn().mockResolvedValue({ exists: false, remainingTtlSeconds: 0 }),
     listKeys: vi.fn().mockResolvedValue({ keys: [] }),
     ...overrides,
-  } as unknown as RepramClient;
+  } as unknown as RepramClientInterface;
 }
 
 // --- repram_store ---
