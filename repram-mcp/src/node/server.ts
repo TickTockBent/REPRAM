@@ -37,7 +37,7 @@ export interface ServerConfig {
   trustProxy: boolean;
   maxStorageBytes: number;
   logLevel: string;
-  /** Whether this node can accept inbound connections: auto, true, or false. */
+  /** Whether this node can accept inbound connections: true or false. */
   inbound: InboundCapability;
   /** Maximum transient node attachments (0 = never accept). */
   maxChildren: number;
@@ -64,7 +64,7 @@ export function loadConfig(embedded = false): ServerConfig {
     trustProxy: (process.env.REPRAM_TRUST_PROXY ?? "").toLowerCase() === "true",
     maxStorageBytes: envInt("REPRAM_MAX_STORAGE_MB", embedded ? 50 : 0) * 1024 * 1024,
     logLevel: process.env.REPRAM_LOG_LEVEL ?? (embedded ? "warn" : "info"),
-    inbound: (process.env.REPRAM_INBOUND ?? "auto") as InboundCapability,
+    inbound: (process.env.REPRAM_INBOUND ?? "false") as InboundCapability,
     maxChildren: envInt("REPRAM_MAX_CHILDREN", 100),
   };
 }

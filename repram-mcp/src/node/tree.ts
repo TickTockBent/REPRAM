@@ -13,7 +13,6 @@
  * Part of Discovery Protocol v2. See docs/internal/REPRAM-Discovery-Protocol-v2.md
  */
 
-import * as net from "node:net";
 import type { Logger } from "./logger.js";
 import type { NodeInfo } from "./types.js";
 import {
@@ -28,16 +27,13 @@ import type { GossipProtocol } from "./gossip.js";
 
 // --- Constants ---
 
-/** Timeout for inbound auto-detection TCP probe (ms). */
-export const INBOUND_PROBE_TIMEOUT_MS = 3_000;
-
 /** Default maximum number of transient node attachments. */
 export const DEFAULT_MAX_CHILDREN = 100;
 
 // --- Types ---
 
 export type NodeRole = "substrate" | "transient";
-export type InboundCapability = "auto" | "true" | "false";
+export type InboundCapability = "true" | "false";
 
 export interface TreeManagerOptions {
   /** Whether this node can accept inbound connections. */
@@ -98,16 +94,14 @@ export class TreeManager {
     this.logger = logger;
     this.options = options;
 
-    // Resolve initial role from config
+    // Resolve role from config: true = substrate, false = transient
     if (options.inbound === "true") {
       this.resolvedRole = "substrate";
       this.inboundCapable = true;
-    } else if (options.inbound === "false") {
+    } else {
       this.resolvedRole = "transient";
       this.inboundCapable = false;
     }
-    // "auto" stays substrate until attach() is called (transient nodes
-    // call attach() after bootstrap, substrate nodes never do)
   }
 
   // --- Accessors ---
@@ -144,8 +138,7 @@ export class TreeManager {
 
   /**
    * Handle a new WebSocket connection that sent a hello message.
-   * Validates the attachment, performs inbound auto-detection if needed,
-   * and sends a welcome response.
+   * Validates the attachment and sends a welcome response.
    *
    * Called by the server's handleUpgrade attachment handler.
    */
@@ -172,20 +165,6 @@ export class TreeManager {
       );
       this.sendRedirect(conn, hello);
       return false;
-    }
-
-    // Inbound auto-detection
-    let inboundDetected = false;
-    if (hello.capabilities.inbound === "true") {
-      inboundDetected = true;
-    } else if (hello.capabilities.inbound === "false") {
-      inboundDetected = false;
-    } else {
-      // auto — probe
-      inboundDetected = await this.probeInbound(
-        hello.address,
-        hello.http_port,
-      );
     }
 
     // Register the child
@@ -216,7 +195,6 @@ export class TreeManager {
         depth: 1, // direct child of substrate
         parent_id: this.localNode.id,
       },
-      inbound_detected: inboundDetected,
     };
 
     conn.sendAttachmentMessage({
@@ -234,7 +212,7 @@ export class TreeManager {
 
     this.logger.info(
       `Transient node ${hello.node_id} attached (enclave: ${hello.enclave}, ` +
-        `inbound: ${inboundDetected}, children: ${this.children.size})`,
+        `children: ${this.children.size})`,
     );
 
     return true;
@@ -362,14 +340,8 @@ export class TreeManager {
     this.logger.info(
       `Attached to substrate node ${welcome.your_position.parent_id} ` +
         `(depth: ${welcome.your_position.depth}, ` +
-        `inbound_detected: ${welcome.inbound_detected}, ` +
         `topology: ${welcome.topology.length} nodes)`,
     );
-
-    // Update inbound capability from server's detection
-    if (this.options.inbound === "auto") {
-      this.inboundCapable = welcome.inbound_detected;
-    }
 
     return welcome;
   }
@@ -470,40 +442,6 @@ export class TreeManager {
       clearTimeout(timer);
       this.ackRouteTimers.delete(messageId);
     }
-  }
-
-  // --- Inbound auto-detection ---
-
-  /**
-   * Probe whether a remote address:port is reachable by attempting a TCP
-   * connection. Used during hello handshake to detect NAT-bound nodes.
-   *
-   * Known limitation: symmetric NAT may produce false positives — the probe
-   * succeeds through a recent port mapping even though unsolicited inbound
-   * would fail. REPRAM_INBOUND=false is the escape hatch.
-   */
-  async probeInbound(
-    address: string,
-    port: number,
-  ): Promise<boolean> {
-    return new Promise((resolve) => {
-      const socket = net.connect({ host: address, port }, () => {
-        socket.destroy();
-        resolve(true);
-      });
-
-      socket.setTimeout(INBOUND_PROBE_TIMEOUT_MS);
-
-      socket.on("timeout", () => {
-        socket.destroy();
-        resolve(false);
-      });
-
-      socket.on("error", () => {
-        socket.destroy();
-        resolve(false);
-      });
-    });
   }
 
   // --- Helpers ---

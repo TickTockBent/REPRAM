@@ -240,7 +240,7 @@ describe("WebSocketConnection", () => {
         enclave: "acme-corp",
         address: "192.168.1.50",
         http_port: 8080,
-        capabilities: { inbound: "auto" },
+        capabilities: { inbound: "false" },
       } satisfies HelloPayload,
     };
 
@@ -255,7 +255,7 @@ describe("WebSocketConnection", () => {
     const payload = result.payload as HelloPayload;
     expect(payload.node_id).toBe("mcp-node-1");
     expect(payload.enclave).toBe("acme-corp");
-    expect(payload.capabilities.inbound).toBe("auto");
+    expect(payload.capabilities.inbound).toBe("false");
   });
 
   it("sends and receives goodbye messages", async () => {

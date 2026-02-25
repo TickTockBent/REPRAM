@@ -1,10 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
 import { createServer, type Server } from "node:http";
-import * as net from "node:net";
 import {
   TreeManager,
-  INBOUND_PROBE_TIMEOUT_MS,
   DEFAULT_MAX_CHILDREN,
   type InboundCapability,
 } from "./tree.js";
@@ -17,7 +15,7 @@ import {
 } from "./ws-transport.js";
 import { GossipProtocol } from "./gossip.js";
 import { Logger } from "./logger.js";
-import type { NodeInfo, WireMessage } from "./types.js";
+import type { NodeInfo } from "./types.js";
 
 // ─── Test infrastructure ─────────────────────────────────────────────
 
@@ -124,14 +122,6 @@ describe("TreeManager", () => {
       expect(tree.isInboundCapable()).toBe(false);
     });
 
-    it("REPRAM_INBOUND=auto → defaults to substrate until attached", () => {
-      const localNode = makeNodeInfo("auto-1");
-      const gossip = new GossipProtocol(localNode, 3, silentLogger());
-      const tree = makeTreeManager(localNode, gossip, { inbound: "auto" });
-
-      // Starts as substrate (before any attachment attempt)
-      expect(tree.role).toBe("substrate");
-    });
   });
 
   describe("hello/welcome handshake (server side)", () => {
@@ -180,7 +170,6 @@ describe("TreeManager", () => {
 
       expect(payload.your_position.parent_id).toBe("substrate-1");
       expect(payload.your_position.depth).toBe(1);
-      expect(payload.inbound_detected).toBe(false);
       // Topology should include substrate-1 and peer-1
       expect(payload.topology.length).toBe(2);
     });
@@ -358,124 +347,6 @@ describe("TreeManager", () => {
       expect(transientTree.parent).toBeNull();
     });
 
-    it("updates inbound capability from welcome (auto mode)", async () => {
-      const autoTree = makeTreeManager(transientNode, transientGossip, { inbound: "auto" });
-
-      pair.serverConn.on("attachment", (msg: AttachmentMessage) => {
-        if (msg.type === "hello") {
-          substrateTree.handleHello(pair.serverConn, msg.payload as HelloPayload);
-        }
-      });
-
-      const welcome = await autoTree.attach(pair.clientConn);
-
-      expect(welcome).not.toBeNull();
-      // The probe will fail (192.168.1.100 isn't a real address in test)
-      expect(autoTree.isInboundCapable()).toBe(false);
-
-      autoTree.stop();
-    });
-  });
-
-  describe("inbound auto-detection", () => {
-    it("detects listening server as inbound-capable", async () => {
-      // Start a TCP server to probe against
-      const tcpServer = net.createServer();
-      await new Promise<void>((resolve) => {
-        tcpServer.listen(0, "127.0.0.1", () => resolve());
-      });
-      const addr = tcpServer.address() as net.AddressInfo;
-
-      const localNode = makeNodeInfo("prober");
-      const gossip = new GossipProtocol(localNode, 3, silentLogger());
-      const tree = makeTreeManager(localNode, gossip);
-
-      const result = await tree.probeInbound("127.0.0.1", addr.port);
-      expect(result).toBe(true);
-
-      tcpServer.close();
-      tree.stop();
-    });
-
-    it("detects unreachable port as not inbound-capable", async () => {
-      const localNode = makeNodeInfo("prober");
-      const gossip = new GossipProtocol(localNode, 3, silentLogger());
-      const tree = makeTreeManager(localNode, gossip);
-
-      // Use a port that's almost certainly not listening
-      const result = await tree.probeInbound("127.0.0.1", 1);
-      expect(result).toBe(false);
-
-      tree.stop();
-    });
-
-    it("hello with inbound=true skips probe", async () => {
-      const pair = await createPair();
-      const substrateNode = makeNodeInfo("substrate-1");
-      const gossip = new GossipProtocol(substrateNode, 3, silentLogger());
-      const tree = makeTreeManager(substrateNode, gossip);
-
-      // Spy on probeInbound
-      const probeSpy = vi.spyOn(tree, "probeInbound");
-
-      const welcomePromise = new Promise<AttachmentMessage>((resolve) => {
-        pair.clientConn.on("attachment", (msg) => {
-          if (msg.type === "welcome") resolve(msg);
-        });
-      });
-
-      const hello: HelloPayload = {
-        node_id: "transient-1",
-        enclave: "default",
-        address: "192.168.1.100",
-        http_port: 8080,
-        capabilities: { inbound: "true" },
-      };
-
-      await tree.handleHello(pair.serverConn, hello);
-      const welcomeMsg = await welcomePromise;
-      const payload = welcomeMsg.payload as WelcomePayload;
-
-      expect(payload.inbound_detected).toBe(true);
-      expect(probeSpy).not.toHaveBeenCalled();
-
-      tree.stop();
-      await pair.cleanup();
-    });
-
-    it("hello with inbound=auto triggers probe", async () => {
-      const pair = await createPair();
-      const substrateNode = makeNodeInfo("substrate-1");
-      const gossip = new GossipProtocol(substrateNode, 3, silentLogger());
-      const tree = makeTreeManager(substrateNode, gossip);
-
-      // Mock probeInbound to avoid real network calls
-      vi.spyOn(tree, "probeInbound").mockResolvedValue(false);
-
-      const welcomePromise = new Promise<AttachmentMessage>((resolve) => {
-        pair.clientConn.on("attachment", (msg) => {
-          if (msg.type === "welcome") resolve(msg);
-        });
-      });
-
-      const hello: HelloPayload = {
-        node_id: "transient-1",
-        enclave: "default",
-        address: "192.168.1.100",
-        http_port: 8080,
-        capabilities: { inbound: "auto" },
-      };
-
-      await tree.handleHello(pair.serverConn, hello);
-      const welcomeMsg = await welcomePromise;
-      const payload = welcomeMsg.payload as WelcomePayload;
-
-      expect(payload.inbound_detected).toBe(false);
-      expect(tree.probeInbound).toHaveBeenCalledWith("192.168.1.100", 8080);
-
-      tree.stop();
-      await pair.cleanup();
-    });
   });
 
   describe("ACK routing", () => {

@@ -15,7 +15,7 @@ import { HTTPServer, loadConfig, type ServerConfig } from "./server.js";
 import { HTTPTransport } from "./transport.js";
 import { Logger } from "./logger.js";
 import { connectToSubstrate, type WebSocketConnection } from "./ws-transport.js";
-import type { AttachmentMessage, HelloPayload, WelcomePayload, GoodbyePayload } from "./ws-transport.js";
+import type { AttachmentMessage, HelloPayload, GoodbyePayload } from "./ws-transport.js";
 import { ClusterNode } from "./cluster.js";
 import { TreeManager, DEFAULT_MAX_CHILDREN } from "./tree.js";
 import { GossipProtocol } from "./gossip.js";
@@ -138,7 +138,6 @@ describe("NAT traversal integration", () => {
     expect(welcome).not.toBeNull();
     expect(welcome!.your_position.parent_id).toBe("substrate-a");
     expect(welcome!.your_position.depth).toBe(1);
-    expect(welcome!.inbound_detected).toBe(false); // transient can't accept inbound
     expect(transientTree.role).toBe("transient");
 
     // Substrate should have the child tracked
@@ -337,102 +336,6 @@ describe("NAT traversal integration", () => {
     // The ACK was delivered via WS and processed by B's gossip.handleMessage
     // We verify by checking that the data is accessible on B's side too
     // (B stored locally before sending, substrate stored on relay receipt)
-  });
-
-  // --- Inbound auto-detection ---
-
-  it("inbound auto-detection: node with server port is detected as inbound", async () => {
-    const config = substrateConfig({ nodeId: "substrate-a" });
-    const logger = silentLogger();
-    const server = new HTTPServer(config, logger);
-    const transport = new HTTPTransport(
-      server.clusterNode.localNode,
-      config.clusterSecret,
-      logger,
-    );
-    server.setTransport(transport);
-    await server.start();
-    const addr = server.getServer().address() as { port: number };
-    cleanups.push(() => server.stop());
-
-    // Transient node that actually has a server running (probed as inbound)
-    const { cluster: probeCluster, tree: probeTree } = createTransientNode("probe-node");
-    // Override inbound to auto for detection
-    (probeTree as any).options.inbound = "auto";
-
-    const conn = await connectToSubstrate("127.0.0.1", addr.port, "", silentLogger());
-    cleanups.push(async () => { conn.close(); probeCluster.stop(); probeTree.stop(); });
-
-    // Create a custom hello with the substrate's own address:port to probe
-    // (it's the only server we know is running)
-    const hello: HelloPayload = {
-      node_id: "probe-node",
-      enclave: "default",
-      address: "127.0.0.1",
-      http_port: addr.port, // probe against the running substrate server
-      capabilities: { inbound: "auto" },
-    };
-
-    // Have substrate process the hello directly
-    const welcomePromise = new Promise<AttachmentMessage>((resolve) => {
-      conn.on("attachment", (msg) => {
-        if (msg.type === "welcome") resolve(msg);
-      });
-    });
-
-    await server.treeManager.handleHello(
-      // We need the server-side WS connection, not the client side
-      // Get it from wsConnections
-      Array.from(server.getWSConnections())[0],
-      hello,
-    );
-
-    const welcomeMsg = await welcomePromise;
-    const payload = welcomeMsg.payload as WelcomePayload;
-
-    // The substrate should detect that port is reachable (it's its own port!)
-    expect(payload.inbound_detected).toBe(true);
-  });
-
-  it("inbound auto-detection: unreachable port detected as not inbound", async () => {
-    const config = substrateConfig({ nodeId: "substrate-a" });
-    const logger = silentLogger();
-    const server = new HTTPServer(config, logger);
-    const transport = new HTTPTransport(
-      server.clusterNode.localNode,
-      config.clusterSecret,
-      logger,
-    );
-    server.setTransport(transport);
-    await server.start();
-    const addr = server.getServer().address() as { port: number };
-    cleanups.push(() => server.stop());
-
-    const conn = await connectToSubstrate("127.0.0.1", addr.port, "", silentLogger());
-    cleanups.push(async () => conn.close());
-
-    // Hello with unreachable port
-    const hello: HelloPayload = {
-      node_id: "nat-node",
-      enclave: "default",
-      address: "127.0.0.1",
-      http_port: 1, // almost certainly not listening
-      capabilities: { inbound: "auto" },
-    };
-
-    const welcomePromise = new Promise<AttachmentMessage>((resolve) => {
-      conn.on("attachment", (msg) => {
-        if (msg.type === "welcome") resolve(msg);
-      });
-    });
-
-    const serverConns = Array.from(server.getWSConnections());
-    await server.treeManager.handleHello(serverConns[serverConns.length - 1], hello);
-
-    const welcomeMsg = await welcomePromise;
-    const payload = welcomeMsg.payload as WelcomePayload;
-
-    expect(payload.inbound_detected).toBe(false);
   });
 
   // --- Graceful substrate shutdown ---

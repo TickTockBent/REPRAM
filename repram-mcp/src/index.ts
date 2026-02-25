@@ -61,7 +61,7 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
   // Substrate nodes stay in flat mesh — no WS attachment needed
   if (config.inbound === "true") return;
 
-  // Transient nodes (or auto-detect) attach to substrate via WebSocket
+  // Transient nodes attach to substrate via WebSocket
   await attachToSubstrate(server, config, seedPeers, logger);
 }
 

@@ -55,13 +55,12 @@ export interface HelloPayload {
   enclave: string;
   address: string;
   http_port: number;
-  capabilities: { inbound: "auto" | "true" | "false" };
+  capabilities: { inbound: "true" | "false" };
 }
 
 export interface WelcomePayload {
   topology: WireMessage[];
   your_position: { depth: number; parent_id: string };
-  inbound_detected: boolean;
 }
 
 export interface GoodbyePayload {
