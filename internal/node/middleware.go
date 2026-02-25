@@ -11,6 +11,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// contextKey is an unexported type for context value keys, preventing collisions
+// with keys defined in other packages.
+type contextKey string
+
+const clientIPKey contextKey = "client_ip"
+
 // RateLimiter implements a simple token bucket rate limiter per IP
 type RateLimiter struct {
 	buckets map[string]*tokenBucket
@@ -174,7 +180,7 @@ func (sm *SecurityMiddleware) Middleware(next http.Handler) http.Handler {
 		
 		// Add security context
 		ctx := r.Context()
-		ctx = context.WithValue(ctx, "client_ip", clientIP)
+		ctx = context.WithValue(ctx, clientIPKey, clientIP)
 		r = r.WithContext(ctx)
 		
 		next.ServeHTTP(w, r)

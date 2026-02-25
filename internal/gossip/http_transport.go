@@ -122,12 +122,6 @@ func (t *HTTPTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 	return nil
 }
 
-// Broadcast sends a message to all nodes (handled by the Protocol layer)
-func (t *HTTPTransport) Broadcast(ctx context.Context, msg *Message) error {
-	// The Protocol layer handles the actual broadcasting to all peers
-	return fmt.Errorf("broadcast should be handled by Protocol layer")
-}
-
 // SetMessageHandler sets the handler for incoming messages
 func (t *HTTPTransport) SetMessageHandler(handler func(*Message) error) {
 	t.mu.Lock()

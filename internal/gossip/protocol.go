@@ -126,7 +126,6 @@ type Transport interface {
 	Start(ctx context.Context) error
 	Stop() error
 	Send(ctx context.Context, node *Node, msg *Message) error
-	Broadcast(ctx context.Context, msg *Message) error
 	SetMessageHandler(handler func(*Message) error)
 }
 

@@ -165,7 +165,7 @@ curl http://localhost:8080/v1/metrics
 | `REPRAM_RATE_LIMIT` | `100` | Requests per second per IP. When behind a reverse proxy, set `REPRAM_TRUST_PROXY=true` so the rate limiter uses `X-Forwarded-For` / `X-Real-IP` headers. When exposed directly, leave it `false` to prevent header spoofing. |
 | `REPRAM_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` and `X-Real-IP` headers for client IP detection. Set to `true` when running behind a reverse proxy (nginx, Cloudflare, etc.). |
 | `REPRAM_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
-| `REPRAM_MAX_STORAGE_MB` | `0` | Max data storage in MB (0 = unlimited). Rejects writes with 507 when full. |
+| `REPRAM_MAX_STORAGE_MB` | `0` | Max data storage in MB (0 = unlimited). Rejects writes with 507 when full. Tracks payload bytes only — actual memory usage is higher due to per-entry overhead (~80 bytes + key length per entry). For workloads with many small values, set conservatively. |
 
 ## Building from Source
 

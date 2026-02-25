@@ -37,10 +37,6 @@ func (t *mockTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 	return nil
 }
 
-func (t *mockTransport) Broadcast(ctx context.Context, msg *Message) error {
-	return fmt.Errorf("use Protocol.Broadcast")
-}
-
 func (t *mockTransport) SetMessageHandler(handler func(*Message) error) {
 	t.messageHandler = handler
 }
