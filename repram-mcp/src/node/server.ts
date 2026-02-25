@@ -123,6 +123,9 @@ export class HTTPServer {
       },
     );
 
+    // Wire ClusterNode ↔ TreeManager for relay forwarding and ACK routing
+    this.clusterNode.setTreeManager(this.treeManager);
+
     this.securityMW = new SecurityMiddleware({
       rateLimit: config.rateLimit,
       burst: config.rateLimit * 2,
@@ -165,9 +168,15 @@ export class HTTPServer {
 
       this.logger.info(`WebSocket connection accepted from ${req.socket.remoteAddress}`);
 
-      // Route incoming gossip messages through the same path as HTTP
+      // Route incoming gossip messages — PUTs from attached children go
+      // through relay, everything else through normal gossip handling
       conn.on("message", (msg) => {
-        this.clusterNode.gossip.handleMessage(msg);
+        if (msg.type === "PUT" && conn.remoteNodeId && this.treeManager.getChildren().has(conn.remoteNodeId)) {
+          // Relay: child PUT → store locally, fan out to mesh, forward to siblings
+          this.clusterNode.handleRelayPut(msg, conn);
+        } else {
+          this.clusterNode.gossip.handleMessage(msg);
+        }
       });
 
       // Handle attachment lifecycle messages
