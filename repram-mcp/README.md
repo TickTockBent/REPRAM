@@ -8,6 +8,7 @@ MCP server for [REPRAM](https://github.com/ticktockbent/REPRAM) — gives AI age
 |------|-------------|
 | `repram_store` | Store data with automatic expiration (TTL). Returns a key for retrieval. |
 | `repram_retrieve` | Retrieve data by key. Returns null if expired or missing. |
+| `repram_exists` | Check if a key exists without retrieving the value. Returns remaining TTL. |
 | `repram_list_keys` | List stored keys, optionally filtered by prefix. |
 
 ## Configuration
@@ -59,6 +60,7 @@ Any MCP client that supports stdio transport can use this server. Set the comman
 ```bash
 npm install
 npm run build
+npm test          # 35 tests (tool handlers + HTTP client)
 ```
 
 ## License

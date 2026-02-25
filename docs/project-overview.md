@@ -28,7 +28,7 @@ If you need confidentiality during the TTL window, encrypt data before storing i
 
 ## Architecture
 
-* **REPRAM Node**: Go binary that stores key-value pairs in memory with TTL expiration, replicates via gossip protocol, and exposes a REST API (`/v1/data/{key}`, `/v1/keys`, `/v1/health`)
+* **REPRAM Node**: Go binary that stores key-value pairs in memory with TTL expiration, replicates via gossip protocol, and exposes a REST API (`PUT/GET/HEAD /v1/data/{key}`, `/v1/keys`, `/v1/health`, `/v1/topology`, `/v1/metrics`)
 * **MCP Server** (`repram-mcp`): TypeScript MCP server that wraps the REST API as agent-callable tools (`repram_store`, `repram_retrieve`, `repram_exists`, `repram_list_keys`). This is the primary interface for AI agents.
 * **Bootstrap Layer**: DNS-based peer discovery for the public network (`bootstrap.repram.network`), or manual `REPRAM_PEERS` for private clusters
 * **Gossip Network**: HTTP-based peer-to-peer message propagation with quorum acknowledgement. Small enclaves use full broadcast; larger enclaves (>10 peers) use probabilistic √N fanout with epidemic forwarding and message deduplication.

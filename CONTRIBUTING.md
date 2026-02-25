@@ -49,7 +49,7 @@ By participating in this project, you agree to maintain a respectful and collabo
 
 #### Testing Requirements
 - Write tests for new functionality
-- Ensure all tests pass: `make test`
+- Ensure all tests pass: `make test` (Go) and `cd repram-mcp && npm test` (MCP server)
 - Include both unit and integration tests where appropriate
 
 #### Commit Guidelines
@@ -92,7 +92,8 @@ By participating in this project, you agree to maintain a respectful and collabo
 ## Development Setup
 
 ### Prerequisites
-- Go 1.21 or higher
+- Go 1.22 or higher
+- Node.js 18+ (for MCP server development)
 - Make
 - Git
 - Docker (optional, for containerized testing)
@@ -103,11 +104,12 @@ By participating in this project, you agree to maintain a respectful and collabo
 git clone https://github.com/YOUR_USERNAME/REPRAM.git
 cd REPRAM
 
-# Build
+# Build and test the Go node
 make build
-
-# Run tests
 make test
+
+# Build and test the MCP server
+cd repram-mcp && npm install && npm run build && npm test
 
 # Start a node
 make run

@@ -116,13 +116,26 @@ curl http://localhost:8080/v1/data/{key}
 # Response headers: X-Created-At, X-Original-TTL, X-Remaining-TTL
 ```
 
+### Check existence (HEAD)
+
+```bash
+curl -I http://localhost:8080/v1/data/{key}
+# Returns: 200 with TTL headers (no body), or 404 if expired/missing
+# Use for lightweight existence checks, coordination tokens, heartbeat polling
+```
+
 ### List keys
 
 ```bash
 curl http://localhost:8080/v1/keys
 curl http://localhost:8080/v1/keys?prefix=myapp/
+curl "http://localhost:8080/v1/keys?limit=10"
+curl "http://localhost:8080/v1/keys?limit=10&cursor=last-key-from-previous-page"
 # Returns: {"keys": ["key1", "key2", ...]}
+# With pagination: {"keys": [...], "next_cursor": "key10"}
 ```
+
+Keys are returned in lexicographic order. Use `?limit=N` to cap the page size and `?cursor=X` to continue from the previous page (the cursor is the last key from the previous response). When more pages are available, the response includes a `next_cursor` field. No limit returns all keys (backwards compatible).
 
 Note: Key listing is based on periodic background cleanup (every 30s). Keys may appear in listings for up to 30 seconds after TTL expiration. Direct retrieval via `GET /v1/data/{key}` always enforces TTL precisely.
 
@@ -138,6 +151,13 @@ curl http://localhost:8080/v1/health
 ```bash
 curl http://localhost:8080/v1/status
 # Returns: detailed node status with uptime, memory, goroutines
+```
+
+### Topology
+
+```bash
+curl http://localhost:8080/v1/topology
+# Returns: peer list with enclave membership and health status
 ```
 
 ### Metrics
