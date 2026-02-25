@@ -14,9 +14,10 @@ import { SecurityMiddleware, applyCorsHeaders } from "./middleware.js";
 import { wireToMessage } from "./transport.js";
 import { verifyBody } from "./auth.js";
 import { StoreFull } from "./storage.js";
-import { WebSocketConnection, type AttachmentMessage } from "./ws-transport.js";
+import { WebSocketConnection, type AttachmentMessage, type HelloPayload } from "./ws-transport.js";
 import type { WireMessage } from "./types.js";
 import type { Transport } from "./gossip.js";
+import { TreeManager, type InboundCapability } from "./tree.js";
 
 // ─── Configuration ───────────────────────────────────────────────────
 
@@ -36,6 +37,10 @@ export interface ServerConfig {
   trustProxy: boolean;
   maxStorageBytes: number;
   logLevel: string;
+  /** Whether this node can accept inbound connections: auto, true, or false. */
+  inbound: InboundCapability;
+  /** Maximum transient node attachments (0 = never accept). */
+  maxChildren: number;
 }
 
 /**
@@ -59,6 +64,8 @@ export function loadConfig(embedded = false): ServerConfig {
     trustProxy: (process.env.REPRAM_TRUST_PROXY ?? "").toLowerCase() === "true",
     maxStorageBytes: envInt("REPRAM_MAX_STORAGE_MB", embedded ? 50 : 0) * 1024 * 1024,
     logLevel: process.env.REPRAM_LOG_LEVEL ?? (embedded ? "warn" : "info"),
+    inbound: (process.env.REPRAM_INBOUND ?? "auto") as InboundCapability,
+    maxChildren: envInt("REPRAM_MAX_CHILDREN", 100),
   };
 }
 
@@ -75,6 +82,7 @@ function envInt(key: string, defaultVal: number): number {
 
 export class HTTPServer {
   readonly clusterNode: ClusterNode;
+  readonly treeManager: TreeManager;
   private server: Server;
   private wss: WebSocketServer;
   private logger: Logger;
@@ -102,6 +110,17 @@ export class HTTPServer {
         clusterSecret: config.clusterSecret,
       },
       logger,
+    );
+
+    this.treeManager = new TreeManager(
+      this.clusterNode.localNode,
+      this.clusterNode.gossip,
+      logger,
+      {
+        inbound: config.inbound,
+        maxChildren: config.maxChildren,
+        clusterSecret: config.clusterSecret,
+      },
     );
 
     this.securityMW = new SecurityMiddleware({
@@ -151,11 +170,13 @@ export class HTTPServer {
         this.clusterNode.gossip.handleMessage(msg);
       });
 
-      // Handle attachment lifecycle messages (hello/welcome/goodbye)
-      // These will be fully implemented in Phase 2 (#61)
+      // Handle attachment lifecycle messages
       conn.on("attachment", (attachMsg: AttachmentMessage) => {
-        if (attachMsg.type === "hello" || attachMsg.type === "welcome" || attachMsg.type === "goodbye") {
-          this.logger.debug(`Received ${attachMsg.type} on WebSocket (lifecycle handling pending Phase 2)`);
+        if (attachMsg.type === "hello") {
+          const hello = attachMsg.payload as HelloPayload;
+          this.treeManager.handleHello(conn, hello).catch((err) => {
+            this.logger.warn(`Failed to handle hello from ${hello.node_id}: ${err}`);
+          });
         }
       });
 
@@ -192,6 +213,15 @@ export class HTTPServer {
 
   async stop(): Promise<void> {
     this.logger.info("Shutting down — draining in-flight requests...");
+
+    // Send goodbye to all attached transient nodes before closing
+    this.treeManager.sendGoodbyeToChildren();
+
+    // Brief grace period for goodbye messages to send
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Clean up tree manager state
+    this.treeManager.stop();
 
     // Close all WebSocket connections
     for (const conn of this.wsConnections) {
