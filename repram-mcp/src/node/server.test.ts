@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import WebSocket from "ws";
 import { HTTPServer, type ServerConfig } from "./server.js";
 import { Logger } from "./logger.js";
 import type { Transport } from "./gossip.js";
 import type { Message, NodeInfo } from "./types.js";
+import type { AttachmentMessage } from "./ws-transport.js";
+import { messageToWire } from "./transport.js";
 import http from "node:http";
 
 // ─── Test infrastructure ─────────────────────────────────────────────
@@ -37,6 +40,20 @@ function mockTransport(): Transport {
 
 function silentLogger(): Logger {
   return new Logger("error");
+}
+
+function makeTestMsg(overrides: Partial<Message> = {}): Message {
+  return {
+    type: "PUT",
+    from: "test-node",
+    to: "",
+    key: "test-key",
+    data: Buffer.from("test"),
+    ttl: 300,
+    timestamp: new Date(),
+    messageId: "test-msg",
+    ...overrides,
+  };
 }
 
 /** Make an HTTP request to the test server. */
@@ -410,5 +427,226 @@ describe("routing", () => {
   it("returns 404 for unknown paths", async () => {
     const res = await request(server, "GET", "/v1/unknown");
     expect(res.status).toBe(404);
+  });
+});
+
+// --- WebSocket upgrade ---
+
+function getServerPort(s: HTTPServer): number {
+  const addr = s.getServer().address();
+  if (!addr || typeof addr === "string") throw new Error("Server not started");
+  return addr.port;
+}
+
+describe("WebSocket upgrade on /v1/ws", () => {
+  it("accepts WebSocket upgrade on /v1/ws", async () => {
+    const port = getServerPort(server);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/v1/ws`);
+
+    await new Promise<void>((resolve, reject) => {
+      ws.on("open", resolve);
+      ws.on("error", reject);
+    });
+
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    ws.close();
+    await new Promise<void>((r) => ws.on("close", () => r()));
+  });
+
+  it("rejects WebSocket upgrade on other paths", async () => {
+    const port = getServerPort(server);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/v1/other`);
+
+    await expect(
+      new Promise<void>((resolve, reject) => {
+        ws.on("open", resolve);
+        ws.on("error", reject);
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("tracks active WebSocket connections", async () => {
+    const port = getServerPort(server);
+    const ws1 = new WebSocket(`ws://127.0.0.1:${port}/v1/ws`);
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}/v1/ws`);
+
+    await Promise.all([
+      new Promise<void>((resolve) => ws1.on("open", resolve)),
+      new Promise<void>((resolve) => ws2.on("open", resolve)),
+    ]);
+
+    expect(server.getWSConnections().size).toBe(2);
+
+    ws1.close();
+    await new Promise<void>((r) => ws1.on("close", () => r()));
+
+    // Give server time to process the close event
+    await new Promise((r) => setTimeout(r, 50));
+    expect(server.getWSConnections().size).toBe(1);
+
+    ws2.close();
+    await new Promise<void>((r) => ws2.on("close", () => r()));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(server.getWSConnections().size).toBe(0);
+  });
+
+  it("routes gossip messages received over WS through handleMessage", async () => {
+    const port = getServerPort(server);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/v1/ws`);
+
+    await new Promise<void>((resolve) => ws.on("open", resolve));
+
+    // Spy on the gossip handleMessage path
+    const handleSpy = vi.spyOn(server.clusterNode.gossip, "handleMessage");
+
+    // Send a PING message in AttachmentMessage format
+    const pingMsg: Message = {
+      type: "PING",
+      from: "remote-node",
+      to: "test-node",
+      key: "",
+      data: Buffer.alloc(0),
+      ttl: 0,
+      timestamp: new Date(),
+      messageId: "ws-test-ping-1",
+    };
+
+    const wireMsg = messageToWire(pingMsg);
+    const attachMsg: AttachmentMessage = {
+      type: "ping",
+      payload: wireMsg,
+    };
+
+    ws.send(JSON.stringify(attachMsg));
+
+    // Wait for the message to be processed
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(handleSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "PING",
+        from: "remote-node",
+        messageId: "ws-test-ping-1",
+      }),
+    );
+
+    handleSpy.mockRestore();
+    ws.close();
+    await new Promise<void>((r) => ws.on("close", () => r()));
+  });
+
+  it("routes PUT messages received over WS to application handler", async () => {
+    // Create a fresh server with a spy-able message handler
+    const wsServer = new HTTPServer(testConfig(), silentLogger());
+    wsServer.setTransport(mockTransport());
+    await wsServer.start();
+
+    const wsPort = getServerPort(wsServer);
+    const ws = new WebSocket(`ws://127.0.0.1:${wsPort}/v1/ws`);
+    await new Promise<void>((resolve) => ws.on("open", resolve));
+
+    // Send a PUT via WebSocket — it should be stored via the cluster node
+    const putMsg: Message = {
+      type: "PUT",
+      from: "remote-writer",
+      to: "",
+      key: "ws-written-key",
+      data: Buffer.from("ws-data"),
+      ttl: 300,
+      timestamp: new Date(),
+      messageId: "ws-put-1",
+    };
+
+    const wireMsg = messageToWire(putMsg);
+    const attachMsg: AttachmentMessage = {
+      type: "put",
+      payload: wireMsg,
+    };
+
+    ws.send(JSON.stringify(attachMsg));
+
+    // Wait for processing
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Verify the data was stored (PUT handler in cluster.ts stores replicated data)
+    const stored = wsServer.clusterNode.get("ws-written-key");
+    expect(stored).not.toBeNull();
+    expect(stored!.toString()).toBe("ws-data");
+
+    ws.close();
+    await new Promise<void>((r) => ws.on("close", () => r()));
+    await wsServer.stop();
+  });
+
+  it("handles HMAC-signed WS messages when cluster secret is set", async () => {
+    const hmacServer = new HTTPServer(
+      testConfig({ clusterSecret: "ws-test-secret" }),
+      silentLogger(),
+    );
+    hmacServer.setTransport(mockTransport());
+    await hmacServer.start();
+
+    const hmacPort = getServerPort(hmacServer);
+    const ws = new WebSocket(`ws://127.0.0.1:${hmacPort}/v1/ws`);
+    await new Promise<void>((resolve) => ws.on("open", resolve));
+
+    // Send a properly signed message
+    const { signBody } = await import("./auth.js");
+    const putMsg: Message = {
+      type: "PUT",
+      from: "hmac-writer",
+      to: "",
+      key: "hmac-ws-key",
+      data: Buffer.from("signed-data"),
+      ttl: 300,
+      timestamp: new Date(),
+      messageId: "hmac-ws-1",
+    };
+
+    const wireMsg = messageToWire(putMsg);
+    const payloadJson = JSON.stringify(wireMsg);
+    const signature = signBody("ws-test-secret", Buffer.from(payloadJson));
+
+    ws.send(JSON.stringify({
+      type: "put",
+      signature,
+      payload: wireMsg,
+    }));
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    const stored = hmacServer.clusterNode.get("hmac-ws-key");
+    expect(stored).not.toBeNull();
+    expect(stored!.toString()).toBe("signed-data");
+
+    // Now send unsigned — should be rejected
+    const unsignedWire = messageToWire(
+      makeTestMsg({ key: "unsigned-key", messageId: "unsigned-1" }),
+    );
+    ws.send(JSON.stringify({ type: "put", payload: unsignedWire }));
+
+    await new Promise((r) => setTimeout(r, 100));
+    expect(hmacServer.clusterNode.get("unsigned-key")).toBeNull();
+
+    ws.close();
+    await new Promise<void>((r) => ws.on("close", () => r()));
+    await hmacServer.stop();
+  });
+
+  it("cleans up WS connections on server shutdown", async () => {
+    const shutdownServer = new HTTPServer(testConfig(), silentLogger());
+    shutdownServer.setTransport(mockTransport());
+    await shutdownServer.start();
+
+    const shutdownPort = getServerPort(shutdownServer);
+    const ws = new WebSocket(`ws://127.0.0.1:${shutdownPort}/v1/ws`);
+    await new Promise<void>((resolve) => ws.on("open", resolve));
+
+    expect(shutdownServer.getWSConnections().size).toBe(1);
+
+    await shutdownServer.stop();
+
+    expect(shutdownServer.getWSConnections().size).toBe(0);
+    ws.close();
   });
 });

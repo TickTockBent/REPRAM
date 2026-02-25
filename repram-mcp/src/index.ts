@@ -10,10 +10,11 @@
  */
 
 import { RepramClient, InProcessClient, type RepramClientInterface } from "./client.js";
-import { HTTPServer, loadConfig } from "./node/server.js";
+import { HTTPServer, loadConfig, type ServerConfig } from "./node/server.js";
 import { HTTPTransport } from "./node/transport.js";
 import { Logger } from "./node/logger.js";
 import { bootstrapFromPeers, resolveBootstrapDNS } from "./node/bootstrap.js";
+import { connectToSubstrate, type WebSocketConnection } from "./node/ws-transport.js";
 
 const isStandalone =
   process.env.REPRAM_MODE === "standalone" ||
@@ -23,7 +24,7 @@ let embeddedServer: HTTPServer | null = null;
 
 // ─── Bootstrap ──────────────────────────────────────────────────────
 
-async function bootstrap(server: HTTPServer, config: ReturnType<typeof loadConfig>, logger: Logger): Promise<void> {
+async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logger): Promise<void> {
   // Resolve seed peers: REPRAM_PEERS env var, then DNS for public network
   const seedPeers: string[] = [];
 
@@ -56,6 +57,82 @@ async function bootstrap(server: HTTPServer, config: ReturnType<typeof loadConfi
   for (const peer of discovered) {
     server.clusterNode.gossip.addPeer(peer);
   }
+
+  // Substrate nodes stay in flat mesh — no WS attachment needed
+  if (config.inbound === "true") return;
+
+  // Transient nodes attach to substrate via WebSocket
+  await attachToSubstrate(server, config, seedPeers, logger);
+}
+
+/**
+ * After HTTP bootstrap, transient nodes open a persistent WebSocket
+ * attachment to a substrate node. Gossip flows over this connection.
+ * Falls back to HTTP-only if the bootstrap node doesn't support WS.
+ */
+async function attachToSubstrate(
+  server: HTTPServer,
+  config: ServerConfig,
+  seedPeers: string[],
+  logger: Logger,
+): Promise<void> {
+  // Try each seed peer for WS attachment
+  for (const seed of seedPeers) {
+    const [address, portStr] = seed.split(":");
+    const port = parseInt(portStr, 10);
+    if (!address || isNaN(port)) continue;
+
+    try {
+      logger.info(`Attempting WebSocket attachment to ${seed}`);
+      const conn = await connectToSubstrate(
+        address,
+        port,
+        config.clusterSecret,
+        logger,
+        10_000,
+      );
+
+      // Hello/welcome handshake
+      const welcome = await server.treeManager.attach(conn);
+      if (welcome) {
+        logger.info(`WebSocket attachment established — transient node active`);
+
+        // Route incoming gossip from substrate through cluster
+        setupParentRouting(server, conn);
+        conn.startHeartbeat();
+
+        // Set up reattach callback for goodbye-triggered migration
+        server.treeManager.setReattachCallback((newConn) => {
+          setupParentRouting(server, newConn);
+        });
+
+        return; // attached successfully
+      }
+
+      // Welcome failed — close and try next
+      conn.close();
+    } catch (err) {
+      logger.warn(
+        `WebSocket attachment to ${seed} failed: ${err}` +
+          ` — trying next seed`,
+      );
+    }
+  }
+
+  logger.warn(
+    "No bootstrap node supports WebSocket — NAT traversal unavailable. " +
+      "Operating with HTTP-only gossip (degraded for NAT-bound nodes).",
+  );
+}
+
+/**
+ * Wire up message routing on a parent (substrate) WebSocket connection.
+ * Incoming gossip messages from the parent flow through the cluster node.
+ */
+function setupParentRouting(server: HTTPServer, conn: WebSocketConnection): void {
+  conn.on("message", (msg) => {
+    server.clusterNode.gossip.handleMessage(msg);
+  });
 }
 
 // ─── Standalone mode (HTTP server only, no MCP) ─────────────────────

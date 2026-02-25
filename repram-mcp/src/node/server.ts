@@ -6,14 +6,18 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
+import type { Duplex } from "node:stream";
+import { WebSocketServer } from "ws";
 import { Logger } from "./logger.js";
 import { ClusterNode, WRITE_STATUS_ACCEPTED } from "./cluster.js";
 import { SecurityMiddleware, applyCorsHeaders } from "./middleware.js";
 import { wireToMessage } from "./transport.js";
 import { verifyBody } from "./auth.js";
 import { StoreFull } from "./storage.js";
+import { WebSocketConnection, type AttachmentMessage, type HelloPayload } from "./ws-transport.js";
 import type { WireMessage } from "./types.js";
 import type { Transport } from "./gossip.js";
+import { TreeManager, type InboundCapability } from "./tree.js";
 
 // ─── Configuration ───────────────────────────────────────────────────
 
@@ -33,6 +37,10 @@ export interface ServerConfig {
   trustProxy: boolean;
   maxStorageBytes: number;
   logLevel: string;
+  /** Whether this node can accept inbound connections: true or false. */
+  inbound: InboundCapability;
+  /** Maximum transient node attachments (0 = never accept). */
+  maxChildren: number;
 }
 
 /**
@@ -56,6 +64,8 @@ export function loadConfig(embedded = false): ServerConfig {
     trustProxy: (process.env.REPRAM_TRUST_PROXY ?? "").toLowerCase() === "true",
     maxStorageBytes: envInt("REPRAM_MAX_STORAGE_MB", embedded ? 50 : 0) * 1024 * 1024,
     logLevel: process.env.REPRAM_LOG_LEVEL ?? (embedded ? "warn" : "info"),
+    inbound: (process.env.REPRAM_INBOUND ?? "false") as InboundCapability,
+    maxChildren: envInt("REPRAM_MAX_CHILDREN", 100),
   };
 }
 
@@ -72,11 +82,16 @@ function envInt(key: string, defaultVal: number): number {
 
 export class HTTPServer {
   readonly clusterNode: ClusterNode;
+  readonly treeManager: TreeManager;
   private server: Server;
+  private wss: WebSocketServer;
   private logger: Logger;
   private config: ServerConfig;
   private securityMW: SecurityMiddleware;
   private startTime = Date.now();
+
+  /** Active WebSocket connections from attached transient nodes. */
+  private wsConnections = new Set<WebSocketConnection>();
 
   constructor(config: ServerConfig, logger: Logger) {
     this.config = config;
@@ -97,6 +112,20 @@ export class HTTPServer {
       logger,
     );
 
+    this.treeManager = new TreeManager(
+      this.clusterNode.localNode,
+      this.clusterNode.gossip,
+      logger,
+      {
+        inbound: config.inbound,
+        maxChildren: config.maxChildren,
+        clusterSecret: config.clusterSecret,
+      },
+    );
+
+    // Wire ClusterNode ↔ TreeManager for relay forwarding and ACK routing
+    this.clusterNode.setTreeManager(this.treeManager);
+
     this.securityMW = new SecurityMiddleware({
       rateLimit: config.rateLimit,
       burst: config.rateLimit * 2,
@@ -105,10 +134,72 @@ export class HTTPServer {
     });
 
     this.server = createServer((req, res) => this.handleRequest(req, res));
+
+    // WebSocket server — no auto-accept, we handle upgrades manually on /v1/ws
+    this.wss = new WebSocketServer({ noServer: true });
+    this.server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      this.handleUpgrade(req, socket, head);
+    });
   }
 
   setTransport(transport: Transport): void {
     this.clusterNode.setTransport(transport);
+  }
+
+  /** Return active WebSocket connections (for testing and tree management). */
+  getWSConnections(): ReadonlySet<WebSocketConnection> {
+    return this.wsConnections;
+  }
+
+  // ─── WebSocket upgrade ──────────────────────────────────────────
+
+  private handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+    if (url.pathname !== "/v1/ws") {
+      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      const conn = new WebSocketConnection(ws, this.config.clusterSecret, this.logger);
+      this.wsConnections.add(conn);
+
+      this.logger.info(`WebSocket connection accepted from ${req.socket.remoteAddress}`);
+
+      // Route incoming gossip messages — PUTs from attached children go
+      // through relay, everything else through normal gossip handling
+      conn.on("message", (msg) => {
+        if (msg.type === "PUT" && conn.remoteNodeId && this.treeManager.getChildren().has(conn.remoteNodeId)) {
+          // Relay: child PUT → store locally, fan out to mesh, forward to siblings
+          this.clusterNode.handleRelayPut(msg, conn);
+        } else {
+          this.clusterNode.gossip.handleMessage(msg);
+        }
+      });
+
+      // Handle attachment lifecycle messages
+      conn.on("attachment", (attachMsg: AttachmentMessage) => {
+        if (attachMsg.type === "hello") {
+          const hello = attachMsg.payload as HelloPayload;
+          this.treeManager.handleHello(conn, hello).catch((err) => {
+            this.logger.warn(`Failed to handle hello from ${hello.node_id}: ${err}`);
+          });
+        }
+      });
+
+      conn.on("close", () => {
+        this.wsConnections.delete(conn);
+        this.logger.info(`WebSocket connection closed (${this.wsConnections.size} remaining)`);
+      });
+
+      conn.on("error", (err) => {
+        this.logger.warn(`WebSocket connection error: ${err.message}`);
+      });
+
+      conn.startHeartbeat();
+    });
   }
 
   start(): Promise<void> {
@@ -131,6 +222,23 @@ export class HTTPServer {
 
   async stop(): Promise<void> {
     this.logger.info("Shutting down — draining in-flight requests...");
+
+    // Send goodbye to all attached transient nodes before closing
+    this.treeManager.sendGoodbyeToChildren();
+
+    // Brief grace period for goodbye messages to send
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Clean up tree manager state
+    this.treeManager.stop();
+
+    // Close all WebSocket connections
+    for (const conn of this.wsConnections) {
+      conn.close(1001, "server shutting down");
+    }
+    this.wsConnections.clear();
+
+    this.wss.close();
 
     await new Promise<void>((resolve) => {
       this.server.close(() => resolve());
