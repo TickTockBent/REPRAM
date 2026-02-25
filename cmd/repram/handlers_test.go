@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -412,5 +413,217 @@ func TestPutOverwriteReplacesData(t *testing.T) {
 
 	if getW.Body.String() != "version2" {
 		t.Fatalf("after overwrite: got %q, want %q", getW.Body.String(), "version2")
+	}
+}
+
+// --- Pagination tests ---
+
+// storeKeys is a helper that creates n keys named key-000, key-001, etc.
+func storeKeys(t *testing.T, server *HTTPServer, router http.Handler, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		key := fmt.Sprintf("key-%03d", i)
+		req := httptest.NewRequest("PUT", "/v1/data/"+key, strings.NewReader("data"))
+		req.Header.Set("X-TTL", "600")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("PUT %s: expected 201, got %d", key, w.Code)
+		}
+	}
+}
+
+func TestKeysLimit(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+	router := server.Router()
+
+	storeKeys(t, server, router, 10)
+
+	req := httptest.NewRequest("GET", "/v1/keys?limit=3", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	keys := resp["keys"].([]interface{})
+	if len(keys) != 3 {
+		t.Fatalf("expected 3 keys, got %d", len(keys))
+	}
+
+	// Should have a next_cursor
+	nextCursor, ok := resp["next_cursor"].(string)
+	if !ok || nextCursor == "" {
+		t.Fatal("expected next_cursor in response")
+	}
+}
+
+func TestKeysCursorPagination(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+	router := server.Router()
+
+	storeKeys(t, server, router, 10) // key-000 through key-009
+
+	// Page 1: first 3
+	req := httptest.NewRequest("GET", "/v1/keys?limit=3", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var page1 map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&page1)
+	keys1 := page1["keys"].([]interface{})
+	cursor := page1["next_cursor"].(string)
+
+	if len(keys1) != 3 {
+		t.Fatalf("page 1: expected 3 keys, got %d", len(keys1))
+	}
+	if keys1[0].(string) != "key-000" {
+		t.Fatalf("page 1 first key = %q, want key-000", keys1[0])
+	}
+
+	// Page 2: next 3 using cursor
+	req2 := httptest.NewRequest("GET", "/v1/keys?limit=3&cursor="+cursor, nil)
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, req2)
+
+	var page2 map[string]interface{}
+	json.NewDecoder(w2.Body).Decode(&page2)
+	keys2 := page2["keys"].([]interface{})
+
+	if len(keys2) != 3 {
+		t.Fatalf("page 2: expected 3 keys, got %d", len(keys2))
+	}
+
+	// Page 2 first key should come after page 1 last key
+	if keys2[0].(string) <= keys1[2].(string) {
+		t.Fatalf("page 2 first key %q should be after page 1 last key %q", keys2[0], keys1[2])
+	}
+
+	// Collect all pages to verify we get all 10 keys
+	allKeys := make(map[string]bool)
+	for _, k := range keys1 {
+		allKeys[k.(string)] = true
+	}
+	for _, k := range keys2 {
+		allKeys[k.(string)] = true
+	}
+
+	// Page 3
+	cursor2 := page2["next_cursor"].(string)
+	req3 := httptest.NewRequest("GET", "/v1/keys?limit=3&cursor="+cursor2, nil)
+	w3 := httptest.NewRecorder()
+	router.ServeHTTP(w3, req3)
+
+	var page3 map[string]interface{}
+	json.NewDecoder(w3.Body).Decode(&page3)
+	keys3 := page3["keys"].([]interface{})
+	for _, k := range keys3 {
+		allKeys[k.(string)] = true
+	}
+
+	// Page 4: last key (1 remaining)
+	cursor3 := page3["next_cursor"].(string)
+	req4 := httptest.NewRequest("GET", "/v1/keys?limit=3&cursor="+cursor3, nil)
+	w4 := httptest.NewRecorder()
+	router.ServeHTTP(w4, req4)
+
+	var page4 map[string]interface{}
+	json.NewDecoder(w4.Body).Decode(&page4)
+	keys4 := page4["keys"].([]interface{})
+	for _, k := range keys4 {
+		allKeys[k.(string)] = true
+	}
+
+	if len(keys4) != 1 {
+		t.Fatalf("page 4: expected 1 key, got %d", len(keys4))
+	}
+
+	// No more pages — next_cursor should be absent
+	if _, hasCursor := page4["next_cursor"]; hasCursor {
+		t.Fatal("page 4 should not have next_cursor (last page)")
+	}
+
+	// Verify all 10 keys collected
+	if len(allKeys) != 10 {
+		t.Fatalf("expected 10 unique keys across all pages, got %d", len(allKeys))
+	}
+}
+
+func TestKeysLimitWithoutCursor(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+	router := server.Router()
+
+	storeKeys(t, server, router, 5)
+
+	// Limit larger than total keys — should return all, no cursor
+	req := httptest.NewRequest("GET", "/v1/keys?limit=100", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	keys := resp["keys"].([]interface{})
+	if len(keys) != 5 {
+		t.Fatalf("expected 5 keys, got %d", len(keys))
+	}
+	if _, hasCursor := resp["next_cursor"]; hasCursor {
+		t.Fatal("should not have next_cursor when all keys fit in limit")
+	}
+}
+
+func TestKeysNoLimitReturnsAll(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+	router := server.Router()
+
+	storeKeys(t, server, router, 10)
+
+	// No limit param — backwards compatible, returns everything
+	req := httptest.NewRequest("GET", "/v1/keys", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	keys := resp["keys"].([]interface{})
+	if len(keys) != 10 {
+		t.Fatalf("expected 10 keys (no limit), got %d", len(keys))
+	}
+	if _, hasCursor := resp["next_cursor"]; hasCursor {
+		t.Fatal("should not have next_cursor when no limit is set")
+	}
+}
+
+func TestKeysSortedOrder(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+	router := server.Router()
+
+	// Store in non-alphabetical order
+	for _, key := range []string{"cherry", "apple", "banana"} {
+		req := httptest.NewRequest("PUT", "/v1/data/"+key, strings.NewReader("data"))
+		req.Header.Set("X-TTL", "600")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+	}
+
+	req := httptest.NewRequest("GET", "/v1/keys", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var resp map[string][]string
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	keys := resp["keys"]
+	if len(keys) != 3 {
+		t.Fatalf("expected 3 keys, got %d", len(keys))
+	}
+	if keys[0] != "apple" || keys[1] != "banana" || keys[2] != "cherry" {
+		t.Fatalf("keys not sorted: %v", keys)
 	}
 }

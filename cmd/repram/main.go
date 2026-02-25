@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -392,10 +393,42 @@ func (s *HTTPServer) keysHandler(w http.ResponseWriter, r *http.Request) {
 		keys = filtered
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	// Sort for stable cursor-based pagination
+	sort.Strings(keys)
+
+	// Cursor: skip keys <= cursor value (cursor is the last key from previous page)
+	if cursor := r.URL.Query().Get("cursor"); cursor != "" {
+		idx := sort.SearchStrings(keys, cursor)
+		// Skip past the cursor key itself
+		if idx < len(keys) && keys[idx] == cursor {
+			idx++
+		}
+		keys = keys[idx:]
+	}
+
+	// Limit: cap the number of returned keys
+	limit := 0
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	var nextCursor string
+	if limit > 0 && len(keys) > limit {
+		nextCursor = keys[limit-1]
+		keys = keys[:limit]
+	}
+
+	resp := map[string]interface{}{
 		"keys": keys,
-	})
+	}
+	if nextCursor != "" {
+		resp["next_cursor"] = nextCursor
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *HTTPServer) verifyGossipSignature(w http.ResponseWriter, r *http.Request, body []byte) bool {
