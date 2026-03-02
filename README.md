@@ -225,3 +225,6 @@ npm test            # Run tests (248 tests)
 ## License
 
 MIT. See [LICENSE](LICENSE) for details.
+---
+
+*Part of a growing suite of literary-named MCP servers. See more at [github.com/TickTockBent](https://github.com/TickTockBent).*
