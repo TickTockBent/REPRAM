@@ -91,19 +91,27 @@ func main() {
 	// Self-recognition: a node is a root iff its advertised address
 	// appears in the signed list. Roots answer /v1/bootstrap; non-roots
 	// return 403. Private-network deployments are never roots.
-	if rootList != nil {
+	applyRootStatus := func(list *trust.SignedList) {
 		selfAdvertised := fmt.Sprintf("%s:%d", address, gossipPort)
 		isRoot := false
-		for _, n := range rootList.Nodes {
+		for _, n := range list.Nodes {
 			if n == selfAdvertised {
 				isRoot = true
 				break
 			}
 		}
+		wasRoot := clusterNode.IsRoot()
 		clusterNode.SetRoot(isRoot)
-		if isRoot {
-			logging.Info("  Root status: this node is a bootstrap root")
+		if isRoot != wasRoot {
+			if isRoot {
+				logging.Info("Root status changed: this node is now a bootstrap root")
+			} else {
+				logging.Info("Root status changed: this node is no longer a bootstrap root")
+			}
 		}
+	}
+	if rootList != nil {
+		applyRootStatus(rootList)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -111,6 +119,24 @@ func main() {
 
 	if err := clusterNode.Start(ctx, bootstrapNodes); err != nil {
 		log.Fatalf("Failed to start cluster node: %v", err)
+	}
+
+	// Start the omega refresh loop for public-network nodes. Keeps the
+	// cached signed list fresh and recomputes root status on each refresh.
+	if rootList != nil {
+		pubkey, err := trust.DecodedOmegaPubkey()
+		if err != nil {
+			log.Fatalf("decode omega pubkey: %v", err)
+		}
+		refresher := trust.NewRefresher(trust.RefresherConfig{
+			Pubkey:   pubkey,
+			CacheDir: trust.DefaultCacheDir(),
+			OnUpdate: applyRootStatus,
+			OnError: func(err error) {
+				logging.Warn("Omega refresh: %v", err)
+			},
+		}, rootList)
+		go refresher.Run(ctx)
 	}
 
 	server := &HTTPServer{
