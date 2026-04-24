@@ -107,12 +107,26 @@ func SaveCache(dir string, list *SignedList) error {
 
 // DefaultCacheDir resolves the cache directory with the priority defined in
 // the 2.1 spec: REPRAM_CACHE_DIR > $HOME/.repram/cache > /var/cache/repram.
+//
+// Callers should prefer ResolveCacheDir, which additionally returns whether
+// the fallback was used. The /var/cache/repram path typically requires
+// root write access; non-root container deployments will produce refresh
+// log spam if they land on it. Operators in that situation should set
+// REPRAM_CACHE_DIR explicitly.
 func DefaultCacheDir() string {
+	dir, _ := ResolveCacheDir()
+	return dir
+}
+
+// ResolveCacheDir returns the cache directory and whether the last-resort
+// /var/cache/repram fallback was selected. Callers can use the second
+// return value to log a one-time startup warning.
+func ResolveCacheDir() (dir string, usedLastResort bool) {
 	if dir := os.Getenv("REPRAM_CACHE_DIR"); dir != "" {
-		return dir
+		return dir, false
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".repram", "cache")
+		return filepath.Join(home, ".repram", "cache"), false
 	}
-	return "/var/cache/repram"
+	return "/var/cache/repram", true
 }

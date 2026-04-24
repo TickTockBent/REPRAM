@@ -34,6 +34,7 @@ var (
 	errVersionMismatch     = errors.New("trust: signed list version does not match binary")
 	errBadSignature        = errors.New("trust: signed list signature verification failed")
 	errEmptyNodes          = errors.New("trust: signed list contains no nodes")
+	errUnknownField        = errors.New("trust: signed list has unknown field")
 )
 
 // SignedList is a verified-or-unverified parsed root list. Construct one via
@@ -115,10 +116,14 @@ func Parse(raw string) (*SignedList, error) {
 			list.Signature = sig
 			hasSig = true
 		default:
-			// Unknown fields are ignored to leave room for forward-
-			// compatible additions that don't bump the omega version.
-			// Breaking changes bump OmegaVersion and are rejected
-			// earlier by the version check.
+			// omega-v1 is a strict wire format: unknown fields are
+			// rejected rather than silently dropped. The signature
+			// only covers Canonical() — which contains the known
+			// fields — so accepting unknowns would admit
+			// unauthenticated data into an otherwise-authenticated
+			// record. Any future forward-compatible extension must
+			// bump OmegaVersion.
+			return nil, fmt.Errorf("%w: %s", errUnknownField, key)
 		}
 	}
 
@@ -192,6 +197,14 @@ func (s *SignedList) Verify(pubkey ed25519.PublicKey, now time.Time) error {
 	}
 	if len(pubkey) != ed25519.PublicKeySize {
 		return errInvalidPubkeyLength
+	}
+	// Explicit length guard on top of ed25519.Verify (which also returns
+	// false for wrong-size signatures). Distinguishing a malformed record
+	// from a tampered record helps operators debug: DNS truncation shows
+	// up as errMalformedSignature, whereas real tampering shows up as
+	// errBadSignature.
+	if len(s.Signature) != ed25519.SignatureSize {
+		return errMalformedSignature
 	}
 	if !ed25519.Verify(pubkey, s.Canonical(), s.Signature) {
 		return errBadSignature

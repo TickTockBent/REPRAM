@@ -20,13 +20,22 @@ interface CachedList {
 /**
  * Resolve the cache directory with the priority defined in the 2.1 spec:
  *   REPRAM_CACHE_DIR  >  $HOME/.repram/cache  >  /var/cache/repram
+ *
+ * Prefer resolveCacheDir(), which additionally reports whether the
+ * last-resort fallback was used; /var/cache/repram typically requires root
+ * write access and non-root containers on that path will produce refresh
+ * log spam.
  */
 export function defaultCacheDir(): string {
+  return resolveCacheDir().dir;
+}
+
+export function resolveCacheDir(): { dir: string; usedLastResort: boolean } {
   const explicit = process.env.REPRAM_CACHE_DIR;
-  if (explicit) return explicit;
+  if (explicit) return { dir: explicit, usedLastResort: false };
   const home = os.homedir();
-  if (home) return path.join(home, ".repram", "cache");
-  return "/var/cache/repram";
+  if (home) return { dir: path.join(home, ".repram", "cache"), usedLastResort: false };
+  return { dir: "/var/cache/repram", usedLastResort: true };
 }
 
 /**

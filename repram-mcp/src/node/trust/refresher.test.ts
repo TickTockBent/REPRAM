@@ -174,6 +174,94 @@ describe("Refresher", () => {
     }
   });
 
+  it("trigger() fired during an in-flight refresh is captured and pre-empts the next wait", async () => {
+    // Matches Go's buffered triggerCh: signaling during refreshOnce must
+    // not be dropped. Without the pendingTrigger buffer, the second
+    // trigger fires into nothing and the loop sleeps for the full
+    // scheduled delay after the first refresh completes.
+    const { pubKey, privateKey } = testKeypair();
+    const start = 1_800_000_000_000;
+    const clock = new FakeClock(start);
+    const initial = makeSignedList(privateKey, Math.floor(start / 1000) + 86400, ["a:9090"]);
+
+    // Resolver with a resolveTxt that we can gate from the test — lets us
+    // catch the loop mid-refresh and fire a second trigger before the
+    // first refresh completes.
+    let resolveFirstFetch!: () => void;
+    const firstFetchGate = new Promise<void>((r) => {
+      resolveFirstFetch = r;
+    });
+    let callCount = 0;
+    const fresh1 = makeSignedList(privateKey, Math.floor(start / 1000) + 172800, ["a:9090", "b:9090"]);
+    const fresh2 = makeSignedList(privateKey, Math.floor(start / 1000) + 172800, ["a:9090", "b:9090", "c:9090"]);
+
+    const resolver: TXTResolver = {
+      async resolveTxt(name: string): Promise<string[][]> {
+        if (name === "_bootstrap.repram.io") return [["omega=_omega.repram.io"]];
+        callCount++;
+        if (callCount === 1) {
+          await firstFetchGate;
+          return [[fresh1.encode()]];
+        }
+        return [[fresh2.encode()]];
+      },
+    };
+
+    const dir = await makeTempDir();
+    try {
+      const updates: SignedList[] = [];
+      let resolveSecondUpdate!: () => void;
+      const secondUpdatePromise = new Promise<void>((r) => {
+        resolveSecondUpdate = r;
+      });
+
+      const r = new Refresher(
+        {
+          pubKey,
+          cacheDir: dir,
+          dns: { resolver },
+          onUpdate: (l) => {
+            updates.push(l);
+            if (updates.length === 2) resolveSecondUpdate();
+          },
+          onError: (err) => {
+            throw err;
+          },
+          clock,
+          random: () => 0.5,
+        },
+        initial,
+      );
+      const runP = r.run();
+
+      // Let the loop register the first wait.
+      await clock.waitForPending();
+      // Fire trigger #1: wakes waitOrTrigger → enters refreshOnce → blocks
+      // on firstFetchGate.
+      r.trigger();
+      // Yield so the loop actually proceeds into refreshOnce.
+      for (let i = 0; i < 5; i++) await new Promise((res) => setImmediate(res));
+      // Fire trigger #2 while refreshOnce is in-flight. Without the
+      // pendingTrigger buffer this signal is dropped.
+      r.trigger();
+      // Release the first fetch so refreshOnce completes.
+      resolveFirstFetch();
+
+      // If the buffer works, the loop re-enters waitOrTrigger, sees
+      // pendingTrigger=true, and immediately does a second refresh.
+      await secondUpdatePromise;
+      expect(updates.length).toBe(2);
+      // The two updates came from the two distinct fixtures.
+      expect(updates[0].nodes.length).toBe(2);
+      expect(updates[1].nodes.length).toBe(3);
+
+      r.stop();
+      await runP;
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("trigger() forces immediate refresh without waiting for schedule", async () => {
     const { pubKey, privateKey } = testKeypair();
     const start = 1_800_000_000_000;

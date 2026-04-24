@@ -57,6 +57,12 @@ export class Refresher {
   private triggerResolve: (() => void) | null = null;
   private triggerPromise: Promise<void> | null = null;
 
+  // Set when trigger() fires while no waitOrTrigger is active (e.g. during
+  // an in-flight refreshOnce). Consumed at the top of the next
+  // waitOrTrigger to make it return immediately. Mirrors the buffered
+  // triggerCh in Go's Refresher so peer-count-drop signals are never lost.
+  private pendingTrigger = false;
+
   constructor(cfg: RefresherConfig, initial: SignedList) {
     this.cfg = cfg;
     this.clock = cfg.clock ?? realClock;
@@ -69,8 +75,12 @@ export class Refresher {
     return this.current;
   }
 
-  /** Request an immediate refresh. Safe to call concurrently. */
+  /** Request an immediate refresh. Safe to call concurrently. If no
+   *  waitOrTrigger is currently active (e.g. trigger fires during an
+   *  in-flight refreshOnce), the signal is buffered and consumed by the
+   *  next waitOrTrigger. */
   trigger(): void {
+    this.pendingTrigger = true;
     const resolve = this.triggerResolve;
     this.resetTrigger();
     if (resolve) resolve();
@@ -144,6 +154,12 @@ export class Refresher {
   }
 
   private waitOrTrigger(ms: number): Promise<"timer" | "trigger"> {
+    // Fast path: a trigger fired while we were busy. Consume it and
+    // return immediately.
+    if (this.pendingTrigger) {
+      this.pendingTrigger = false;
+      return Promise.resolve("trigger");
+    }
     return new Promise((resolve) => {
       const triggerP = this.triggerPromise!;
       this.timerHandle = this.clock.setTimeout(() => {
@@ -151,6 +167,7 @@ export class Refresher {
         resolve("timer");
       }, ms);
       triggerP.then(() => {
+        this.pendingTrigger = false;
         if (this.timerHandle !== null) {
           this.clock.clearTimeout(this.timerHandle);
           this.timerHandle = null;

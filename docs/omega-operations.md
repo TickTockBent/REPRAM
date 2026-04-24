@@ -7,6 +7,17 @@ The omega *public* key is compiled into every node binary. The omega
 *private* key lives on an air-gapped signing machine and is used only to
 sign root lists. It never touches a node, a CI system, or any network.
 
+## Configuration interactions (read first)
+
+**Root nodes must not set `REPRAM_PEERS`.** The public-network omega
+verification is gated on "public network AND no manual peers." Setting
+`REPRAM_PEERS` on a public-network node short-circuits the entire omega
+path: the node skips the signed-list fetch, `IsRoot()` stays `false`, and
+`/v1/bootstrap` returns 403 for every request. Nodes log a warning at
+startup when they detect this combination, but the failure mode is quiet
+otherwise. Use `REPRAM_NETWORK=private` with `REPRAM_PEERS` for private
+clusters; leave `REPRAM_PEERS` unset on public-network root nodes.
+
 ## When to use which tool
 
 - `repram-omega keygen` — one time, at network birth, and again only if the
@@ -83,19 +94,37 @@ newly-added node starts answering on the same schedule.
 
 ## Rotating the omega key (version bump)
 
-Required if the private key is lost or compromised. This is a shipping-a-
-new-binary event, not a DNS update.
+Required if the private key is lost or compromised. **Rotation is
+binary-coordinated, not DNS-coordinated.** The omega pubkey is baked into
+the node binary — a DNS update alone rotates nothing; existing nodes keep
+verifying against the old pubkey and reject any list signed with the new
+one. Get the ordering wrong and you partition the network.
 
-1. `repram-omega keygen` on the air-gapped machine, written to
-   `omega-v2.key` / `omega-v2.pub`.
-2. Bump the constants:
-   - `OmegaVersion = "omega-v2"`, new `OmegaPubkey` in Go.
-   - `OMEGA_VERSION = "omega-v2"`, new `OMEGA_PUBKEY` in TS.
-3. Cut a new release.
-4. Publish `_omega-v2.repram.io` in parallel with `_omega-v1.repram.io`
-   during the migration window. Keep the old version live until confident
-   no `omega-v1` nodes remain.
-5. Retire `_omega-v1.repram.io` when ready.
+Correct sequence:
+
+1. **Generate new keypair** on the air-gapped machine: `repram-omega
+   keygen --out-private omega-v2.key --out-public omega-v2.pub`.
+2. **Ship a binary release** with the new pubkey baked in:
+   - `OmegaVersion = "omega-v2"`, new `OmegaPubkey` in `internal/trust/omega.go`.
+   - `OMEGA_VERSION = "omega-v2"`, new `OMEGA_PUBKEY` in
+     `repram-mcp/src/node/trust/omega.ts`.
+   Both constants must match exactly. Tag and release.
+3. **Wait for deployment to propagate** across operators and
+   self-hosters. The previous signed-list `exp` is your deadline — past
+   that, un-upgraded nodes can no longer refresh their root list.
+4. **Begin publishing new-key signed lists** via `_omega-v2.repram.io`
+   in parallel with the existing `_omega-v1.repram.io`. Nodes on the new
+   binary start accepting the new lists; nodes still on the old binary
+   continue using the old lists.
+5. **Retire `_omega-v1.repram.io`** once you're confident no `omega-v1`
+   binaries remain in the network.
+
+If the old key is compromised and you can't wait for propagation, shorten
+the transition window by pre-shipping the new binary before publishing any
+old-key list that would span the rotation — or accept a brief period in
+which un-upgraded nodes cannot bootstrap new peers. In either case, do
+not publish new-key signed lists before the binary containing the new
+pubkey has reached all nodes that need to verify them.
 
 ## Recovery if the signing machine is unavailable
 

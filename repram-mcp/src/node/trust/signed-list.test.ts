@@ -153,4 +153,44 @@ describe("sign + verify", () => {
   it("rejects invalid pubkey length", () => {
     expect(() => publicKeyFromBase64("AAAA")).toThrow(/wrong length/);
   });
+
+  it("rejects unknown fields (strict omega-v1)", () => {
+    const { privateKey } = testKeypair();
+    const list = validList(Math.floor(Date.now() / 1000) + 3600);
+    list.sign(privateKey);
+    const raw = list.encode() + ";future_field=whatever";
+    const err = parseSignedList(raw);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain(TrustError.UnknownField);
+  });
+
+  it.each(["omega-v11", "omega-v1 ", " omega-v1", "omega-v10"])(
+    "rejects version-substring variant %s",
+    (v) => {
+      const { pubKey, privateKey } = testKeypair();
+      const list = validList(Math.floor(Date.now() / 1000) + 3600);
+      list.version = v;
+      list.sign(privateKey);
+      const err = list.verify(pubKey, new Date());
+      expect(err).not.toBeNull();
+      expect(err!.message).toContain(TrustError.VersionMismatch);
+    },
+  );
+
+  it("trims whitespace between nodes and still verifies", () => {
+    const { pubKey, privateKey } = testKeypair();
+    const list = validList(Math.floor(Date.now() / 1000) + 3600);
+    list.sign(privateKey);
+
+    const raw =
+      `v=omega-v1;exp=${list.expires};nodes= root-a.example:9090 , root-b.example:9090 , root-c.example:9090 ;sig=${list.signature!.toString("base64")}`;
+    const parsed = parseSignedList(raw);
+    expect(parsed).toBeInstanceOf(SignedList);
+    expect((parsed as SignedList).nodes).toEqual([
+      "root-a.example:9090",
+      "root-b.example:9090",
+      "root-c.example:9090",
+    ]);
+    expect((parsed as SignedList).verify(pubKey, new Date())).toBeNull();
+  });
 });

@@ -163,21 +163,21 @@ func TestParseRejectsEmptyNodes(t *testing.T) {
 	}
 }
 
-// TestParseIgnoresUnknownFields — forward-compatible additions that don't
-// bump OmegaVersion are tolerated. Breaking changes bump the version and
-// fail earlier.
-func TestParseIgnoresUnknownFields(t *testing.T) {
-	pub, priv := testKeypair(t)
+// TestParseRejectsUnknownFields — omega-v1 is a strict wire format.
+// Unknown fields are rejected rather than silently dropped, because the
+// signature only covers Canonical() (which includes just the known
+// fields); accepting unknowns would admit unauthenticated data into an
+// authenticated record. Forward-compatible extensions must bump the
+// omega version.
+func TestParseRejectsUnknownFields(t *testing.T) {
+	_, priv := testKeypair(t)
 	list := validList(time.Now().Add(1 * time.Hour).Unix())
 	list.Sign(priv)
 
 	raw := list.Encode() + ";future_field=whatever"
-	parsed, err := Parse(raw)
-	if err != nil {
-		t.Fatalf("parse with unknown field: %v", err)
-	}
-	if err := parsed.Verify(pub, time.Now()); err != nil {
-		t.Fatalf("verify with unknown field: %v", err)
+	_, err := Parse(raw)
+	if !errors.Is(err, errUnknownField) {
+		t.Errorf("want errUnknownField, got %v", err)
 	}
 }
 
@@ -250,6 +250,54 @@ func TestVerifyRejectsWrongPubkey(t *testing.T) {
 	err := list.Verify(pubB, time.Now())
 	if !errors.Is(err, errBadSignature) {
 		t.Errorf("want errBadSignature, got %v", err)
+	}
+}
+
+// TestVerifyRejectsVersionSubstringVariants — exact-match only. "omega-v11"
+// and "omega-v1 " (trailing space) both claim the omega-v1 scheme loosely,
+// but neither is the string the binary recognizes. Rejected.
+func TestVerifyRejectsVersionSubstringVariants(t *testing.T) {
+	pub, priv := testKeypair(t)
+	for _, v := range []string{"omega-v11", "omega-v1 ", " omega-v1", "omega-v10"} {
+		t.Run(v, func(t *testing.T) {
+			list := validList(time.Now().Add(1 * time.Hour).Unix())
+			list.Version = v
+			list.Sign(priv)
+			err := list.Verify(pub, time.Now())
+			if !errors.Is(err, errVersionMismatch) {
+				t.Errorf("want errVersionMismatch, got %v", err)
+			}
+		})
+	}
+}
+
+// TestParseTrimsWhitespaceBetweenNodes — operator-side whitespace in the
+// comma-separated node list is tolerated. The canonical form is still
+// whitespace-free, so signatures remain valid end-to-end.
+func TestParseTrimsWhitespaceBetweenNodes(t *testing.T) {
+	_, priv := testKeypair(t)
+	list := validList(time.Now().Add(1 * time.Hour).Unix())
+	list.Sign(priv)
+
+	// Re-emit with interstitial whitespace in the nodes field. A strict
+	// parser must still produce the same Nodes slice.
+	wireWithSpaces := "v=omega-v1;exp=" +
+		strconv.FormatInt(list.Expires, 10) +
+		";nodes= root-a.example:9090 , root-b.example:9090 , root-c.example:9090 ;sig=" +
+		base64.StdEncoding.EncodeToString(list.Signature)
+
+	parsed, err := Parse(wireWithSpaces)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	want := []string{"root-a.example:9090", "root-b.example:9090", "root-c.example:9090"}
+	if len(parsed.Nodes) != len(want) {
+		t.Fatalf("nodes length = %d, want %d", len(parsed.Nodes), len(want))
+	}
+	for i := range want {
+		if parsed.Nodes[i] != want[i] {
+			t.Errorf("Nodes[%d] = %q, want %q", i, parsed.Nodes[i], want[i])
+		}
 	}
 }
 

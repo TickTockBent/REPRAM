@@ -26,6 +26,7 @@ export const TrustError = {
   BadSignature: "trust: signed list signature verification failed",
   EmptyNodes: "trust: signed list contains no nodes",
   InvalidPubkey: "trust: omega pubkey has wrong length",
+  UnknownField: "trust: signed list has unknown field",
 } as const;
 
 export interface SignedListFields {
@@ -192,8 +193,13 @@ export function parseSignedList(raw: string): SignedList | Error {
         }
         break;
       }
-      // Unknown fields: ignored; forward-compatible within the same
-      // omega version. Breaking changes bump OMEGA_VERSION.
+      default:
+        // omega-v1 is a strict wire format: unknown fields are rejected.
+        // The signature only covers canonical() — which contains the known
+        // fields — so accepting unknowns would admit unauthenticated data
+        // into an authenticated record. Forward-compatible extensions must
+        // bump OMEGA_VERSION.
+        return new Error(`${TrustError.UnknownField}: ${key}`);
     }
   }
 

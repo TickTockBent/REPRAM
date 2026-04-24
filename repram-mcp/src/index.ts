@@ -17,7 +17,7 @@ import { bootstrapFromPeers, resolveOmegaBootstrap } from "./node/bootstrap.js";
 import { publicKeyFromBase64, SignedList } from "./node/trust/signed-list.js";
 import { OMEGA_PUBKEY } from "./node/trust/omega.js";
 import { Refresher } from "./node/trust/refresher.js";
-import { defaultCacheDir } from "./node/trust/cache.js";
+import { resolveCacheDir } from "./node/trust/cache.js";
 import { connectToSubstrate, type WebSocketConnection } from "./node/ws-transport.js";
 
 const isStandalone =
@@ -42,6 +42,15 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
   if (config.network === "public" && seedPeers.length === 0) {
     rootList = await resolveOmegaBootstrap(logger);
     seedPeers.push(...rootList.nodes);
+  } else if (config.network === "public" && seedPeers.length > 0) {
+    // REPRAM_PEERS short-circuits omega resolution, which in turn leaves
+    // isRoot() false and causes /v1/bootstrap to 403. Fine for local
+    // testing; wrong for a real public-network root node.
+    logger.warn(
+      "REPRAM_NETWORK=public with REPRAM_PEERS set: skipping omega verification. " +
+        "This node will not be recognized as a bootstrap root and will return 403 " +
+        "for /v1/bootstrap requests.",
+    );
   }
 
   // Self-recognition + refresh loop. Only public-network deployments with
@@ -61,11 +70,26 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
       }
     };
     applyRootStatus(rootList);
+    const selfAdvertised = `${config.address}:${config.gossipPort}`;
+    if (server.clusterNode.isRoot()) {
+      logger.info(`Initial root status: bootstrap root (advertised as ${selfAdvertised})`);
+    } else {
+      logger.info(
+        `Initial root status: not a root (advertised as ${selfAdvertised}); /v1/bootstrap returns 403`,
+      );
+    }
 
+    const { dir: cacheDir, usedLastResort } = resolveCacheDir();
+    if (usedLastResort) {
+      logger.warn(
+        `Using ${cacheDir} as cache directory; this typically requires root write access. ` +
+          "Set REPRAM_CACHE_DIR for a writable location if refresh writes start failing.",
+      );
+    }
     const refresher = new Refresher(
       {
         pubKey: publicKeyFromBase64(OMEGA_PUBKEY),
-        cacheDir: defaultCacheDir(),
+        cacheDir,
         onUpdate: applyRootStatus,
         onError: (err) => logger.warn(`Omega refresh: ${err}`),
       },

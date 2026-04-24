@@ -59,8 +59,12 @@ var (
 // directly. On any failure (DNS, parse, version, expiration, signature),
 // returns a descriptive error and no list.
 //
-// The spec permits TXT records to be split across multiple strings by the
-// resolver; this function joins them before parsing.
+// Note on multi-string TXT records: DNS TXT records can be split across
+// multiple 255-byte "character-strings" on the wire. Go's net.Resolver
+// already concatenates those into one string per record before returning,
+// so each element of the []string LookupTXT returns is already a complete
+// record. The TS parallel in repram-mcp does need to join because Node's
+// dns.resolveTxt returns string[][] (records × segments).
 func FetchSigned(ctx context.Context, cfg DNSConfig, pubkey ed25519.PublicKey, now time.Time) (*SignedList, error) {
 	r := cfg.resolver()
 	bootstrapName := cfg.bootstrapName()
@@ -89,9 +93,11 @@ func FetchSigned(ctx context.Context, cfg DNSConfig, pubkey ed25519.PublicKey, n
 	return list, nil
 }
 
-// lookupSingleTXT returns the first non-empty TXT record for name, after
-// joining any multi-string splits. Multiple records under the same name are
-// unusual for our use case; we take the first to keep behavior deterministic.
+// lookupSingleTXT returns the first non-empty TXT record for name. Each
+// element of the []string returned by net.Resolver.LookupTXT is already a
+// complete record (the stdlib concatenates multi-string splits before
+// returning). Multiple records under the same name are unusual for our use
+// case; we take the first to keep behavior deterministic.
 func lookupSingleTXT(ctx context.Context, r TXTResolver, name string) (string, error) {
 	records, err := r.LookupTXT(ctx, name)
 	if err != nil {

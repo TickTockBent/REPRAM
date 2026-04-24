@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -78,10 +79,10 @@ func runKeygen(args []string) error {
 	pubB64 := base64.StdEncoding.EncodeToString(pub)
 	privB64 := base64.StdEncoding.EncodeToString(priv)
 
-	if err := writeFileMode(*outPriv, []byte(privB64+"\n"), 0o600); err != nil {
+	if err := atomicWriteNoClobber(*outPriv, []byte(privB64+"\n"), 0o600); err != nil {
 		return fmt.Errorf("write private key: %w", err)
 	}
-	if err := writeFileMode(*outPub, []byte(pubB64+"\n"), 0o644); err != nil {
+	if err := atomicWriteNoClobber(*outPub, []byte(pubB64+"\n"), 0o644); err != nil {
 		return fmt.Errorf("write public key: %w", err)
 	}
 
@@ -167,17 +168,45 @@ func splitCSV(s string) []string {
 	return out
 }
 
-// writeFileMode writes data to path atomically(ish) with the given mode. The
-// file is truncated if it already exists; callers that want to avoid
-// clobbering an existing key should check first.
-func writeFileMode(path string, data []byte, mode os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+// atomicWriteNoClobber writes data to path via tempfile+rename so a crash
+// mid-write cannot leave a truncated key file on disk. Refuses to overwrite
+// an existing file — rerunning keygen against the same path is almost
+// certainly an operator mistake, and the consequence (silently clobbering
+// a working key) is unrecoverable.
+func atomicWriteNoClobber(path string, data []byte, mode os.FileMode) error {
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("refusing to overwrite existing file %s", path)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
 		return err
 	}
-	return f.Close()
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
 }

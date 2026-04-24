@@ -84,6 +84,12 @@ func main() {
 		}
 		rootList = list
 		bootstrapNodes = append(bootstrapNodes, list.Nodes...)
+	} else if network == "public" && len(bootstrapNodes) > 0 {
+		// REPRAM_PEERS short-circuits omega resolution, which in turn
+		// leaves IsRoot() false and causes /v1/bootstrap to 403. Fine
+		// for local testing; wrong for a real public-network root node.
+		// See docs/omega-operations.md for the guidance.
+		logging.Warn("REPRAM_NETWORK=public with REPRAM_PEERS set: skipping omega verification. This node will not be recognized as a bootstrap root and will return 403 for /v1/bootstrap requests.")
 	}
 
 	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024, time.Duration(writeTimeout)*time.Second, clusterSecret, enclave)
@@ -112,6 +118,12 @@ func main() {
 	}
 	if rootList != nil {
 		applyRootStatus(rootList)
+		selfAdvertised := fmt.Sprintf("%s:%d", address, gossipPort)
+		if clusterNode.IsRoot() {
+			logging.Info("Initial root status: bootstrap root (advertised as %s)", selfAdvertised)
+		} else {
+			logging.Info("Initial root status: not a root (advertised as %s); /v1/bootstrap returns 403", selfAdvertised)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -221,7 +233,10 @@ func resolveOmegaBootstrap(ctx context.Context) (*trust.SignedList, error) {
 		return nil, fmt.Errorf("baked-in omega pubkey is invalid: %w", err)
 	}
 
-	cacheDir := trust.DefaultCacheDir()
+	cacheDir, usedLastResort := trust.ResolveCacheDir()
+	if usedLastResort {
+		logging.Warn("Using %s as cache directory; this typically requires root write access. Set REPRAM_CACHE_DIR for a writable location if refresh writes start failing.", cacheDir)
+	}
 	now := time.Now()
 
 	list, fetchErr := trust.FetchSigned(ctx, trust.DNSConfig{}, pubkey, now)

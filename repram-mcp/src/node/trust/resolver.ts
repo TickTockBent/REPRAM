@@ -58,8 +58,12 @@ async function lookupSingleTxt(
   name: string,
 ): Promise<string> {
   const records = await resolver.resolveTxt(name);
-  // Node returns string[][] — each record is an array of segments that the
-  // DNS protocol splits at 255-byte boundaries. Re-join before parsing.
+  // Node returns string[][] — each record is an array of 255-byte
+  // character-strings that the DNS wire format splits a single logical
+  // record into. We must re-join the segments here before parsing.
+  // (The Go parallel in internal/trust/resolver.go does not need to do
+  // this: net.Resolver.LookupTXT concatenates segments internally and
+  // returns []string where each element is already a complete record.)
   for (const record of records) {
     const joined = record.join("").trim();
     if (joined) return joined;
