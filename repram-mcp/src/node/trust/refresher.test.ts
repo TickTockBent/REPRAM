@@ -234,17 +234,21 @@ describe("Refresher", () => {
       );
       const runP = r.run();
 
-      // Let the loop register the first wait.
+      // Let the loop register its first scheduled wait.
       await clock.waitForPending();
-      // Fire trigger #1: wakes waitOrTrigger → enters refreshOnce → blocks
-      // on firstFetchGate.
+      // Trigger #1 wakes the current waitOrTrigger — this is the normal
+      // wake-from-wait path, not the behavior under test. After this,
+      // the loop enters refreshOnce and blocks on firstFetchGate.
       r.trigger();
       // Yield so the loop actually proceeds into refreshOnce.
       for (let i = 0; i < 5; i++) await new Promise((res) => setImmediate(res));
-      // Fire trigger #2 while refreshOnce is in-flight. Without the
-      // pendingTrigger buffer this signal is dropped.
+      // Trigger #2 is the critical case: no waitOrTrigger is active
+      // (the loop is mid-refresh), so without the pendingTrigger buffer
+      // this signal is dropped and the next wait proceeds normally.
       r.trigger();
-      // Release the first fetch so refreshOnce completes.
+      // Release the first fetch so refreshOnce completes and the loop
+      // re-enters waitOrTrigger, where pendingTrigger should fire it
+      // immediately into a second refresh.
       resolveFirstFetch();
 
       // If the buffer works, the loop re-enters waitOrTrigger, sees
