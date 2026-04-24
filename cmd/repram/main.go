@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,6 +26,7 @@ import (
 	"repram/internal/logging"
 	"repram/internal/node"
 	"repram/internal/storage"
+	"repram/internal/trust"
 )
 
 func main() {
@@ -71,13 +71,40 @@ func main() {
 		}
 	}
 
-	// DNS-based bootstrap for public network
+	// Signed-root-list bootstrap for the public network. See
+	// docs/internal/REPRAM-2.1-Spec.md. This replaces the pre-2.1
+	// unsigned DNS path; there is no fallback by design.
+	var rootList *trust.SignedList
 	if network == "public" && len(bootstrapNodes) == 0 {
-		resolved := resolveBootstrapDNS("bootstrap.repram.network", 9090)
-		bootstrapNodes = append(bootstrapNodes, resolved...)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		list, err := resolveOmegaBootstrap(ctx)
+		cancel()
+		if err != nil {
+			log.Fatalf("Omega bootstrap failed: %v", err)
+		}
+		rootList = list
+		bootstrapNodes = append(bootstrapNodes, list.Nodes...)
 	}
 
 	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024, time.Duration(writeTimeout)*time.Second, clusterSecret, enclave)
+
+	// Self-recognition: a node is a root iff its advertised address
+	// appears in the signed list. Roots answer /v1/bootstrap; non-roots
+	// return 403. Private-network deployments are never roots.
+	if rootList != nil {
+		selfAdvertised := fmt.Sprintf("%s:%d", address, gossipPort)
+		isRoot := false
+		for _, n := range rootList.Nodes {
+			if n == selfAdvertised {
+				isRoot = true
+				break
+			}
+		}
+		clusterNode.SetRoot(isRoot)
+		if isRoot {
+			logging.Info("  Root status: this node is a bootstrap root")
+		}
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -158,33 +185,43 @@ func envInt(key string, defaultVal int) int {
 	return defaultVal
 }
 
-// resolveBootstrapDNS resolves bootstrap peers via DNS.
-// Returns host:port strings for each resolved address.
-func resolveBootstrapDNS(hostname string, defaultPort int) []string {
-	// Try SRV records first for port flexibility
-	_, srvRecords, err := net.LookupSRV("gossip", "tcp", hostname)
-	if err == nil && len(srvRecords) > 0 {
-		var peers []string
-		for _, srv := range srvRecords {
-			peers = append(peers, fmt.Sprintf("%s:%d", strings.TrimSuffix(srv.Target, "."), srv.Port))
-		}
-		logging.Info("Resolved %d bootstrap peers via SRV", len(peers))
-		return peers
-	}
-
-	// Fall back to A/AAAA records
-	addrs, err := net.LookupHost(hostname)
+// resolveOmegaBootstrap fetches and verifies the signed root list from DNS,
+// falling back to a previously-cached verified list if DNS is unreachable.
+// Hard-fails only when neither source yields a currently-valid signed list —
+// a node without a verified trust anchor must not join the public network.
+func resolveOmegaBootstrap(ctx context.Context) (*trust.SignedList, error) {
+	pubkey, err := trust.DecodedOmegaPubkey()
 	if err != nil {
-		logging.Warn("DNS bootstrap resolution failed for %s: %v (starting as first node)", hostname, err)
-		return nil
+		return nil, fmt.Errorf("baked-in omega pubkey is invalid: %w", err)
 	}
 
-	var peers []string
-	for _, addr := range addrs {
-		peers = append(peers, fmt.Sprintf("%s:%d", addr, defaultPort))
+	cacheDir := trust.DefaultCacheDir()
+	now := time.Now()
+
+	list, fetchErr := trust.FetchSigned(ctx, trust.DNSConfig{}, pubkey, now)
+	if fetchErr == nil {
+		if err := trust.SaveCache(cacheDir, list); err != nil {
+			logging.Warn("Failed to update omega cache at %s: %v (continuing)", cacheDir, err)
+		}
+		logging.Info("Omega bootstrap: verified signed root list (%d nodes, expires %s)",
+			len(list.Nodes), time.Unix(list.Expires, 0).UTC().Format(time.RFC3339))
+		return list, nil
 	}
-	logging.Info("Resolved %d bootstrap peers via DNS", len(peers))
-	return peers
+
+	logging.Warn("Omega DNS fetch failed: %v — trying cached list at %s", fetchErr, cacheDir)
+	cached, cacheErr := trust.LoadCache(cacheDir)
+	if cacheErr != nil {
+		return nil, fmt.Errorf("dns: %v; cache: %w", fetchErr, cacheErr)
+	}
+	if cached == nil {
+		return nil, fmt.Errorf("no DNS record and no cache available: %w", fetchErr)
+	}
+	if err := cached.Verify(pubkey, now); err != nil {
+		return nil, fmt.Errorf("cached omega list invalid: %w (dns: %v)", err, fetchErr)
+	}
+	logging.Info("Omega bootstrap: using cached signed root list (%d nodes, expires %s)",
+		len(cached.Nodes), time.Unix(cached.Expires, 0).UTC().Format(time.RFC3339))
+	return cached, nil
 }
 
 // CORS middleware
@@ -500,6 +537,17 @@ func (s *HTTPServer) gossipHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *HTTPServer) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
+	// Only roots answer bootstrap requests. On the public network a node is
+	// a root iff its advertised address is in the current signed omega list
+	// (see resolveOmegaBootstrap). On private networks no one is a root
+	// under this gate — peer discovery is driven by REPRAM_PEERS directly.
+	if s.network == "public" && !s.clusterNode.IsRoot() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not a bootstrap root"})
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
