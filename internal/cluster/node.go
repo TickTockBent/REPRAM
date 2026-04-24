@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"repram/internal/gossip"
@@ -26,6 +27,12 @@ type ClusterNode struct {
 
 	pendingWrites map[string]*WriteOperation
 	writesMutex   sync.RWMutex
+
+	// isRoot tracks whether this node appears in the currently-trusted
+	// signed root list. Updated on each successful omega refresh
+	// (see cmd/repram/main.go and future phase 4 refresh loop). When
+	// false, the HTTP server refuses bootstrap requests with 403.
+	isRoot atomic.Bool
 }
 
 type WriteOperation struct {
@@ -96,6 +103,20 @@ func (cn *ClusterNode) Start(ctx context.Context, bootstrapAddresses []string) e
 
 func (cn *ClusterNode) Stop() error {
 	return cn.protocol.Stop()
+}
+
+// IsRoot reports whether this node's advertised address is present in the
+// currently-trusted signed root list. Used by the HTTP server to gate
+// bootstrap responses — non-roots return 403 rather than handing out peer
+// topology to arbitrary callers.
+func (cn *ClusterNode) IsRoot() bool {
+	return cn.isRoot.Load()
+}
+
+// SetRoot updates the root flag. Call after each verified refresh of the
+// omega signed root list.
+func (cn *ClusterNode) SetRoot(v bool) {
+	cn.isRoot.Store(v)
 }
 
 func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl time.Duration) error {

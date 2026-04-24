@@ -1,23 +1,18 @@
 /**
- * Bootstrap — DNS resolution and cluster join handshake.
+ * Bootstrap — signed-root-list resolution and cluster join handshake.
  *
- * Port of internal/gossip/bootstrap.go and resolveBootstrapDNS from cmd/repram/main.go.
+ * Port of internal/gossip/bootstrap.go and cmd/repram/main.go's
+ * resolveOmegaBootstrap. The unsigned SRV/A-based bootstrap was removed
+ * as part of REPRAM 2.1 (see docs/internal/REPRAM-2.1-Spec.md).
  */
 
-import * as dns from "node:dns/promises";
 import { signBody } from "./auth.js";
 import type { Logger } from "./logger.js";
 import type { NodeInfo } from "./types.js";
-
-export interface DnsResolver {
-  resolveSrv(hostname: string): Promise<{ name: string; port: number }[]>;
-  resolve4(hostname: string): Promise<string[]>;
-}
-
-const defaultResolver: DnsResolver = {
-  resolveSrv: (hostname) => dns.resolveSrv(hostname),
-  resolve4: (hostname) => dns.resolve4(hostname),
-};
+import { fetchSigned } from "./trust/resolver.js";
+import { loadCache, saveCache, defaultCacheDir } from "./trust/cache.js";
+import { publicKeyFromBase64, SignedList } from "./trust/signed-list.js";
+import { OMEGA_PUBKEY } from "./trust/omega.js";
 
 // --- Wire format for bootstrap handshake ---
 
@@ -42,37 +37,47 @@ interface WireBootstrapPeer {
   enclave?: string;
 }
 
-// --- DNS resolution ---
+// --- Omega signed-root-list discovery ---
 
-export async function resolveBootstrapDNS(
-  hostname: string,
-  defaultPort: number,
-  logger: Logger,
-  resolver: DnsResolver = defaultResolver,
-): Promise<string[]> {
-  // Try SRV records first
+/**
+ * resolveOmegaBootstrap returns a verified signed root list for the public
+ * network, fetching over DNS with on-disk cache fallback. Rejects when no
+ * valid trust anchor is available — a node that cannot verify must not
+ * join the public network.
+ *
+ * Callers use `result.nodes` as the seed peer list and additionally check
+ * `result` against their own advertised address to determine root status.
+ */
+export async function resolveOmegaBootstrap(logger: Logger): Promise<SignedList> {
+  const pubKey = publicKeyFromBase64(OMEGA_PUBKEY);
+  const cacheDir = defaultCacheDir();
+  const now = new Date();
+
   try {
-    const srvRecords = await resolver.resolveSrv(`_gossip._tcp.${hostname}`);
-    if (srvRecords.length > 0) {
-      const peers = srvRecords.map(
-        (srv) => `${srv.name.replace(/\.$/, "")}:${srv.port}`,
-      );
-      logger.info(`Resolved ${peers.length} bootstrap peers via SRV`);
-      return peers;
+    const list = await fetchSigned({}, pubKey, now);
+    try {
+      await saveCache(cacheDir, list);
+    } catch (err) {
+      logger.warn(`Failed to update omega cache at ${cacheDir}: ${err} (continuing)`);
     }
-  } catch {
-    // SRV lookup failed — fall through to A records
-  }
-
-  // Fall back to A/AAAA records
-  try {
-    const addrs = await resolver.resolve4(hostname);
-    const peers = addrs.map((addr) => `${addr}:${defaultPort}`);
-    logger.info(`Resolved ${peers.length} bootstrap peers via DNS`);
-    return peers;
-  } catch {
-    logger.warn(`DNS bootstrap resolution failed for ${hostname} (starting as first node)`);
-    return [];
+    logger.info(
+      `Omega bootstrap: verified signed root list (${list.nodes.length} nodes, expires ${new Date(list.expires * 1000).toISOString()})`,
+    );
+    return list;
+  } catch (fetchErr) {
+    logger.warn(`Omega DNS fetch failed: ${fetchErr} — trying cached list at ${cacheDir}`);
+    const cached = await loadCache(cacheDir);
+    if (!cached) {
+      throw new Error(`no DNS record and no cache available: ${(fetchErr as Error).message}`);
+    }
+    const verifyErr = cached.verify(pubKey, now);
+    if (verifyErr) {
+      throw new Error(`cached omega list invalid: ${verifyErr.message} (dns: ${(fetchErr as Error).message})`);
+    }
+    logger.info(
+      `Omega bootstrap: using cached signed root list (${cached.nodes.length} nodes, expires ${new Date(cached.expires * 1000).toISOString()})`,
+    );
+    return cached;
   }
 }
 

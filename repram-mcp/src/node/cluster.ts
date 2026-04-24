@@ -62,6 +62,11 @@ export class ClusterNode {
   private logger: Logger;
   private treeManager: TreeManager | null = null;
 
+  // Set to true when this node's advertised address is present in the
+  // currently-trusted omega signed root list. Gates the bootstrap handler.
+  // See docs/internal/REPRAM-2.1-Spec.md.
+  private _isRoot = false;
+
   constructor(options: ClusterNodeOptions, logger: Logger) {
     const enclave = options.enclave || "default";
     this.localNode = {
@@ -96,6 +101,17 @@ export class ClusterNode {
 
   setTreeManager(tree: TreeManager): void {
     this.treeManager = tree;
+  }
+
+  /** Reports whether this node is a bootstrap root per the current signed
+   *  omega list. Checked by HTTPServer.bootstrapHandler. */
+  isRoot(): boolean {
+    return this._isRoot;
+  }
+
+  /** Update root status after a verified refresh of the signed root list. */
+  setRoot(v: boolean): void {
+    this._isRoot = v;
   }
 
   start(): void {

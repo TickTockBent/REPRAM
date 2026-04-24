@@ -498,6 +498,14 @@ export class HTTPServer {
   }
 
   private bootstrapHandler(req: IncomingMessage, res: ServerResponse): void {
+    // Public-network gate: only signed-root-list members answer bootstrap.
+    // Private networks drive peer discovery via REPRAM_PEERS and bypass
+    // the root concept entirely.
+    if (this.config.network === "public" && !this.clusterNode.isRoot()) {
+      sendJSON(res, 403, { error: "not a bootstrap root" });
+      return;
+    }
+
     readBody(req, (err, body) => {
       if (err) {
         const status = err.message === "Request body too large" ? 413 : 400;

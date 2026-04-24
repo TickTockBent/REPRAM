@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { resolveBootstrapDNS, bootstrapFromPeers, notifyPeerAboutNewNode } from "./bootstrap.js";
-import type { DnsResolver } from "./bootstrap.js";
+import { bootstrapFromPeers, notifyPeerAboutNewNode } from "./bootstrap.js";
 import { Logger } from "./logger.js";
 import type { NodeInfo } from "./types.js";
 
@@ -23,70 +22,10 @@ function makeLocalNode(overrides: Partial<NodeInfo> = {}): NodeInfo {
   };
 }
 
-// --- DNS resolution ---
-
-describe("resolveBootstrapDNS", () => {
-  it("resolves SRV records", async () => {
-    const resolver: DnsResolver = {
-      resolveSrv: vi.fn().mockResolvedValue([
-        { name: "node1.example.com.", port: 8080 },
-        { name: "node2.example.com.", port: 9090 },
-      ]),
-      resolve4: vi.fn(),
-    };
-
-    const logger = silentLogger();
-    vi.spyOn(logger, "info").mockImplementation(() => {});
-
-    const result = await resolveBootstrapDNS("example.com", 8080, logger, resolver);
-
-    expect(result).toEqual(["node1.example.com:8080", "node2.example.com:9090"]);
-  });
-
-  it("falls back to A records when SRV fails", async () => {
-    const resolver: DnsResolver = {
-      resolveSrv: vi.fn().mockRejectedValue(new Error("ENOTFOUND")),
-      resolve4: vi.fn().mockResolvedValue(["10.0.0.1", "10.0.0.2"]),
-    };
-
-    const logger = silentLogger();
-    vi.spyOn(logger, "info").mockImplementation(() => {});
-
-    const result = await resolveBootstrapDNS("example.com", 8080, logger, resolver);
-
-    expect(result).toEqual(["10.0.0.1:8080", "10.0.0.2:8080"]);
-  });
-
-  it("returns empty array when all DNS fails", async () => {
-    const resolver: DnsResolver = {
-      resolveSrv: vi.fn().mockRejectedValue(new Error("ENOTFOUND")),
-      resolve4: vi.fn().mockRejectedValue(new Error("ENOTFOUND")),
-    };
-
-    const logger = silentLogger();
-    vi.spyOn(logger, "warn").mockImplementation(() => {});
-
-    const result = await resolveBootstrapDNS("bogus.local", 8080, logger, resolver);
-
-    expect(result).toEqual([]);
-    expect(logger.warn).toHaveBeenCalled();
-  });
-
-  it("strips trailing dot from SRV target", async () => {
-    const resolver: DnsResolver = {
-      resolveSrv: vi.fn().mockResolvedValue([
-        { name: "host.example.com.", port: 8080 },
-      ]),
-      resolve4: vi.fn(),
-    };
-
-    const logger = silentLogger();
-    vi.spyOn(logger, "info").mockImplementation(() => {});
-
-    const result = await resolveBootstrapDNS("example.com", 8080, logger, resolver);
-    expect(result[0]).toBe("host.example.com:8080");
-  });
-});
+// Note: the omega-based signed-root-list discovery path
+// (resolveOmegaBootstrap) is exercised under src/node/trust/ — see
+// resolver.test.ts, cache.test.ts, and refresher.test.ts. The legacy
+// unsigned-DNS path was removed as part of REPRAM 2.1.
 
 // --- Bootstrap handshake ---
 

@@ -1,9 +1,14 @@
 BINARY_NAME=repram
+OMEGA_BINARY_NAME=repram-omega
 
-.PHONY: build run test clean docker-build docker-run docker-compose-up docker-compose-down
+.PHONY: build build-omega run test clean docker-build docker-run docker-compose-up docker-compose-down
 
 build:
 	go build -o bin/$(BINARY_NAME) ./cmd/repram
+	go build -o bin/$(OMEGA_BINARY_NAME) ./cmd/repram-omega
+
+build-omega:
+	go build -o bin/$(OMEGA_BINARY_NAME) ./cmd/repram-omega
 
 run: build
 	./bin/$(BINARY_NAME)

@@ -13,7 +13,11 @@ import { RepramClient, InProcessClient, type RepramClientInterface } from "./cli
 import { HTTPServer, loadConfig, type ServerConfig } from "./node/server.js";
 import { HTTPTransport } from "./node/transport.js";
 import { Logger } from "./node/logger.js";
-import { bootstrapFromPeers, resolveBootstrapDNS } from "./node/bootstrap.js";
+import { bootstrapFromPeers, resolveOmegaBootstrap } from "./node/bootstrap.js";
+import { publicKeyFromBase64, SignedList } from "./node/trust/signed-list.js";
+import { OMEGA_PUBKEY } from "./node/trust/omega.js";
+import { Refresher } from "./node/trust/refresher.js";
+import { resolveCacheDir } from "./node/trust/cache.js";
 import { connectToSubstrate, type WebSocketConnection } from "./node/ws-transport.js";
 
 const isStandalone =
@@ -25,7 +29,8 @@ let embeddedServer: HTTPServer | null = null;
 // ─── Bootstrap ──────────────────────────────────────────────────────
 
 async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logger): Promise<void> {
-  // Resolve seed peers: REPRAM_PEERS env var, then DNS for public network
+  // Resolve seed peers: REPRAM_PEERS env var first, then the omega signed
+  // root list for the public network. Private networks never consult DNS.
   const seedPeers: string[] = [];
 
   const peersEnv = process.env.REPRAM_PEERS;
@@ -33,14 +38,64 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
     seedPeers.push(...peersEnv.split(",").map((p) => p.trim()).filter(Boolean));
   }
 
-  // DNS-based bootstrap for public network (when no manual peers)
+  let rootList: SignedList | null = null;
   if (config.network === "public" && seedPeers.length === 0) {
-    const dnsResolved = await resolveBootstrapDNS(
-      "bootstrap.repram.network",
-      9090,
-      logger,
+    rootList = await resolveOmegaBootstrap(logger);
+    seedPeers.push(...rootList.nodes);
+  } else if (config.network === "public" && seedPeers.length > 0) {
+    // REPRAM_PEERS short-circuits omega resolution, which in turn leaves
+    // isRoot() false and causes /v1/bootstrap to 403. Fine for local
+    // testing; wrong for a real public-network root node.
+    logger.warn(
+      "REPRAM_NETWORK=public with REPRAM_PEERS set: skipping omega verification. " +
+        "This node will not be recognized as a bootstrap root and will return 403 " +
+        "for /v1/bootstrap requests.",
     );
-    seedPeers.push(...dnsResolved);
+  }
+
+  // Self-recognition + refresh loop. Only public-network deployments with
+  // a verified signed list participate.
+  if (rootList) {
+    const applyRootStatus = (list: SignedList) => {
+      const selfAdvertised = `${config.address}:${config.gossipPort}`;
+      const wasRoot = server.clusterNode.isRoot();
+      const isRoot = list.nodes.includes(selfAdvertised);
+      server.clusterNode.setRoot(isRoot);
+      if (isRoot !== wasRoot) {
+        logger.info(
+          isRoot
+            ? "Root status changed: this node is now a bootstrap root"
+            : "Root status changed: this node is no longer a bootstrap root",
+        );
+      }
+    };
+    applyRootStatus(rootList);
+    const selfAdvertised = `${config.address}:${config.gossipPort}`;
+    if (server.clusterNode.isRoot()) {
+      logger.info(`Initial root status: bootstrap root (advertised as ${selfAdvertised})`);
+    } else {
+      logger.info(
+        `Initial root status: not a root (advertised as ${selfAdvertised}); /v1/bootstrap returns 403`,
+      );
+    }
+
+    const { dir: cacheDir, usedLastResort } = resolveCacheDir();
+    if (usedLastResort) {
+      logger.warn(
+        `Using ${cacheDir} as cache directory; this typically requires root write access. ` +
+          "Set REPRAM_CACHE_DIR for a writable location if refresh writes start failing.",
+      );
+    }
+    const refresher = new Refresher(
+      {
+        pubKey: publicKeyFromBase64(OMEGA_PUBKEY),
+        cacheDir,
+        onUpdate: applyRootStatus,
+        onError: (err) => logger.warn(`Omega refresh: ${err}`),
+      },
+      rootList,
+    );
+    void refresher.run();
   }
 
   if (seedPeers.length === 0) return;
