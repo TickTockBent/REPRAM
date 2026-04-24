@@ -1,0 +1,253 @@
+/* =============================================================================
+   wshoffner.dev — design tokens
+   Extracted from src/app/globals.css (Tailwind v4 @theme block) and usage
+   across src/app/** and src/components/**.
+   ============================================================================= */
+
+/* ---------- Fonts ---------- */
+/* Production loads JetBrains Mono via next/font/google. We use the same
+   family from Google Fonts CDN here. Drop self-hosted woff2 into /fonts/
+   and replace this import if you need offline fidelity. */
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
+:root {
+  /* ---------- Color tokens ---------- */
+  /* Backgrounds */
+  --color-bg:              #0a0a0f; /* near-black page base */
+  --color-bg-elevated:     #161b22; /* code blocks, inline code, terminal panels */
+
+  /* Neon accents — three-color cyber/terminal identity */
+  --color-neon-green:      #39ff14; /* primary   — action, identity */
+  --color-neon-cyan:       #22d3ee; /* secondary — structure, borders, code */
+  --color-neon-magenta:    #e040fb; /* tertiary  — live / interaction / hover */
+
+  /* Text */
+  --color-text-body:       #b8c0cc; /* body copy */
+  --color-text-muted:      #8b949e; /* dates, blockquote, de-emphasis */
+  --color-text-strong:     #f0f6fc; /* <strong> emphasis — pushed brighter for clearer step above body */
+
+  /* System / boot */
+  --color-sys-yellow:      #facc15; /* [SYS] tag, system-halted lines */
+  --color-traffic-red:     rgb(239 68 68 / 0.7);
+  --color-traffic-yellow:  rgb(234 179 8 / 0.7);
+  --color-traffic-green:   rgb(34 197 94 / 0.7);
+
+  /* Alpha mixes commonly used in the codebase */
+  --color-cyan-20:         #22d3ee33;
+  --color-cyan-30:         #22d3ee4d;
+  --color-cyan-60:         #22d3ee99;
+  --color-cyan-70:         #22d3eeb3;
+  --color-green-20:        #39ff1433;
+  --color-green-30:        #39ff144d;
+  --color-green-50:        #39ff1480;
+  --color-magenta-60:      #e040fb99;
+
+  /* ---------- Semantic color roles ---------- */
+  --fg:                    var(--color-text-body);
+  --fg-muted:              var(--color-text-muted);
+  --fg-strong:             var(--color-text-strong);
+  --bg:                    var(--color-bg);
+  --bg-elevated:           var(--color-bg-elevated);
+  --accent:                var(--color-neon-green);
+  --accent-structure:      var(--color-neon-cyan);
+  --accent-live:           var(--color-neon-magenta);
+  --border:                var(--color-cyan-20);
+  --border-strong:         var(--color-cyan-60);
+  --border-hover:          var(--color-green-50);
+  --link:                  var(--color-neon-green);
+  --link-hover:            var(--color-neon-magenta);
+  --code-bg:               var(--color-bg-elevated);
+  --code-fg:               var(--color-neon-cyan);
+
+  /* ---------- Status colors (showcase badges) ---------- */
+  --status-released:       var(--color-neon-green);
+  --status-in-progress:    var(--color-neon-cyan);
+  --status-experiment:     var(--color-neon-magenta);
+  --status-archived:       var(--color-text-muted);
+
+  /* ---------- Typography tokens ---------- */
+  --font-mono:             "JetBrains Mono", Consolas, "Courier New", monospace;
+  --font-family-base:      var(--font-mono);
+
+  --font-size-xs:          0.75rem;   /* 12px — metadata, overlines */
+  --font-size-sm:          0.875rem;  /* 14px — code, small UI */
+  --font-size-base:        1rem;      /* 16px — body */
+  --font-size-body-lg:     1.125rem;  /* 18px — body alt */
+  --font-size-h3:          1.125rem;  /* 18px */
+  --font-size-h2:          1.375rem;  /* 22px */
+  --font-size-h1:          1.75rem;   /* 28px */
+  --font-size-page-h1:     1.5rem;    /* 24px — page-level BLOG://INDEX */
+
+  --line-height-tight:     1.25;      /* ASCII grid override */
+  --line-height-body:      1.7;       /* long-form prose */
+  --line-height-code:      1.6;
+  --line-height-normal:    1.5;
+
+  --tracking-wide:         0.05em;    /* h2/h3 terminal feel */
+  --tracking-wider:        0.1em;     /* terminal-frame label */
+  --tracking-widest:       0.15em;    /* page H1 BLOG://INDEX */
+
+  /* ---------- Spacing / sizing ---------- */
+  --radius-none:           0;
+  --radius-sm:             3px;       /* inline code */
+  --radius-md:             4px;       /* code blocks, images, badges */
+
+  --space-1:               0.25rem;
+  --space-2:               0.5rem;
+  --space-3:               0.75rem;
+  --space-4:               1rem;
+  --space-5:               1.25rem;
+  --space-6:               1.5rem;
+  --space-8:               2rem;
+  --space-12:              3rem;
+
+  --max-w-prose:           48rem;     /* blog */
+  --max-w-showcase:        80rem;
+  --wesnet-width:          280px;
+
+  /* ---------- Glow + shadow system (no drop shadows) ---------- */
+  --glow-green-text:       0 0 10px #39ff1480, 0 0 20px #39ff1440;
+  --glow-cyan-text:        0 0 10px #22d3ee80, 0 0 20px #22d3ee40;
+  --glow-magenta-text:     0 0 10px #e040fb80, 0 0 20px #e040fb40;
+  --glow-green-border:     0 0 8px #39ff1430, inset 0 0 8px #39ff1410;
+  --glow-cyan-border:      0 0 8px #22d3ee30, inset 0 0 8px #22d3ee10;
+
+  /* ---------- Transitions ---------- */
+  --transition-fast:       0.2s;
+  --transition-color:      color 0.2s, text-shadow 0.2s;
+
+  /* ---------- Overlays ---------- */
+  --scanline-color:        #00000015;
+  --matrix-opacity:        0.06;
+}
+
+/* =============================================================================
+   Semantic element defaults
+   Applied to anything using this stylesheet directly (outside Tailwind).
+   ============================================================================= */
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+  font-weight: 700;
+}
+h1 { font-size: var(--font-size-h1); margin-bottom: var(--space-4); }
+h2 { font-size: var(--font-size-h2); margin-top: var(--space-8); margin-bottom: var(--space-3); }
+h3 { font-size: var(--font-size-h3); margin-top: var(--space-6); margin-bottom: var(--space-2); }
+
+p { margin-bottom: var(--space-4); line-height: var(--line-height-body); }
+
+a {
+  color: var(--link);
+  text-decoration: none;
+  transition: var(--transition-color);
+}
+a:hover {
+  color: var(--link-hover);
+  text-decoration: underline;
+  text-shadow: 0 0 8px var(--color-magenta-60);
+}
+
+ul, ol { margin-bottom: var(--space-4); padding-left: var(--space-6); }
+li { margin-bottom: var(--space-1); line-height: var(--line-height-body); }
+ul li::marker { content: "> "; color: var(--accent-structure); }
+ol li::marker { color: var(--accent-structure); }
+
+blockquote {
+  border-left: 2px solid var(--border-strong);
+  padding-left: var(--space-4);
+  color: var(--fg-muted);
+  margin-bottom: var(--space-4);
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--color-cyan-30);
+  margin: var(--space-8) 0;
+}
+
+strong { color: var(--fg-strong); }
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--color-cyan-30);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  overflow-x: auto;
+  margin-bottom: var(--space-4);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-code);
+}
+code { font-family: var(--font-mono); font-size: 0.875em; }
+:not(pre) > code {
+  background: var(--code-bg);
+  padding: 0.15em 0.4em;
+  border-radius: var(--radius-sm);
+  color: var(--code-fg);
+}
+
+/* =============================================================================
+   Utility classes — glow, frame, overlays (from globals.css verbatim)
+   ============================================================================= */
+
+.glow-green    { text-shadow: var(--glow-green-text); }
+.glow-cyan     { text-shadow: var(--glow-cyan-text); }
+.glow-magenta  { text-shadow: var(--glow-magenta-text); }
+
+.border-glow-green { box-shadow: var(--glow-green-border); }
+.border-glow-cyan  { box-shadow: var(--glow-cyan-border); }
+
+.terminal-frame {
+  position: relative;
+  border: 1px solid var(--border-strong);
+  padding: var(--space-6);
+  margin: var(--space-4) 0;
+  box-shadow: 0 0 8px #22d3ee20;
+}
+.terminal-frame::before {
+  content: attr(data-label);
+  position: absolute;
+  top: -0.75rem;
+  left: 1rem;
+  background: var(--bg);
+  padding: 0 0.5rem;
+  color: var(--accent-structure);
+  font-size: var(--font-size-xs);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+}
+
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    var(--scanline-color) 2px, var(--scanline-color) 4px
+  );
+}
+
+/* blinking block cursor */
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+.cursor-blink { animation: cursor-blink 1s step-end infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

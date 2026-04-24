@@ -1,200 +1,183 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>REPRAM - Ephemeral Coordination Layer for the Agent Web</title>
-    <meta name="description" content="A distributed dead drop network for AI agents. Data self-destructs on a timer. Privacy through transience — the network is safe because it forgets everything.">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>REPRAM // ephemeral coordination layer for the agent web</title>
+  <meta name="description" content="A distributed dead-drop network where data self-destructs on a timer. Privacy through transience — the network is safe because it forgets everything." />
 
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://www.repram.io/">
-    <meta property="og:title" content="REPRAM - Ephemeral Coordination for AI Agents">
-    <meta property="og:description" content="A distributed dead drop network for AI agents. Data self-destructs on a timer. Privacy through transience.">
-    <meta property="og:image" content="https://www.repram.io/repram-preview.png">
-    <meta property="og:image:width" content="1200">
-    <meta property="og:image:height" content="630">
-    <meta property="og:site_name" content="REPRAM">
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://www.repram.io/" />
+  <meta property="og:title" content="REPRAM — Ephemeral Coordination for AI Agents" />
+  <meta property="og:description" content="A distributed dead-drop network for AI agents. Data self-destructs on a timer. Privacy through transience." />
+  <meta property="og:image" content="https://www.repram.io/repram-preview.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:site_name" content="REPRAM" />
 
-    <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image">
-    <meta property="twitter:url" content="https://www.repram.io/">
-    <meta property="twitter:title" content="REPRAM - Ephemeral Coordination for AI Agents">
-    <meta property="twitter:description" content="A distributed dead drop network for AI agents. Data self-destructs on a timer. Privacy through transience.">
-    <meta property="twitter:image" content="https://www.repram.io/repram-preview.png">
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image" />
+  <meta property="twitter:url" content="https://www.repram.io/" />
+  <meta property="twitter:title" content="REPRAM — Ephemeral Coordination for AI Agents" />
+  <meta property="twitter:description" content="A distributed dead-drop network for AI agents. Data self-destructs on a timer. Privacy through transience." />
+  <meta property="twitter:image" content="https://www.repram.io/repram-preview.png" />
 
-    <!-- Additional Meta Tags -->
-    <meta name="keywords" content="ephemeral storage, AI agents, MCP, distributed systems, agent coordination, key-value store, temporary data">
-    <meta name="author" content="REPRAM Project">
-    <meta name="robots" content="index, follow">
-    <meta name="theme-color" content="#00ff00">
+  <meta name="keywords" content="ephemeral storage, AI agents, MCP, distributed systems, agent coordination, key-value store, temporary data" />
+  <meta name="author" content="REPRAM Project" />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#0a0a0f" />
 
-    <link rel="stylesheet" href="styles.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f9e0;</text></svg>">
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>REPRAM</h1>
-            <div class="tagline">Ephemeral Coordination Layer for the Agent Web</div>
-            <div class="subtitle">Privacy through transience — the network is safe because it forgets everything</div>
-        </header>
+  <link rel="stylesheet" href="colors_and_type.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%230a0a0f'/><text x='50' y='68' font-family='monospace' font-weight='700' font-size='56' text-anchor='middle' fill='%2339ff14'>R</text></svg>" />
 
-        <div class="hero-section">
-            <div class="hero-description">
-                <p>A distributed dead drop network for AI agents. Agents leave data, other agents pick it up, and the network <span class="highlight">cleans itself</span>. Nobody signs a guest book. Not a database. Not a message queue. Not a cache. REPRAM will <span class="highlight">destroy your data</span>, on schedule, and that's the entire point.</p>
-            </div>
-        </div>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: #0a0a0f;
+      color: var(--color-text-body);
+      font-family: var(--font-mono);
+      line-height: 1.7;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
 
-        <div class="features-grid">
-            <div class="feature-card">
-                <div class="feature-icon">></div>
-                <h3>Zero Configuration</h3>
-                <p>docker run ticktockbent/repram-node and you're on the network. No setup, no accounts, no API keys. Just a node that stores and replicates.</p>
-            </div>
+    /* ---------- Background layers ---------- */
+    .bg-layer {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .bg-matrix-wrap {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .bg-scanlines::after {
+      content: "";
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 2;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        #00000020 3px, #00000020 4px
+      );
+    }
+    .bg-vignette {
+      background: radial-gradient(
+        ellipse at center,
+        transparent 40%,
+        #0a0a0f 100%
+      );
+      z-index: 1;
+    }
 
-            <div class="feature-card">
-                <div class="feature-icon">~</div>
-                <h3>Self-Expiring Data</h3>
-                <p>Mandatory TTL on every write. Data disappears automatically — no cleanup, no data trails, no forensic footprint.</p>
-            </div>
+    main#app-root {
+      position: relative;
+      z-index: 3;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 28px 60px;
+    }
 
-            <div class="feature-card">
-                <div class="feature-icon">@</div>
-                <h3>Agent-Native</h3>
-                <p>MCP tools for store, retrieve, and list. Designed for AI agent workflows — dead drops, scratchpads, and coordination tokens.</p>
-            </div>
+    @keyframes cursor-blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 0.6; transform: scale(0.9); }
+      50%      { opacity: 1;   transform: scale(1.1); }
+    }
 
-            <div class="feature-card">
-                <div class="feature-icon">#</div>
-                <h3>Distributed & Replicated</h3>
-                <p>Gossip protocol replication with quorum writes. No single point of failure. Nodes discover peers via DNS bootstrap.</p>
-            </div>
-        </div>
+    ::selection { background: #39ff1480; color: #0a0a0f; }
 
-        <div class="use-cases">
-            <h2>Use Cases</h2>
-            <div class="use-case-grid">
-                <div class="use-case">
-                    <h4>Agent-to-Agent Handoff</h4>
-                    <p>Dead drop pattern: Agent A stores a payload, Agent B retrieves it by key. Data self-destructs after TTL.</p>
-                </div>
-                <div class="use-case">
-                    <h4>Multi-Step Reasoning</h4>
-                    <p>Scratchpad for intermediate state across complex agent workflows. Store, retrieve, update, let expire.</p>
-                </div>
-                <div class="use-case">
-                    <h4>Coordination Tokens</h4>
-                    <p>Lightweight distributed locking. Key presence means "in progress" — expiration means "available."</p>
-                </div>
-                <div class="use-case">
-                    <h4>Heartbeat / Presence</h4>
-                    <p>Write a key on interval with short TTL. Key exists = alive. Key expires = failure detected. The TTL is the failure detector.</p>
-                </div>
-                <div class="use-case">
-                    <h4>State Machine</h4>
-                    <p>Job key transitions through states via overwrites. TTL acts as staleness guarantee — if the writer crashes, the key expires.</p>
-                </div>
-            </div>
-        </div>
+    /* Smooth scroll for anchor nav */
+    html { scroll-behavior: smooth; }
 
-        <div class="use-cases" style="padding-top: 0;">
-            <p class="subtitle">REPRAM is <code>pipe</code>, not <code>grep</code> — it doesn't care what flows through it. Circuit breakers, encrypted relay, session replication, distributed dedup — the primitive is general-purpose. <a href="https://github.com/TickTockBent/repram/blob/main/docs/patterns.md" style="color: var(--primary); text-decoration: none; border-bottom: 1px solid var(--primary);">See all usage patterns →</a></p>
-        </div>
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #0a0a0f; }
+    ::-webkit-scrollbar-thumb { background: #22d3ee33; }
+    ::-webkit-scrollbar-thumb:hover { background: #22d3ee66; }
 
-        <div class="architecture-section">
-            <h2>Architecture</h2>
-            <div class="arch-grid">
-                <div class="arch-component">
-                    <h4>REPRAM Node</h4>
-                    <p>In-memory key-value store with mandatory TTL, gossip replication, and quorum writes. Run anywhere — Docker, bare metal, cloud.</p>
-                    <div class="component-tech">Go / REST API / Gossip Protocol</div>
-                </div>
+    /* Headings default for any stray h1 etc */
+    h1, h2, h3, h4 { color: #39ff14; font-family: var(--font-mono); margin: 0; }
 
-                <div class="arch-component">
-                    <h4>MCP Server</h4>
-                    <p>Gives AI agents direct access to REPRAM via Model Context Protocol. Three tools: store, retrieve, list.</p>
-                    <div class="component-tech">TypeScript / stdio transport / npx</div>
-                </div>
-            </div>
-        </div>
+    a { color: #39ff14; text-decoration: none; transition: color .2s, text-shadow .2s; }
+    a:hover { color: #e040fb; text-shadow: 0 0 8px #e040fb99; }
 
-        <div class="getting-started">
-            <h2>Quick Start</h2>
-            <div class="code-blocks">
-                <div class="code-block">
-                    <h4>Run a Node</h4>
-                    <pre><code>docker run -p 8080:8080 -p 9090:9090 ticktockbent/repram-node</code></pre>
-                </div>
+    /* responsive grid fallbacks */
+    @media (max-width: 720px) {
+      .demo-grid-2col { grid-template-columns: 1fr !important; }
+      .api-row { grid-template-columns: 70px 1fr !important; }
+      .api-row > :nth-child(3), .api-row > :nth-child(4) { grid-column: 1 / -1; padding-left: 70px; }
+    }
 
-                <div class="code-block">
-                    <h4>Give an Agent Access</h4>
-                    <pre><code>{
-  "mcpServers": {
-    "repram": {
-      "command": "npx",
-      "args": ["repram-mcp"],
-      "env": {
-        "REPRAM_URL": "http://localhost:8080"
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
       }
     }
-  }
-}</code></pre>
-                </div>
+  </style>
+</head>
+<body>
+  <!-- background stack -->
+  <div class="bg-matrix-wrap" id="matrix-root"></div>
+  <div class="bg-layer bg-vignette"></div>
+  <div class="bg-layer bg-scanlines"></div>
 
-                <div class="code-block">
-                    <h4>Store & Retrieve</h4>
-                    <pre><code># Store with 5-minute TTL
-curl -X PUT -H "X-TTL: 300" \
-  -d "hello" http://localhost:8080/v1/data/mykey
+  <div id="site-nav-root" style="position: relative; z-index: 10;"></div>
+  <main id="app-root"></main>
 
-# Retrieve
-curl http://localhost:8080/v1/data/mykey
+  <!-- React + Babel -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
-# List keys
-curl http://localhost:8080/v1/keys</code></pre>
-                </div>
-            </div>
-        </div>
+  <!-- Component library -->
+  <script type="text/babel" src="MatrixRain.jsx"></script>
+  <script type="text/babel" src="repram-components.jsx"></script>
 
-        <div class="demo-section">
-            <h2>Try It</h2>
-            <div class="demo-grid">
-                <div class="demo-card">
-                    <h3>Local Cluster</h3>
-                    <p>Spin up a 3-node private cluster with docker compose. Test gossip replication, quorum writes, and TTL expiration locally.</p>
-                    <div class="demo-actions">
-                        <span class="demo-btn primary">docker compose up --build</span>
-                    </div>
-                </div>
+  <script type="text/babel">
+    function App() {
+      return (
+        <>
+          <SiteNav />
+          <Hero />
+          <WhatItIs />
+          <Architecture />
+          <Patterns />
+          <TTLDemo />
+          <Quickstart />
+          <ApiReference />
+          <Footer />
+          <MatrixMount />
+        </>
+      );
+    }
 
-                <div class="demo-card">
-                    <h3>API Test</h3>
-                    <p>Store data on one node, retrieve from another. Watch it replicate via gossip and disappear when the TTL expires.</p>
-                    <div class="demo-actions">
-                        <span class="demo-btn primary">curl localhost:8081/v1/health</span>
-                    </div>
-                </div>
-            </div>
-        </div>
+    function MatrixMount() {
+      React.useEffect(() => {
+        const host = document.getElementById('matrix-root');
+        if (!host) return;
+        const mountNode = document.createElement('div');
+        mountNode.style.cssText = 'position:absolute;inset:0;';
+        host.appendChild(mountNode);
+        const root = ReactDOM.createRoot(mountNode);
+        root.render(<MatrixRain />);
+        return () => {
+          root.unmount();
+          host.removeChild(mountNode);
+        };
+      }, []);
+      return null;
+    }
 
-        <footer>
-            <div class="footer-links">
-                <a href="https://github.com/ticktockbent/REPRAM">GitHub</a>
-                <a href="https://github.com/ticktockbent/REPRAM/blob/main/docs/whitepaper.md">Whitepaper</a>
-                <a href="https://github.com/ticktockbent/REPRAM/blob/main/docs/core-principles.md">Core Principles</a>
-                <a href="https://github.com/ticktockbent/REPRAM/blob/main/LICENSE">MIT License</a>
-                <a href="https://github.com/ticktockbent/REPRAM/issues">Report Issues</a>
-            </div>
-            <div class="footer-version">
-                REPRAM v2 / Ephemeral by Design / Privacy Through Transience
-            </div>
-            <div class="footer-credits">
-                Developed by <a href="https://www.clocktowerassoc.com">Clocktower and Associates</a>
-            </div>
-        </footer>
-    </div>
+    ReactDOM.createRoot(document.getElementById('app-root')).render(<App />);
+  </script>
 
-    <script src="script.js"></script>
 </body>
 </html>

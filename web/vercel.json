@@ -4,7 +4,7 @@
   "outputDirectory": ".",
   "routes": [
     {
-      "src": "/(.*\\.(js|css|png|jpg|jpeg|gif|svg|ico))",
+      "src": "/(.*\\.(jsx|js|css|png|jpg|jpeg|gif|svg|ico|webp|woff2?|txt))",
       "dest": "/$1"
     },
     {
