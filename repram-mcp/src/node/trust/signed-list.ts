@@ -132,8 +132,11 @@ const fieldKey = {
 /**
  * parseSignedList deserializes a TXT-record payload. Field order on the
  * wire is tolerated; canonical() re-normalizes for signature verification.
- * Duplicate fields are rejected; unknown fields are ignored so future
- * additions within the same omega version remain forward-compatible.
+ * Duplicate fields are rejected. Unknown fields are rejected too — the
+ * signature only covers canonical() (which contains just the known
+ * fields), so tolerating unknowns would admit unauthenticated data into
+ * an authenticated record. Forward-compatible extensions must bump
+ * OMEGA_VERSION.
  */
 export function parseSignedList(raw: string): SignedList | Error {
   if (!raw) {
