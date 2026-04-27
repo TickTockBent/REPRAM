@@ -107,12 +107,15 @@ function doPut(node) {
     const key = `bench-agent-${agentId}-${__ITER}`;
     const ttlSec = 300 + Math.floor(Math.random() * (7200 - 300));
     const body = JSON.stringify({ vu: __VU, iter: __ITER, ts: Date.now() });
+    // `name` collapses unique URLs into one metric series; without it k6's
+    // per-URL metric map grows unbounded (#95: OOM at 27 GB after 2.4M URLs).
     const res = http.put(
         `${node}/v1/data/${key}`,
         body,
         {
             headers: { 'Content-Type': 'application/json', 'X-TTL': String(ttlSec) },
             tags: { op: 'put' },
+            name: 'PUT /v1/data/{key}',
         },
     );
     if (res.status === 202) soft202.add(1);
