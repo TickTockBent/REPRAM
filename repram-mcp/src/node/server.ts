@@ -549,7 +549,11 @@ export class HTTPServer {
       this.clusterNode.gossip.addPeer(newPeer);
       this.logger.info(`[${this.config.nodeId}] Node ${newPeer.id} joined via bootstrap`);
 
-      // Return current topology (all peers + ourselves)
+      // Include self in the peers list — it's how the joiner learns
+      // about this seed. The caller's bootstrap loop dedupes peers by
+      // node ID across multiple seeds and filters its own ID, so duplicate
+      // "Discovered peer" entries are addressed on the caller side
+      // (#82, F4), not by stripping self here.
       const peers = this.clusterNode.gossip.getPeers();
       const allPeers = [...peers, this.clusterNode.localNode];
 

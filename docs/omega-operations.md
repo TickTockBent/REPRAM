@@ -1,7 +1,7 @@
 # Omega Operations
 
 Operator guide for REPRAM's signed-root-discovery trust anchor. Context and
-rationale live in `docs/internal/REPRAM-2.1-Spec.md`.
+rationale live in `docs/REPRAM-2.1-Spec.md`.
 
 The omega *public* key is compiled into every node binary. The omega
 *private* key lives on an air-gapped signing machine and is used only to

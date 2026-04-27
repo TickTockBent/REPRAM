@@ -84,7 +84,7 @@ describe("bootstrapFromPeers", () => {
     expect(peers[0].id).toBe("other-node");
   });
 
-  it("tries next seed on failure", async () => {
+  it("continues to next seed on failure", async () => {
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(new Error("connection refused"))
       .mockResolvedValueOnce({
@@ -109,6 +109,64 @@ describe("bootstrapFromPeers", () => {
 
     expect(peers).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  // #82 (F3): the old loop returned after the first successful seed,
+  // leaving later seeds unaware of the joiner until topology sync. The
+  // fixed loop contacts every seed.
+  it("contacts every seed even after the first succeeds", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        peers: [{ id: "shared", address: "10.0.0.9", port: 9090, http_port: 8080 }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const logger = silentLogger();
+    vi.spyOn(logger, "info").mockImplementation(() => {});
+
+    await bootstrapFromPeers(
+      ["seed-a:8080", "seed-b:8080", "seed-c:8080"],
+      makeLocalNode(),
+      "",
+      logger,
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const urls = fetchMock.mock.calls.map((c) => c[0]);
+    expect(urls).toContain("http://seed-a:8080/v1/bootstrap");
+    expect(urls).toContain("http://seed-b:8080/v1/bootstrap");
+    expect(urls).toContain("http://seed-c:8080/v1/bootstrap");
+  });
+
+  // #82 (F4): when multiple seeds report the same peer, the caller
+  // returns it once. (The seed legitimately includes its own localNode in
+  // the response — that's how a single-seed bootstrap learns about the
+  // seed at all — so dedup runs on the caller side.)
+  it("dedupes peers reported by multiple seeds", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        peers: [{ id: "shared", address: "10.0.0.9", port: 9090, http_port: 8080 }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const logger = silentLogger();
+    vi.spyOn(logger, "info").mockImplementation(() => {});
+
+    const peers = await bootstrapFromPeers(
+      ["seed-a:8080", "seed-b:8080", "seed-c:8080"],
+      makeLocalNode(),
+      "",
+      logger,
+    );
+
+    expect(peers).toHaveLength(1);
+    expect(peers[0].id).toBe("shared");
   });
 
   it("returns empty array when all seeds fail", async () => {

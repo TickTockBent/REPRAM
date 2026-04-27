@@ -3,7 +3,7 @@
  *
  * Port of internal/gossip/bootstrap.go and cmd/repram/main.go's
  * resolveOmegaBootstrap. The unsigned SRV/A-based bootstrap was removed
- * as part of REPRAM 2.1 (see docs/internal/REPRAM-2.1-Spec.md).
+ * as part of REPRAM 2.1 (see docs/REPRAM-2.1-Spec.md).
  */
 
 import { signBody } from "./auth.js";
@@ -83,6 +83,14 @@ export async function resolveOmegaBootstrap(logger: Logger): Promise<SignedList>
 
 // --- Bootstrap handshake ---
 
+/**
+ * Contacts ALL seed nodes (not just the first responder) so every seed
+ * registers the joining node directly. Stopping at the first success
+ * leaves later seeds unaware of the joiner until topology sync, producing
+ * asymmetric topologies (#82, F3). Peers from each response are
+ * deduplicated by node ID across all seeds; self is always filtered out
+ * (#82, F4).
+ */
 export async function bootstrapFromPeers(
   seedPeers: string[],
   localNode: NodeInfo,
@@ -101,21 +109,34 @@ export async function bootstrapFromPeers(
     request.enclave = localNode.enclave;
   }
 
-  // Try each seed until one succeeds
+  const seen = new Map<string, NodeInfo>();
+  let successfulSeeds = 0;
+
   for (const seed of seedPeers) {
     try {
       const peers = await sendBootstrapRequest(seed, request, clusterSecret, logger);
-      // Filter out self
-      const discovered = peers.filter((p) => p.id !== localNode.id);
-      logger.info(`Bootstrap successful, discovered ${discovered.length} peers from ${seed}`);
-      return discovered;
+      successfulSeeds++;
+      for (const peer of peers) {
+        if (peer.id === localNode.id) continue;
+        if (seen.has(peer.id)) continue;
+        seen.set(peer.id, peer);
+      }
     } catch (err) {
       logger.warn(`Failed to bootstrap from ${seed}: ${err}`);
     }
   }
 
-  logger.info("No seed nodes available, starting as first node");
-  return [];
+  if (successfulSeeds === 0) {
+    logger.info("No seed nodes available, starting as first node");
+    return [];
+  }
+
+  const discovered = Array.from(seen.values());
+  logger.info(
+    `Bootstrap complete: contacted ${successfulSeeds}/${seedPeers.length} seeds, ` +
+      `discovered ${discovered.length} unique peers`,
+  );
+  return discovered;
 }
 
 async function sendBootstrapRequest(

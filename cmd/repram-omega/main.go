@@ -1,6 +1,6 @@
 // Command repram-omega is the operator tool for REPRAM's signed-root-list
 // trust anchor. It runs offline — never on a REPRAM node. See
-// docs/internal/REPRAM-2.1-Spec.md and docs/omega-operations.md.
+// docs/REPRAM-2.1-Spec.md and docs/omega-operations.md.
 //
 // Subcommands:
 //

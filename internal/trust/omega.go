@@ -3,7 +3,7 @@
 // OmegaPubkey is the root of trust for DNS-delivered bootstrap data. The
 // corresponding private key is held offline by the network operator and is
 // used only to sign root lists published via DNS TXT records (see
-// docs/internal/REPRAM-2.1-Spec.md). The private key is never deployed to any
+// docs/REPRAM-2.1-Spec.md). The private key is never deployed to any
 // node and never transmitted over any network.
 //
 // OmegaVersion identifies the signing scheme. Future spec revisions that

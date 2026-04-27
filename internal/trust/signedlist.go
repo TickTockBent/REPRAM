@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Spec field names and separators. See docs/internal/REPRAM-2.1-Spec.md
+// Spec field names and separators. See docs/REPRAM-2.1-Spec.md
 // "Signed Root List: DNS Format" and "Signature Format".
 const (
 	fieldVersion = "v"

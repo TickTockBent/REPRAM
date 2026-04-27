@@ -64,7 +64,7 @@ export class ClusterNode {
 
   // Set to true when this node's advertised address is present in the
   // currently-trusted omega signed root list. Gates the bootstrap handler.
-  // See docs/internal/REPRAM-2.1-Spec.md.
+  // See docs/REPRAM-2.1-Spec.md.
   private _isRoot = false;
 
   constructor(options: ClusterNodeOptions, logger: Logger) {
