@@ -195,7 +195,22 @@ func (p *Protocol) Stop() error {
 	return nil
 }
 
-func (p *Protocol) addPeer(node *Node) {
+// addPeer adds node to the peer set or rejects and warns if node is self.
+// Returns true if the node was added or updated, false if rejected.
+//
+// The self-rejection is the single chokepoint that keeps self out of the
+// peer map across all entry points (handleSync, HandleBootstrap,
+// performTopologySync, etc.). Callers that previously assumed
+// "addPeer always succeeds" are still correct for non-self inputs;
+// the warn log surfaces any caller path that ends up trying to add self,
+// which is always a bug (#82, #87).
+func (p *Protocol) addPeer(node *Node) bool {
+	if node.ID == p.localNode.ID {
+		logging.Warn("[%s] addPeer rejected: attempted to add self (%s) — caller likely missing a self-filter",
+			p.localNode.ID, node.ID)
+		return false
+	}
+
 	p.peersMutex.Lock()
 	p.peers[node.ID] = node
 	delete(p.peerFailures, node.ID) // reset failure counter on (re-)add
@@ -206,6 +221,7 @@ func (p *Protocol) addPeer(node *Node) {
 		p.metrics.peersActive.Set(float64(peerCount))
 		p.metrics.peerJoins.Inc()
 	}
+	return true
 }
 
 func (p *Protocol) removePeer(nodeID NodeID) {

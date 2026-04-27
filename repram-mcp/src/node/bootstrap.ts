@@ -109,10 +109,21 @@ export async function bootstrapFromPeers(
     request.enclave = localNode.enclave;
   }
 
+  // The omega signed list contains every root, so a root bootstrapping
+  // against the list will see its own advertised address in seedPeers.
+  // Skip self-bootstrap: it would succeed (we'd be POSTing to our own
+  // listener) but pollute the peer map with self until addPeer's self-filter
+  // rejects it (#82, #87). Skipping here also avoids a wasted round-trip.
+  const selfAdvertised = `${localNode.address}:${localNode.httpPort}`;
+
   const seen = new Map<string, NodeInfo>();
   let successfulSeeds = 0;
 
   for (const seed of seedPeers) {
+    if (seed === selfAdvertised) {
+      logger.debug(`Skipping self in seed list (${seed})`);
+      continue;
+    }
     try {
       const peers = await sendBootstrapRequest(seed, request, clusterSecret, logger);
       successfulSeeds++;

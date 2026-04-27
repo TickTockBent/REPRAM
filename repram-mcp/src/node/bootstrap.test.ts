@@ -141,6 +141,36 @@ describe("bootstrapFromPeers", () => {
     expect(urls).toContain("http://seed-c:8080/v1/bootstrap");
   });
 
+  // #87 (F7): when the seed list contains the bootstrapping node's own
+  // advertised address (always true for omega-listed roots), the loop
+  // must skip it — otherwise the node POSTs a bootstrap to itself and
+  // pollutes its peer map with self.
+  it("skips self in the seed list", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        peers: [{ id: "other", address: "10.0.0.2", port: 9090, http_port: 8080 }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const logger = silentLogger();
+    vi.spyOn(logger, "info").mockImplementation(() => {});
+    vi.spyOn(logger, "debug").mockImplementation(() => {});
+
+    const local = makeLocalNode({ address: "10.0.0.1", httpPort: 8080 });
+    await bootstrapFromPeers(
+      ["10.0.0.1:8080", "real-seed:8080"],
+      local,
+      "",
+      logger,
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://real-seed:8080/v1/bootstrap");
+  });
+
   // #82 (F4): when multiple seeds report the same peer, the caller
   // returns it once. (The seed legitimately includes its own localNode in
   // the response — that's how a single-seed bootstrap learns about the

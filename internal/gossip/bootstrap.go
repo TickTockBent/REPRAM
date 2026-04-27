@@ -47,10 +47,21 @@ func (p *Protocol) Bootstrap(ctx context.Context, seedNodes []string) error {
 		Enclave:    p.localNode.Enclave,
 	}
 
+	// The omega signed list contains every root, so a root bootstrapping
+	// against the list will see its own advertised address in seedNodes.
+	// Skip self-bootstrap: it succeeds (we'd be POSTing to our own listener)
+	// but pollutes our peer map with self until #87's addPeer self-filter
+	// rejects it. Skipping here also avoids a wasted round-trip.
+	selfAdvertised := fmt.Sprintf("%s:%d", p.localNode.Address, p.localNode.HTTPPort)
+
 	seen := make(map[NodeID]struct{})
 	successfulSeeds := 0
 
 	for _, seed := range seedNodes {
+		if seed == selfAdvertised {
+			logging.Debug("[%s] Skipping self in seed list (%s)", p.localNode.ID, seed)
+			continue
+		}
 		logging.Debug("[%s] Attempting to bootstrap from %s", p.localNode.ID, seed)
 
 		peers, err := p.sendBootstrapRequest(ctx, seed, req)
@@ -137,7 +148,10 @@ func (p *Protocol) HandleBootstrap(req *BootstrapRequest) *BootstrapResponse {
 		Enclave:  enclave,
 	}
 
-	// Add the new node as a peer
+	// Add the new node as a peer. addPeer is a no-op when newNode.ID
+	// matches our own (e.g., a node bootstrapping against an omega list
+	// that contains itself); the chokepoint warns and the self-skip in
+	// Bootstrap normally prevents that path from being reached at all (#87).
 	p.addPeer(newNode)
 	logging.Info("[%s] Node %s joined via bootstrap", p.localNode.ID, req.NodeID)
 
