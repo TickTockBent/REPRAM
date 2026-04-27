@@ -33,7 +33,20 @@ type ClusterNode struct {
 	// (see cmd/repram/main.go and future phase 4 refresh loop). When
 	// false, the HTTP server refuses bootstrap requests with 403.
 	isRoot atomic.Bool
+
+	// seedProvider returns the current bootstrap seed list. Used by the
+	// isolation-recovery loop to re-bootstrap when peer count drops to 0
+	// (#85, F5). Public deployments wire this to the omega refresher's
+	// current list; private deployments wire it to the static REPRAM_PEERS
+	// list. Nil disables recovery (used for tests and for cases where
+	// re-bootstrap doesn't make sense).
+	seedProvider func() []string
 }
+
+// IsolationRecoveryInterval is how often the recovery loop checks for
+// the zero-peer condition. Matches the gossip health-check cadence so
+// recovery starts within one tick of full eviction.
+const IsolationRecoveryInterval = 30 * time.Second
 
 type WriteOperation struct {
 	Key         string
@@ -98,7 +111,67 @@ func (cn *ClusterNode) Start(ctx context.Context, bootstrapAddresses []string) e
 		logging.Info("[%s] Starting as first node (no bootstrap addresses)", cn.localNode.ID)
 	}
 
+	go cn.runIsolationRecovery(ctx)
+
 	return nil
+}
+
+// SetSeedProvider wires a callback that returns the current bootstrap
+// seed list. The isolation-recovery loop calls it whenever peer count
+// drops to 0 to attempt re-bootstrap. Nil disables recovery (#85, F5).
+func (cn *ClusterNode) SetSeedProvider(p func() []string) {
+	cn.seedProvider = p
+}
+
+// runIsolationRecovery polls peer count on IsolationRecoveryInterval
+// and triggers re-bootstrap when the node is fully isolated (#85, F5).
+//
+// Why polling rather than event-driven from removePeer: multi-eviction
+// in a single pingPeers tick can fire several removals back-to-back, and
+// triggering from each would either spawn duplicate recoveries or
+// require single-flight machinery. Polling also catches isolation that
+// happens via paths other than ping eviction.
+func (cn *ClusterNode) runIsolationRecovery(ctx context.Context) {
+	ticker := time.NewTicker(IsolationRecoveryInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cn.CheckIsolationAndRecover(ctx)
+		}
+	}
+}
+
+// CheckIsolationAndRecover runs one isolation-recovery cycle. Returns
+// true if a re-bootstrap was attempted AND it found at least one peer.
+// Public so tests can drive recovery deterministically without timers.
+func (cn *ClusterNode) CheckIsolationAndRecover(ctx context.Context) bool {
+	if len(cn.protocol.GetPeers()) > 0 {
+		return false
+	}
+	if cn.seedProvider == nil {
+		return false
+	}
+	seeds := cn.seedProvider()
+	if len(seeds) == 0 {
+		return false
+	}
+	logging.Warn("[%s] Isolated (0 peers) — re-bootstrapping against %d seeds",
+		cn.localNode.ID, len(seeds))
+	if err := cn.protocol.Bootstrap(ctx, seeds); err != nil {
+		logging.Warn("[%s] Re-bootstrap failed: %v", cn.localNode.ID, err)
+		return false
+	}
+	after := len(cn.protocol.GetPeers())
+	if after > 0 {
+		logging.Info("[%s] Re-bootstrap recovered %d peers", cn.localNode.ID, after)
+		return true
+	}
+	logging.Warn("[%s] Re-bootstrap completed but discovered no peers; will retry next cycle",
+		cn.localNode.ID)
+	return false
 }
 
 func (cn *ClusterNode) Stop() error {

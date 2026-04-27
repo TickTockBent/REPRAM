@@ -164,6 +164,23 @@ func main() {
 			},
 		}, rootList)
 		go refresher.Run(ctx)
+
+		// Public network: re-bootstrap pulls from the refresher's current
+		// signed list, so a node that fully isolates picks up whatever
+		// roots are live now, not whatever it started with (#85, F5).
+		clusterNode.SetSeedProvider(func() []string {
+			list := refresher.Current()
+			if list == nil {
+				return nil
+			}
+			return list.Nodes
+		})
+	} else if len(bootstrapNodes) > 0 {
+		// Private / REPRAM_PEERS: re-bootstrap reuses the static seed list
+		// the operator provided. Capture by closure so the goroutine sees
+		// the same slice we started with (#85, F5).
+		seeds := append([]string(nil), bootstrapNodes...)
+		clusterNode.SetSeedProvider(func() []string { return seeds })
 	}
 
 	server := &HTTPServer{

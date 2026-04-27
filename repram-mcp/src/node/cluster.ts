@@ -21,6 +21,13 @@ import type { Message, NodeInfo } from "./types.js";
 import type { TreeManager } from "./tree.js";
 import type { WebSocketConnection } from "./ws-transport.js";
 
+/**
+ * How often the isolation-recovery loop checks peer count. Matches the
+ * gossip health-check cadence so recovery starts within one tick of full
+ * eviction (#85, F5).
+ */
+export const ISOLATION_RECOVERY_INTERVAL_MS = 30_000;
+
 /** Quorum reached — all replicas confirmed. */
 export const WRITE_STATUS_CREATED = 201;
 
@@ -66,6 +73,18 @@ export class ClusterNode {
   // currently-trusted omega signed root list. Gates the bootstrap handler.
   // See docs/REPRAM-2.1-Spec.md.
   private _isRoot = false;
+
+  // rebootstrapFn returns a promise of newly-discovered peers. Called by
+  // the isolation-recovery loop when peer count drops to 0 (#85, F5).
+  // Wired in index.ts: closures over the omega refresher's current list
+  // for public networks, or the static REPRAM_PEERS list for private.
+  private rebootstrapFn: (() => Promise<NodeInfo[]>) | null = null;
+  private isolationTimer: ReturnType<typeof setInterval> | null = null;
+  // Single-flight guard for checkIsolationAndRecover. The async re-bootstrap
+  // call can take longer than the ISOLATION_RECOVERY_INTERVAL_MS tick on
+  // slow networks; without this flag a second tick would spawn a second
+  // concurrent recovery and produce duplicate addPeer calls.
+  private recovering = false;
 
   constructor(options: ClusterNodeOptions, logger: Logger) {
     const enclave = options.enclave || "default";
@@ -116,10 +135,20 @@ export class ClusterNode {
 
   start(): void {
     this.gossip.start();
+    this.isolationTimer = setInterval(
+      () => void this.checkIsolationAndRecover(),
+      ISOLATION_RECOVERY_INTERVAL_MS,
+    );
+    // Don't keep the event loop alive just for the recovery timer.
+    this.isolationTimer.unref();
     this.logger.info(`[${this.localNode.id}] Cluster node started`);
   }
 
   stop(): void {
+    if (this.isolationTimer) {
+      clearInterval(this.isolationTimer);
+      this.isolationTimer = null;
+    }
     // Resolve all pending writes as 202 (timeout)
     for (const [messageId, op] of this.pendingWrites) {
       clearTimeout(op.timer);
@@ -129,6 +158,55 @@ export class ClusterNode {
 
     this.gossip.stop();
     this.store.close();
+  }
+
+  /** Wire the re-bootstrap callback used by the isolation-recovery loop.
+   *  Set to null to disable recovery (#85, F5). */
+  setRebootstrapFn(fn: (() => Promise<NodeInfo[]>) | null): void {
+    this.rebootstrapFn = fn;
+  }
+
+  /** One isolation-recovery cycle. Public so tests can drive recovery
+   *  deterministically without timers. Returns true when re-bootstrap
+   *  attempted AND found at least one peer (#85, F5). Single-flight:
+   *  overlapping calls (e.g., from a slow re-bootstrap that outlasts a
+   *  timer tick) return false without launching a duplicate. */
+  async checkIsolationAndRecover(): Promise<boolean> {
+    if (this.recovering) return false;
+    if (this.gossip.getPeers().length > 0) return false;
+    if (!this.rebootstrapFn) return false;
+
+    this.recovering = true;
+    try {
+      this.logger.warn(
+        `[${this.localNode.id}] Isolated (0 peers) — re-bootstrapping`,
+      );
+      let discovered: NodeInfo[];
+      try {
+        discovered = await this.rebootstrapFn();
+      } catch (err) {
+        this.logger.warn(
+          `[${this.localNode.id}] Re-bootstrap failed: ${(err as Error).message}`,
+        );
+        return false;
+      }
+      for (const peer of discovered) {
+        this.gossip.addPeer(peer);
+      }
+      const after = this.gossip.getPeers().length;
+      if (after > 0) {
+        this.logger.info(
+          `[${this.localNode.id}] Re-bootstrap recovered ${after} peers`,
+        );
+        return true;
+      }
+      this.logger.warn(
+        `[${this.localNode.id}] Re-bootstrap completed but discovered no peers; will retry next cycle`,
+      );
+      return false;
+    } finally {
+      this.recovering = false;
+    }
   }
 
   // --- Read operations ---
