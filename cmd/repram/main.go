@@ -313,6 +313,16 @@ type HTTPServer struct {
 func (s *HTTPServer) Router() *mux.Router {
 	r := mux.NewRouter()
 
+	// Disable gorilla's default path cleaning. Without this, a request to
+	// `/v1/data/%2F` decodes to `/v1/data//`, gorilla cleans it to
+	// `/v1/data/`, and returns 301 — pre-empting the NotFoundHandler. PUT
+	// clients then see a redirect that converts to GET (RFC 9110), so the
+	// PUT never gets a coherent 400. With SkipClean, the original path
+	// reaches the router, fails the `{key}` route, and lands in the
+	// NotFoundHandler that returns 400. None of REPRAM's routes need
+	// path cleaning (no `..`, no double-slash semantics) (#91).
+	r.SkipClean(true)
+
 	// Apply middleware
 	r.Use(corsMiddleware)
 	r.Use(s.securityMW.Middleware)

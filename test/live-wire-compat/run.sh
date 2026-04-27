@@ -332,6 +332,23 @@ assert_status "go-node1 rejects GET with encoded-slash key" "400" "$go_get_statu
 
 ts_get_status=$(curl -s -o /dev/null -w '%{http_code}' "$TS1/v1/data/foo%2Fbar")
 assert_status "ts-node1 rejects GET with encoded-slash key" "400" "$ts_get_status"
+
+go_head_status=$(curl -s -o /dev/null -w '%{http_code}' -I "$GO1/v1/data/foo%2Fbar")
+assert_status "go-node1 rejects HEAD with encoded-slash key" "400" "$go_head_status"
+
+ts_head_status=$(curl -s -o /dev/null -w '%{http_code}' -I "$TS1/v1/data/foo%2Fbar")
+assert_status "ts-node1 rejects HEAD with encoded-slash key" "400" "$ts_head_status"
+
+# Slash-only key (#104 review parity gap): without SkipClean(true) on the
+# Go side, /v1/data/%2F decoded to /v1/data// and gorilla/mux returned 301
+# before NotFoundHandler could fire. Both impls now return 400.
+go_slash_only=$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "X-TTL: 300" \
+  -d "x" "$GO1/v1/data/%2F")
+assert_status "go-node1 rejects slash-only key (PUT) with 400 (no 301)" "400" "$go_slash_only"
+
+ts_slash_only=$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "X-TTL: 300" \
+  -d "x" "$TS1/v1/data/%2F")
+assert_status "ts-node1 rejects slash-only key (PUT) with 400" "400" "$ts_slash_only"
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════
