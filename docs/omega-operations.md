@@ -61,8 +61,12 @@ REPRAM node.
      --key omega-v1.key \
      --version omega-v1 \
      --expires-in 24h \
-     --nodes root-a.example:9090,root-b.example:9090,root-c.example:9090
+     --nodes root-a.example:8080,root-b.example:8080,root-c.example:8080
    ```
+
+   The `--nodes` addresses are `host:http-port` form, not gossip-port —
+   `/v1/bootstrap` listens on the HTTP port. See the `nodes` field
+   description in `docs/REPRAM-2.1-Spec.md` for rationale.
 
 2. The command prints the full TXT-record value on stdout and the
    publication checklist on stderr. Transfer only the stdout line (it is
@@ -85,10 +89,38 @@ REPRAM node.
 5. Nodes pick up the new record on their next refresh cycle (before the
    previous record's `exp`). There is no need to restart nodes.
 
+## Publishing via dnsmasq (operator footgun)
+
+If your DNS provider is dnsmasq with `txt-record=` lines in a config
+file, **`SIGHUP` does not reload TXT records.** Per `man 8 dnsmasq`,
+`SIGHUP` re-loads `/etc/hosts`, `/etc/ethers`, and the various
+`--*-hostsfile`/`--addn-hosts`/`--hostsdir` paths — but it does not
+re-read the main config or `conf-dir` entries, including `txt-record`
+lines. The signal is accepted without error and the old TXT record
+keeps serving silently.
+
+Workarounds (pick one):
+
+- `sudo systemctl restart dnsmasq` after rewriting the config. Fast
+  (sub-second on most systems). The publish loop needs passwordless
+  sudo on the `restart` verb only — not full sudo — so configure
+  `/etc/sudoers.d/dnsmasq-publish` with the narrowest possible rule.
+- Move the TXT record into a file referenced via `--addn-hosts` or
+  similar, and use `SIGHUP` only on those paths. Workable but adds
+  indirection; the `restart` approach is simpler.
+- Switch off dnsmasq entirely. Any nameserver that exposes a proper API
+  (nsupdate, BIND control, cloud DNS provider APIs) avoids this class
+  of issue.
+
+The burn-in's `test/burnin/sign-loop.sh` uses the systemctl-restart
+approach; it documents the passwordless-sudo requirement in the script
+header and is a working reference if you're rolling your own publishing
+loop.
+
 ## Changing the root node set
 
 Run `sign` with the new `--nodes` list, publish the new TXT record. A node
-whose advertised `REPRAM_ADDRESS:REPRAM_GOSSIP_PORT` is removed from the
+whose advertised `REPRAM_ADDRESS:REPRAM_HTTP_PORT` is removed from the
 list stops answering `/v1/bootstrap` requests within one refresh cycle; a
 newly-added node starts answering on the same schedule.
 
