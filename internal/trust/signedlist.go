@@ -48,8 +48,9 @@ type SignedList struct {
 	// after this time.
 	Expires int64
 
-	// Nodes are advertised addresses ("host:gossip-port") of the root
+	// Nodes are advertised addresses ("host:http-port") of the root
 	// nodes. Stored in the order received; Canonical() sorts them.
+	// See docs/REPRAM-2.1-Spec.md for the rationale (#82, F1/F2).
 	Nodes []string
 
 	// Signature is the Ed25519 signature over Canonical(). Empty on a
