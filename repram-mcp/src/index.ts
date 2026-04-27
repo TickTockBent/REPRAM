@@ -59,7 +59,7 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
   if (rootList) {
     const applyRootStatus = (list: SignedList) => {
       setOmegaLastRefreshNow();
-      const selfAdvertised = `${config.address}:${config.gossipPort}`;
+      const selfAdvertised = `${config.address}:${config.httpPort}`;
       const wasRoot = server.clusterNode.isRoot();
       const isRoot = list.nodes.includes(selfAdvertised);
       server.clusterNode.setRoot(isRoot);
@@ -72,7 +72,7 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
       }
     };
     applyRootStatus(rootList);
-    const selfAdvertised = `${config.address}:${config.gossipPort}`;
+    const selfAdvertised = `${config.address}:${config.httpPort}`;
     if (server.clusterNode.isRoot()) {
       logger.info(`Initial root status: bootstrap root (advertised as ${selfAdvertised})`);
     } else {

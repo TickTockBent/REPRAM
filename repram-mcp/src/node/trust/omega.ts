@@ -4,7 +4,7 @@
  * when the omega key is rotated (Phase 6 / release cutover).
  *
  * The omega private key is held offline by the network operator and never
- * touches a running node. See docs/internal/REPRAM-2.1-Spec.md and
+ * touches a running node. See docs/REPRAM-2.1-Spec.md and
  * docs/omega-operations.md.
  */
 

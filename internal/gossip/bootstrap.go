@@ -26,7 +26,16 @@ type BootstrapResponse struct {
 	Peers   []*Node `json:"peers"`
 }
 
-// Bootstrap connects to seed nodes and retrieves the cluster topology
+// Bootstrap connects to seed nodes and retrieves the cluster topology.
+//
+// Contacts ALL seeds (not just the first responder) so that every seed
+// in the signed list registers the joining node directly. Stopping at
+// the first success leaves later seeds unaware of the joiner until the
+// next topology-sync round, producing asymmetric topologies (#82, F3).
+//
+// Peers from each response are deduplicated by NodeID across all
+// seeds; "Discovered peer X" is logged once per peer regardless of how
+// many seeds returned it (#82, F4).
 func (p *Protocol) Bootstrap(ctx context.Context, seedNodes []string) error {
 	logging.Info("[%s] Starting bootstrap process with %d seed nodes", p.localNode.ID, len(seedNodes))
 
@@ -38,7 +47,9 @@ func (p *Protocol) Bootstrap(ctx context.Context, seedNodes []string) error {
 		Enclave:    p.localNode.Enclave,
 	}
 
-	// Try each seed node until we get a successful response
+	seen := make(map[NodeID]struct{})
+	successfulSeeds := 0
+
 	for _, seed := range seedNodes {
 		logging.Debug("[%s] Attempting to bootstrap from %s", p.localNode.ID, seed)
 
@@ -47,21 +58,28 @@ func (p *Protocol) Bootstrap(ctx context.Context, seedNodes []string) error {
 			logging.Warn("[%s] Failed to bootstrap from %s: %v", p.localNode.ID, seed, err)
 			continue
 		}
+		successfulSeeds++
 
-		// Add all discovered peers
 		for _, peer := range peers {
-			if peer.ID != p.localNode.ID {
-				p.addPeer(peer)
-				logging.Info("[%s] Discovered peer %s via bootstrap", p.localNode.ID, peer.ID)
+			if peer.ID == p.localNode.ID {
+				continue
 			}
+			if _, dup := seen[peer.ID]; dup {
+				continue
+			}
+			seen[peer.ID] = struct{}{}
+			p.addPeer(peer)
+			logging.Info("[%s] Discovered peer %s via bootstrap", p.localNode.ID, peer.ID)
 		}
+	}
 
-		logging.Info("[%s] Bootstrap successful, discovered %d peers", p.localNode.ID, len(peers))
+	if successfulSeeds == 0 {
+		logging.Info("[%s] No seed nodes available, starting as first node", p.localNode.ID)
 		return nil
 	}
 
-	// If no seed nodes responded, we might be the first node
-	logging.Info("[%s] No seed nodes available, starting as first node", p.localNode.ID)
+	logging.Info("[%s] Bootstrap complete: contacted %d/%d seeds, discovered %d unique peers",
+		p.localNode.ID, successfulSeeds, len(seedNodes), len(seen))
 	return nil
 }
 
@@ -127,9 +145,11 @@ func (p *Protocol) HandleBootstrap(req *BootstrapRequest) *BootstrapResponse {
 	// This ensures all nodes know about each other
 	go p.notifyPeersAboutNewNode(newNode)
 
-	// Return current cluster topology
+	// Include self in the peers list — it's how the joiner learns about
+	// this seed. The caller's bootstrap loop dedupes peers by NodeID across
+	// multiple seeds and filters its own ID, so this is safe and necessary
+	// (#82, F4 is addressed on the caller side, not here).
 	peers := p.getPeers()
-	// Include ourselves in the response
 	allPeers := append(peers, p.localNode)
 
 	return &BootstrapResponse{

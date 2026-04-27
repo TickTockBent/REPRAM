@@ -86,7 +86,7 @@ func main() {
 	}
 
 	// Signed-root-list bootstrap for the public network. See
-	// docs/internal/REPRAM-2.1-Spec.md. This replaces the pre-2.1
+	// docs/REPRAM-2.1-Spec.md. This replaces the pre-2.1
 	// unsigned DNS path; there is no fallback by design.
 	var rootList *trust.SignedList
 	if network == "public" && len(bootstrapNodes) == 0 {
@@ -113,7 +113,7 @@ func main() {
 	// return 403. Private-network deployments are never roots.
 	applyRootStatus := func(list *trust.SignedList) {
 		omegaLastRefreshGauge.SetToCurrentTime()
-		selfAdvertised := fmt.Sprintf("%s:%d", address, gossipPort)
+		selfAdvertised := fmt.Sprintf("%s:%d", address, httpPort)
 		isRoot := false
 		for _, n := range list.Nodes {
 			if n == selfAdvertised {
@@ -133,7 +133,7 @@ func main() {
 	}
 	if rootList != nil {
 		applyRootStatus(rootList)
-		selfAdvertised := fmt.Sprintf("%s:%d", address, gossipPort)
+		selfAdvertised := fmt.Sprintf("%s:%d", address, httpPort)
 		if clusterNode.IsRoot() {
 			logging.Info("Initial root status: bootstrap root (advertised as %s)", selfAdvertised)
 		} else {
