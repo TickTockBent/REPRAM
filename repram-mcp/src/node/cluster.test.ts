@@ -1144,3 +1144,73 @@ describe("ClusterNode isolation recovery", () => {
     expect(recovered).toBe(false);
   });
 });
+
+// --- #85: review-driven follow-ups (PR #107) ---
+
+describe("ClusterNode isolation recovery — single-flight + timer", () => {
+  // #107 review (suggestion 1): the setInterval tick can fire while a
+  // previous async re-bootstrap is still in flight. Without single-flight
+  // guard that produces duplicate addPeer calls. This test verifies
+  // overlapping calls return false and don't double-invoke the seed fn.
+  it("guards against overlapping recovery cycles (single-flight)", async () => {
+    const node = new ClusterNode(defaultOptions(), silentLogger());
+    node.setTransport(createMockTransport().transport);
+
+    let pending: ((peers: NodeInfo[]) => void) | null = null;
+    let calls = 0;
+    node.setRebootstrapFn(
+      () =>
+        new Promise<NodeInfo[]>((resolve) => {
+          calls += 1;
+          pending = resolve;
+        }),
+    );
+
+    const first = node.checkIsolationAndRecover();
+    // Yield so the first call has time to set this.recovering = true.
+    await Promise.resolve();
+    const second = await node.checkIsolationAndRecover();
+    expect(second).toBe(false);
+    expect(calls).toBe(1); // second call short-circuited
+
+    // Resolve the first call's pending promise; it should complete cleanly.
+    pending!([]);
+    await first;
+    expect(calls).toBe(1);
+  });
+
+  // #107 review (suggestion 3): exercise the timer-driven path via
+  // vitest fake timers. Verifies setInterval actually invokes recovery
+  // and stop() clears the timer.
+  it("invokes recovery on the setInterval tick and stops on .stop()", async () => {
+    vi.useFakeTimers();
+    const node = new ClusterNode(defaultOptions(), silentLogger());
+    node.setTransport(createMockTransport().transport);
+
+    let calls = 0;
+    node.setRebootstrapFn(async () => {
+      calls += 1;
+      return [];
+    });
+
+    node.start();
+
+    // No tick yet — start() shouldn't invoke recovery synchronously.
+    expect(calls).toBe(0);
+
+    // Advance one full interval; recovery should fire once.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(calls).toBe(1);
+
+    // Another interval, fire again.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(calls).toBe(2);
+
+    // stop() should clear the interval — further ticks no-op.
+    node.stop();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(calls).toBe(2);
+
+    vi.useRealTimers();
+  });
+});

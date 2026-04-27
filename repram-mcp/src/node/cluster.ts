@@ -80,6 +80,11 @@ export class ClusterNode {
   // for public networks, or the static REPRAM_PEERS list for private.
   private rebootstrapFn: (() => Promise<NodeInfo[]>) | null = null;
   private isolationTimer: ReturnType<typeof setInterval> | null = null;
+  // Single-flight guard for checkIsolationAndRecover. The async re-bootstrap
+  // call can take longer than the ISOLATION_RECOVERY_INTERVAL_MS tick on
+  // slow networks; without this flag a second tick would spawn a second
+  // concurrent recovery and produce duplicate addPeer calls.
+  private recovering = false;
 
   constructor(options: ClusterNodeOptions, logger: Logger) {
     const enclave = options.enclave || "default";
@@ -163,37 +168,45 @@ export class ClusterNode {
 
   /** One isolation-recovery cycle. Public so tests can drive recovery
    *  deterministically without timers. Returns true when re-bootstrap
-   *  attempted AND found at least one peer (#85, F5). */
+   *  attempted AND found at least one peer (#85, F5). Single-flight:
+   *  overlapping calls (e.g., from a slow re-bootstrap that outlasts a
+   *  timer tick) return false without launching a duplicate. */
   async checkIsolationAndRecover(): Promise<boolean> {
+    if (this.recovering) return false;
     if (this.gossip.getPeers().length > 0) return false;
     if (!this.rebootstrapFn) return false;
 
-    this.logger.warn(
-      `[${this.localNode.id}] Isolated (0 peers) — re-bootstrapping`,
-    );
-    let discovered: NodeInfo[];
+    this.recovering = true;
     try {
-      discovered = await this.rebootstrapFn();
-    } catch (err) {
       this.logger.warn(
-        `[${this.localNode.id}] Re-bootstrap failed: ${(err as Error).message}`,
+        `[${this.localNode.id}] Isolated (0 peers) — re-bootstrapping`,
+      );
+      let discovered: NodeInfo[];
+      try {
+        discovered = await this.rebootstrapFn();
+      } catch (err) {
+        this.logger.warn(
+          `[${this.localNode.id}] Re-bootstrap failed: ${(err as Error).message}`,
+        );
+        return false;
+      }
+      for (const peer of discovered) {
+        this.gossip.addPeer(peer);
+      }
+      const after = this.gossip.getPeers().length;
+      if (after > 0) {
+        this.logger.info(
+          `[${this.localNode.id}] Re-bootstrap recovered ${after} peers`,
+        );
+        return true;
+      }
+      this.logger.warn(
+        `[${this.localNode.id}] Re-bootstrap completed but discovered no peers; will retry next cycle`,
       );
       return false;
+    } finally {
+      this.recovering = false;
     }
-    for (const peer of discovered) {
-      this.gossip.addPeer(peer);
-    }
-    const after = this.gossip.getPeers().length;
-    if (after > 0) {
-      this.logger.info(
-        `[${this.localNode.id}] Re-bootstrap recovered ${after} peers`,
-      );
-      return true;
-    }
-    this.logger.warn(
-      `[${this.localNode.id}] Re-bootstrap completed but discovered no peers; will retry next cycle`,
-    );
-    return false;
   }
 
   // --- Read operations ---

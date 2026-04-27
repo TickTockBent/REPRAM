@@ -113,9 +113,10 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
       );
     });
   } else if (seedPeers.length > 0) {
-    // Private / REPRAM_PEERS: re-bootstrap reuses the static seed list.
-    // Capture by closure so the goroutine sees the same slice we started
-    // with (#85, F5).
+    // Private / REPRAM_PEERS: re-bootstrap reuses the static seed list
+    // captured at startup. Operators who rotate seeds at runtime (e.g.,
+    // replacing a decommissioned seed) need to restart the node — there
+    // is no SIGHUP-style reload path today (#85, F5).
     const seedSnapshot = [...seedPeers];
     server.clusterNode.setRebootstrapFn(async () => {
       return await bootstrapFromPeers(
