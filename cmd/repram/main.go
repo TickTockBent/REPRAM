@@ -19,6 +19,7 @@ import (
 	"errors"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"repram/internal/cluster"
@@ -28,6 +29,19 @@ import (
 	"repram/internal/storage"
 	"repram/internal/trust"
 )
+
+// omegaLastRefreshGauge records the unix timestamp of the most recent
+// successful signed-list refresh. The burn-in dashboard plots
+// `time() - repram_omega_last_refresh_unix_seconds` to surface freshness.
+// Stays at zero on private-network deployments (refresher never runs).
+var omegaLastRefreshGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "repram_omega_last_refresh_unix_seconds",
+	Help: "Unix timestamp of the most recent successful omega root-list refresh (0 = never).",
+})
+
+func init() {
+	prometheus.MustRegister(omegaLastRefreshGauge)
+}
 
 func main() {
 	logging.Init()
@@ -98,6 +112,7 @@ func main() {
 	// appears in the signed list. Roots answer /v1/bootstrap; non-roots
 	// return 403. Private-network deployments are never roots.
 	applyRootStatus := func(list *trust.SignedList) {
+		omegaLastRefreshGauge.SetToCurrentTime()
 		selfAdvertised := fmt.Sprintf("%s:%d", address, gossipPort)
 		isRoot := false
 		for _, n := range list.Nodes {

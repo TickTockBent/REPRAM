@@ -19,6 +19,7 @@ import { OMEGA_PUBKEY } from "./node/trust/omega.js";
 import { Refresher } from "./node/trust/refresher.js";
 import { resolveCacheDir } from "./node/trust/cache.js";
 import { connectToSubstrate, type WebSocketConnection } from "./node/ws-transport.js";
+import { enableProcessMetrics, gossipMetrics, setOmegaLastRefreshNow } from "./node/metrics.js";
 
 const isStandalone =
   process.env.REPRAM_MODE === "standalone" ||
@@ -57,6 +58,7 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
   // a verified signed list participate.
   if (rootList) {
     const applyRootStatus = (list: SignedList) => {
+      setOmegaLastRefreshNow();
       const selfAdvertised = `${config.address}:${config.gossipPort}`;
       const wasRoot = server.clusterNode.isRoot();
       const isRoot = list.nodes.includes(selfAdvertised);
@@ -196,7 +198,9 @@ async function runStandalone(): Promise<void> {
   const config = loadConfig(false); // standalone defaults
   const logger = new Logger(config.logLevel);
 
+  enableProcessMetrics();
   embeddedServer = new HTTPServer(config, logger);
+  embeddedServer.clusterNode.gossip.enableMetrics(gossipMetrics);
 
   const transport = new HTTPTransport(
     embeddedServer.clusterNode.localNode,
