@@ -333,4 +333,125 @@ describe("SecurityMiddleware", () => {
     expect(res._headers.get("x-content-type-options")).toBe("nosniff");
     mw.close();
   });
+
+  // #86 (F6): peer endpoints (gossip + bootstrap) bypass the per-IP rate
+  // limiter so authenticated peer traffic at cluster volumes doesn't get
+  // 429'd. HMAC verification (or operator-chosen open mode) is the auth
+  // layer; client-tier rate limiting was the wrong enforcement here.
+  it("bypasses rate limit on /v1/gossip/message", () => {
+    const mw = new SecurityMiddleware({
+      rateLimit: 1,
+      burst: 1,
+      maxRequestSize: 10_000,
+      trustProxy: false,
+    });
+
+    const req = mockRequest({
+      socket: { remoteAddress: "1.2.3.4" } as any,
+      url: "/v1/gossip/message",
+      method: "POST",
+    });
+
+    // Hammer past burst — every request should pass.
+    for (let i = 0; i < 50; i++) {
+      const res = mockResponse();
+      const ip = mw.check(req, res);
+      expect(ip, `request ${i}`).toBe("1.2.3.4");
+      expect(res.writtenHead).toBeNull();
+    }
+    mw.close();
+  });
+
+  it("bypasses rate limit on /v1/bootstrap", () => {
+    const mw = new SecurityMiddleware({
+      rateLimit: 1,
+      burst: 1,
+      maxRequestSize: 10_000,
+      trustProxy: false,
+    });
+
+    const req = mockRequest({
+      socket: { remoteAddress: "1.2.3.4" } as any,
+      url: "/v1/bootstrap",
+      method: "POST",
+    });
+
+    for (let i = 0; i < 50; i++) {
+      const res = mockResponse();
+      const ip = mw.check(req, res);
+      expect(ip, `request ${i}`).toBe("1.2.3.4");
+      expect(res.writtenHead).toBeNull();
+    }
+    mw.close();
+  });
+
+  // #86 review: guard against a refactor that widens the bypass to
+  // other security checks. Body-size and scanner detection must still
+  // fire on peer endpoints.
+  it("still enforces body size on peer endpoints", () => {
+    const mw = new SecurityMiddleware({
+      rateLimit: 1000,
+      burst: 1000,
+      maxRequestSize: 1024,
+      trustProxy: false,
+    });
+
+    for (const path of ["/v1/gossip/message", "/v1/bootstrap"]) {
+      const req = mockRequest({
+        socket: { remoteAddress: "1.2.3.4" } as any,
+        url: path,
+        method: "POST",
+        headers: { "content-length": "4096" },
+      });
+      const res = mockResponse();
+      expect(mw.check(req, res), path).toBeNull();
+      expect(res.writtenHead?.status, path).toBe(413);
+    }
+    mw.close();
+  });
+
+  it("still enforces scanner detection on peer endpoints", () => {
+    const mw = new SecurityMiddleware({
+      rateLimit: 1000,
+      burst: 1000,
+      maxRequestSize: 1024 * 1024,
+      trustProxy: false,
+    });
+
+    for (const path of ["/v1/gossip/message", "/v1/bootstrap"]) {
+      const req = mockRequest({
+        socket: { remoteAddress: "1.2.3.4" } as any,
+        url: path,
+        method: "POST",
+        headers: { "user-agent": "sqlmap/1.5" },
+      });
+      const res = mockResponse();
+      expect(mw.check(req, res), path).toBeNull();
+      expect(res.writtenHead?.status, path).toBe(403);
+    }
+    mw.close();
+  });
+
+  it("still rate-limits client endpoints when peer-bypass is in effect", () => {
+    const mw = new SecurityMiddleware({
+      rateLimit: 1,
+      burst: 1,
+      maxRequestSize: 10_000,
+      trustProxy: false,
+    });
+
+    const clientReq = mockRequest({
+      socket: { remoteAddress: "1.2.3.4" } as any,
+      url: "/v1/data/foo",
+      method: "PUT",
+    });
+
+    // First client request passes; second is rate-limited.
+    const res1 = mockResponse();
+    expect(mw.check(clientReq, res1)).toBe("1.2.3.4");
+    const res2 = mockResponse();
+    expect(mw.check(clientReq, res2)).toBeNull();
+    expect(res2.writtenHead?.status).toBe(429);
+    mw.close();
+  });
 });

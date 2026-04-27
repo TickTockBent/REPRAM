@@ -160,17 +160,36 @@ func NewSecurityMiddleware(rateLimit, burst int, maxRequestSize int64, trustProx
 	}
 }
 
+// peerEndpoints are inter-cluster paths that the per-IP rate limiter must
+// not apply to. Two reasons:
+//   1. When REPRAM_CLUSTER_SECRET is set, these endpoints are HMAC-gated
+//      already (verifyGossipSignature). Authenticated peer traffic at
+//      cluster volumes legitimately exceeds the client-tier per-IP rate.
+//   2. In open mode, the operator has explicitly accepted no-auth on the
+//      cluster plane — applying a client-tier rate limit there is
+//      inconsistent with that trust model.
+// Either way, applying the client rate limit here was the F6 burn-in
+// symptom: peer-to-peer gossip got 429'd and the cluster broke at modest
+// volumes (#86). Other security checks (size, scanner, headers) still
+// apply to peer endpoints.
+var peerEndpoints = map[string]bool{
+	"/v1/gossip/message": true,
+	"/v1/bootstrap":      true,
+}
+
 func (sm *SecurityMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Apply security headers
 		sm.applySecurityHeaders(w)
-		
-		// Check rate limiting
+
+		// Check rate limiting (peer endpoints exempt — see peerEndpoints comment)
 		clientIP := sm.getClientIP(r)
-		if !sm.rateLimiter.Allow(clientIP) {
-			sm.metrics.rateLimitedRequests.Inc()
-			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-			return
+		if !peerEndpoints[r.URL.Path] {
+			if !sm.rateLimiter.Allow(clientIP) {
+				sm.metrics.rateLimitedRequests.Inc()
+				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+				return
+			}
 		}
 		
 		// Check request size
