@@ -418,7 +418,14 @@ export class TreeManager {
     });
 
     // Handle parent disconnection (graceful close after goodbye, or
-    // ungraceful TCP drop / crash / NAT rebind). Identity-aware as above.
+    // ungraceful TCP drop / crash / NAT rebind). The `!== conn` guard
+    // catches two cases:
+    //   1. Stale handler: this conn was replaced by a successful reattach
+    //      to a new parent — parentConnection now points at the new conn.
+    //   2. Post-goodbye close: the goodbye handler already nulled
+    //      parentConnection, so `null !== conn` short-circuits triggering
+    //      a duplicate reattach (the single-flight flag would block it
+    //      anyway, but this avoids the spurious entry).
     // For ungraceful disconnects there are no fresh goodbye-supplied
     // alternatives, so triggerReattach falls through to cached topology
     // and then the seed list (#108).
@@ -558,6 +565,20 @@ export class TreeManager {
         );
         const welcome = await this.attach(conn);
         if (welcome) {
+          // Race guard: the conn could have dropped between welcome
+          // receipt and now. If its close handler already fired, it
+          // tried to triggerReattach but was blocked by the single-flight
+          // `reattaching` flag (we hold it). Returning true here would
+          // mark the cycle a success and exit the outer loop, leaving
+          // the node parentless with no further retry. Detect via
+          // identity + isClosed and treat as a per-alternative failure
+          // so the outer loop continues.
+          if (this.parentConnection !== conn || conn.isClosed) {
+            this.logger.warn(
+              `Reattachment to ${alt.id} dropped before activation; trying next`,
+            );
+            continue;
+          }
           this.logger.info(`Reattached to ${alt.id} — gossip resumed`);
           this.onReattachCallback?.(conn);
           conn.startHeartbeat();
