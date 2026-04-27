@@ -72,6 +72,14 @@ func signTestList(t *testing.T, priv ed25519.PrivateKey, expires int64, nodes []
 // delegates to ClusterNode.HandleBootstrap. The harness in
 // integration_test.go skips the gate (it's used by tests where IsRoot is
 // not a concept), so this dedicated handler exists for the omega tests.
+//
+// Intentional difference from production: the real handler gates on
+// `network == "public" && !IsRoot()`, allowing private-network nodes
+// to answer bootstrap unconditionally. Every node in these tests is
+// in omega-resolution mode (effectively public), so the network guard
+// is unnecessary; collapsing it to `!IsRoot()` keeps the test handler
+// minimal. A future omega-test that exercises the private-network path
+// should reinstate the network guard.
 func makeOmegaBootstrapHandler(cn *ClusterNode) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !cn.IsRoot() {
@@ -164,12 +172,23 @@ func buildResolver(bootstrapName, omegaTarget, signedListRecord string) *stubTXT
 //     list's Nodes) succeeds.
 //  4. After convergence, every node has the other two as peers.
 //
-// This is the test that would have caught F1/F2 instantly: if the spec or
-// the bootstrap caller used the wrong port, FetchSigned would return
-// addresses that don't match what the testNodes are listening on, and the
-// Bootstrap call would fail. The fact that all the burn-in F-findings
-// went undetected until live cluster startup is exactly because no test
-// before this exercised this composition.
+// What this test catches and what it doesn't, re F1/F2:
+//
+//   - It catches spec-level regressions (signed-list addresses pointing
+//     at the wrong endpoint shape — e.g. host:gossip-port when the
+//     binary expects host:http-port). The whole composition would fail
+//     to converge.
+//   - It does NOT catch a code-level port-variable swap in main.go,
+//     because the testNode harness uses the same ephemeral port for
+//     both gossipPort and httpPort. If someone changed `selfAdvertised`
+//     in main.go from `httpPort` back to `gossipPort`, this test would
+//     still pass because the two are numerically equal in the harness.
+//     A separate test that constructs nodes with distinct gossip/http
+//     ports would be required to lock that down.
+//
+// Even with that caveat, this test exercises composition no prior test
+// did — that's why the burn-in F-findings went undetected until live
+// startup.
 func TestOmegaBootstrap_RootsConvergeAndNonRootJoins(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
