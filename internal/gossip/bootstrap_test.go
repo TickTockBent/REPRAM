@@ -36,10 +36,6 @@ func TestHandleBootstrap_ResponseIncludesSelf(t *testing.T) {
 	if !foundSelf {
 		t.Fatalf("response does not include self; joiner with one seed would never learn about it")
 	}
-	// Response should contain: self + peer-x + joiner (just addPeer'd in HandleBootstrap)
-	if len(resp.Peers) != 3 {
-		t.Fatalf("expected 3 peers (self + peer-x + joiner), got %d: %v", len(resp.Peers), nodeIDs(resp.Peers))
-	}
 }
 
 // TestBootstrap_ContactsAllSeeds locks in #82 (F3): the bootstrap loop

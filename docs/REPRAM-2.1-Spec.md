@@ -113,7 +113,7 @@ On startup, every node operating on the public network (i.e., `REPRAM_NETWORK=pu
 4. **Verify expiration.** If `exp` is in the past, reject. Refetch in case DNS caching served a stale record; if still expired, fail startup with a clear error. An expired signed list indicates the operator has stopped publishing updates or the network is in a compromised state; either way the node should not proceed.
 5. **Verify signature.** Reconstruct the canonical payload, verify the Ed25519 signature against the baked-in `OmegaPubkey`. If verification fails, reject.
 6. **Cache the verified root list** in memory. Persist to disk (e.g., `~/.repram/cache/root-list.json`) so subsequent restarts have a fallback if DNS is unavailable.
-7. **Determine root status.** Compare the node's own advertised address (the `REPRAM_ADDRESS:REPRAM_GOSSIP_PORT` it will present to other nodes) against the verified `nodes` list. If it appears, the node marks itself as a root and will answer bootstrap requests. Otherwise, it operates as a normal node that consumes bootstrap from roots.
+7. **Determine root status.** Compare the node's own advertised address (`REPRAM_ADDRESS:REPRAM_HTTP_PORT` — see the `nodes` field description above for why http_port is the canonical form) against the verified `nodes` list. If it appears, the node marks itself as a root and will answer bootstrap requests. Otherwise, it operates as a normal node that consumes bootstrap from roots.
 8. **Bootstrap normally.** Use the verified root list as the seed peer list for the existing bootstrap handshake. The existing `Bootstrap()` logic in `internal/gossip/bootstrap.go` is unchanged below this point.
 
 ### DNS Failure and Cache Fallback
