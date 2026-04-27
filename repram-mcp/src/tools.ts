@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import type { RepramClientInterface } from "./client.js";
 
 export interface ToolDefinition {
@@ -99,7 +99,7 @@ export async function handleToolCall(
     case "repram_store": {
       const data = args.data as string;
       const ttlSeconds = (args.ttl_seconds as number) ?? 3600;
-      const key = (args.key as string) ?? uuidv4();
+      const key = (args.key as string) ?? randomUUID();
 
       const result = await client.store(key, data, ttlSeconds);
 
