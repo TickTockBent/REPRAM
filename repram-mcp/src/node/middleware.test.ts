@@ -385,6 +385,53 @@ describe("SecurityMiddleware", () => {
     mw.close();
   });
 
+  // #86 review: guard against a refactor that widens the bypass to
+  // other security checks. Body-size and scanner detection must still
+  // fire on peer endpoints.
+  it("still enforces body size on peer endpoints", () => {
+    const mw = new SecurityMiddleware({
+      rateLimit: 1000,
+      burst: 1000,
+      maxRequestSize: 1024,
+      trustProxy: false,
+    });
+
+    for (const path of ["/v1/gossip/message", "/v1/bootstrap"]) {
+      const req = mockRequest({
+        socket: { remoteAddress: "1.2.3.4" } as any,
+        url: path,
+        method: "POST",
+        headers: { "content-length": "4096" },
+      });
+      const res = mockResponse();
+      expect(mw.check(req, res), path).toBeNull();
+      expect(res.writtenHead?.status, path).toBe(413);
+    }
+    mw.close();
+  });
+
+  it("still enforces scanner detection on peer endpoints", () => {
+    const mw = new SecurityMiddleware({
+      rateLimit: 1000,
+      burst: 1000,
+      maxRequestSize: 1024 * 1024,
+      trustProxy: false,
+    });
+
+    for (const path of ["/v1/gossip/message", "/v1/bootstrap"]) {
+      const req = mockRequest({
+        socket: { remoteAddress: "1.2.3.4" } as any,
+        url: path,
+        method: "POST",
+        headers: { "user-agent": "sqlmap/1.5" },
+      });
+      const res = mockResponse();
+      expect(mw.check(req, res), path).toBeNull();
+      expect(res.writtenHead?.status, path).toBe(403);
+    }
+    mw.close();
+  });
+
   it("still rate-limits client endpoints when peer-bypass is in effect", () => {
     const mw = new SecurityMiddleware({
       rateLimit: 1,

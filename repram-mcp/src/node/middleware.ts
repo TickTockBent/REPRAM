@@ -154,6 +154,16 @@ export function applyCorsHeaders(
 
 // ─── Composed SecurityMiddleware ─────────────────────────────────────
 
+/**
+ * Inter-cluster endpoints exempt from the per-IP rate limiter. Mirrors
+ * the Go `peerEndpoints` map (`internal/node/middleware.go`). When a
+ * third peer endpoint is added, update both sides.
+ */
+const PEER_ENDPOINTS: ReadonlySet<string> = new Set([
+  "/v1/gossip/message",
+  "/v1/bootstrap",
+]);
+
 export interface SecurityMiddlewareOptions {
   rateLimit: number;
   burst: number;
@@ -194,9 +204,7 @@ export class SecurityMiddleware {
     const clientIP = getClientIP(req, this.trustProxy);
 
     const path = (req.url ?? "").split("?")[0];
-    const isPeerEndpoint = path === "/v1/gossip/message" || path === "/v1/bootstrap";
-
-    if (!isPeerEndpoint && !this.rateLimiter.allow(clientIP)) {
+    if (!PEER_ENDPOINTS.has(path) && !this.rateLimiter.allow(clientIP)) {
       res.writeHead(429, { "Content-Type": "text/plain" });
       res.end("Rate limit exceeded");
       return null;

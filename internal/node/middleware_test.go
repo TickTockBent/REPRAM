@@ -266,6 +266,55 @@ func TestPeerEndpointsBypassRateLimit(t *testing.T) {
 	}
 }
 
+// TestPeerEndpointsSizeCheckStillApplies guards against a refactor that
+// accidentally widens the bypass to other security checks. The fix
+// should exempt peer endpoints from rate-limiting only — body-size,
+// scanner detection, and security headers must continue to fire (#86).
+func TestPeerEndpointsSizeCheckStillApplies(t *testing.T) {
+	sm := NewSecurityMiddleware(1000, 1000, 1024 /* 1 KiB */, false)
+	defer sm.Close()
+
+	noopHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	wrapped := sm.Middleware(noopHandler)
+
+	for _, path := range []string{"/v1/gossip/message", "/v1/bootstrap"} {
+		req := httptest.NewRequest("POST", path, nil)
+		req.RemoteAddr = "10.0.0.1:1234"
+		req.ContentLength = 4096 // 4 KiB > 1 KiB max
+		w := httptest.NewRecorder()
+		wrapped.ServeHTTP(w, req)
+		if w.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("%s: expected 413 for oversized body, got %d", path, w.Code)
+		}
+	}
+}
+
+// TestPeerEndpointsScannerCheckStillApplies — same shape as the size
+// check guard. Scanner detection on peer endpoints catches a malicious
+// peer (or compromised secret) using a known scanner UA.
+func TestPeerEndpointsScannerCheckStillApplies(t *testing.T) {
+	sm := NewSecurityMiddleware(1000, 1000, 1024*1024, false)
+	defer sm.Close()
+
+	noopHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	wrapped := sm.Middleware(noopHandler)
+
+	for _, path := range []string{"/v1/gossip/message", "/v1/bootstrap"} {
+		req := httptest.NewRequest("POST", path, nil)
+		req.RemoteAddr = "10.0.0.1:1234"
+		req.Header.Set("User-Agent", "sqlmap/1.5")
+		w := httptest.NewRecorder()
+		wrapped.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("%s: expected 403 for scanner UA, got %d", path, w.Code)
+		}
+	}
+}
+
 // TestClientEndpointsStillRateLimited verifies the bypass is scoped
 // strictly to peer endpoints — client traffic still hits the limiter.
 func TestClientEndpointsStillRateLimited(t *testing.T) {
