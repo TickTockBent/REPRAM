@@ -282,6 +282,15 @@ export class HTTPServer {
     const dataMatch = path.match(/^\/v1\/data\/(.+)$/);
     if (dataMatch) {
       const key = decodeURIComponent(dataMatch[1]);
+      // Keys are opaque, single-segment strings (see docs/patterns.md).
+      // Reject anything containing '/' so TS and Go agree on the wire —
+      // pre-fix, TS silently stored multi-segment keys while Go 404'd
+      // the request because gorilla/mux normalized %2F to / before
+      // routing (#91).
+      if (key.includes("/")) {
+        sendJSON(res, 400, { error: "key must not contain '/'" });
+        return;
+      }
       if (method === "PUT") {
         this.putHandler(req, res, key);
         return;

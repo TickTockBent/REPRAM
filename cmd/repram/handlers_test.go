@@ -627,3 +627,54 @@ func TestKeysSortedOrder(t *testing.T) {
 		t.Fatalf("keys not sorted: %v", keys)
 	}
 }
+
+// --- #91: keys must not contain '/' ---
+
+// TestSlashKeyReturns400_PUT locks in #91: a request to PUT /v1/data/foo%2Fbar
+// must return 400, not gorilla/mux's silent 404 from the route mismatch.
+func TestSlashKeyReturns400_PUT(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	// Client sends an encoded slash; gorilla/mux decodes it before routing,
+	// so the path becomes /v1/data/foo/bar and falls to NotFoundHandler.
+	req := httptest.NewRequest("PUT", "/v1/data/foo%2Fbar", strings.NewReader("data"))
+	w := httptest.NewRecorder()
+	server.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "key must not contain") {
+		t.Fatalf("expected error message about keys with '/', got: %s", w.Body.String())
+	}
+}
+
+// TestSlashKeyReturns400_GET mirrors the PUT test for read paths.
+func TestSlashKeyReturns400_GET(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest("GET", "/v1/data/foo%2Fbar", nil)
+	w := httptest.NewRecorder()
+	server.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestUnknownPathStill404 verifies the NotFoundHandler only converts
+// /v1/data/... 404s into 400s — anything else keeps the standard 404.
+func TestUnknownPathStill404(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest("GET", "/v1/nonexistent/route", nil)
+	w := httptest.NewRecorder()
+	server.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown route, got %d", w.Code)
+	}
+}

@@ -332,7 +332,24 @@ func (s *HTTPServer) Router() *mux.Router {
 	r.HandleFunc("/v1/gossip/message", s.gossipHandler).Methods("POST", "OPTIONS")
 	r.HandleFunc("/v1/bootstrap", s.bootstrapHandler).Methods("POST", "OPTIONS")
 
+	r.NotFoundHandler = http.HandlerFunc(s.notFoundHandler)
+
 	return r
+}
+
+// notFoundHandler turns the implicit 404 from gorilla/mux on slash-containing
+// keys into an explicit 400 with a useful message. Keys are opaque, single-
+// segment strings (see docs/patterns.md); a request to `/v1/data/foo%2Fbar`
+// gets the path decoded by gorilla/mux to `/v1/data/foo/bar` before route
+// matching, which fails the `{key}` pattern. Without this handler clients
+// see a generic 404 and can't tell whether the key expired or was malformed
+// at the wire (#91).
+func (s *HTTPServer) notFoundHandler(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/v1/data/") {
+		http.Error(w, "key must not contain '/'", http.StatusBadRequest)
+		return
+	}
+	http.NotFound(w, r)
 }
 
 func (s *HTTPServer) healthHandler(w http.ResponseWriter, r *http.Request) {

@@ -201,6 +201,25 @@ describe("GET handler", () => {
   });
 });
 
+// #91: keys must not contain '/'. Pre-fix, TS silently accepted and stored
+// multi-segment keys while Go 404'd them — a wire-compat divergence.
+// Both impls now return 400.
+describe("slash-key rejection (#91)", () => {
+  it("PUT /v1/data/foo%2Fbar returns 400", async () => {
+    const res = await request(server, "PUT", "/v1/data/foo%2Fbar", {
+      body: "data",
+      headers: { "X-TTL": "3600" },
+    });
+    expect(res.status).toBe(400);
+    expect(res.body).toContain("must not contain");
+  });
+
+  it("GET /v1/data/foo%2Fbar returns 400", async () => {
+    const res = await request(server, "GET", "/v1/data/foo%2Fbar");
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("HEAD handler", () => {
   it("returns headers without body", async () => {
     await request(server, "PUT", "/v1/data/head-test", {

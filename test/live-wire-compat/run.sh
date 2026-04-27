@@ -312,6 +312,28 @@ assert_contains "ts-node1 /v1/status includes uptime" "uptime" "$ts_status"
 assert_contains "ts-node1 /v1/status includes memory" "rss" "$ts_status"
 echo ""
 
+# ── 11. Slash-key rejection (#91) ────────────────────────────────────
+# Pre-fix: Go 404'd via gorilla/mux route mismatch on %2F-decoded paths,
+# while TS silently accepted and stored multi-segment keys. Both impls
+# now return 400 for any request whose decoded key contains '/'.
+
+bold "11. Slash-key rejection (#91)"
+
+go_put_status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "X-TTL: 300" \
+  -d "should-be-rejected" "$GO1/v1/data/foo%2Fbar")
+assert_status "go-node1 rejects PUT with encoded-slash key" "400" "$go_put_status"
+
+ts_put_status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "X-TTL: 300" \
+  -d "should-be-rejected" "$TS1/v1/data/foo%2Fbar")
+assert_status "ts-node1 rejects PUT with encoded-slash key" "400" "$ts_put_status"
+
+go_get_status=$(curl -s -o /dev/null -w '%{http_code}' "$GO1/v1/data/foo%2Fbar")
+assert_status "go-node1 rejects GET with encoded-slash key" "400" "$go_get_status"
+
+ts_get_status=$(curl -s -o /dev/null -w '%{http_code}' "$TS1/v1/data/foo%2Fbar")
+assert_status "ts-node1 rejects GET with encoded-slash key" "400" "$ts_get_status"
+echo ""
+
 # ═══════════════════════════════════════════════════════════════════════
 # RESULTS
 # ═══════════════════════════════════════════════════════════════════════
