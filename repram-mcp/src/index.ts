@@ -112,6 +112,11 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
         logger,
       );
     });
+
+    // Same source for the WS reattach loop: when a transient loses its
+    // parent ungracefully and exhausts cached alternatives, fresh roots
+    // come from the omega refresher's current list (#108).
+    server.treeManager.setSeedProvider(() => refresher.currentList.nodes);
   } else if (seedPeers.length > 0) {
     // Private / REPRAM_PEERS: re-bootstrap reuses the static seed list
     // captured at startup. Operators who rotate seeds at runtime (e.g.,
@@ -126,6 +131,9 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
         logger,
       );
     });
+
+    // Same snapshot for the WS reattach loop (#108).
+    server.treeManager.setSeedProvider(() => seedSnapshot);
   }
 
   if (seedPeers.length === 0) return;

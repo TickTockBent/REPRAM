@@ -5,6 +5,7 @@ import {
   TreeManager,
   DEFAULT_MAX_CHILDREN,
   type InboundCapability,
+  type AlternativeParent,
 } from "./tree.js";
 import {
   WebSocketConnection,
@@ -560,6 +561,208 @@ describe("TreeManager", () => {
       substrateTree.stop();
       transientTree.stop();
       await pair.cleanup();
+    });
+  });
+
+  // #108: ungraceful WebSocket disconnect should trigger reattach via the
+  // cached topology + seed list, not strand the transient until restart.
+  describe("ungraceful disconnect reattach (#108)", () => {
+    it("captures welcome.topology as cached alternatives, excluding self", async () => {
+      const pair = await createPair();
+
+      const substrateNode = makeNodeInfo("substrate-1");
+      const substrateGossip = new GossipProtocol(substrateNode, 3, silentLogger());
+      // Substrate knows about a couple of other peers — these end up in the
+      // welcome topology and should be cached as reattach alternatives.
+      substrateGossip.addPeer(makeNodeInfo("peer-a", { httpPort: 8001 }));
+      substrateGossip.addPeer(makeNodeInfo("peer-b", { httpPort: 8002 }));
+      const substrateTree = makeTreeManager(substrateNode, substrateGossip);
+
+      pair.serverConn.on("attachment", (msg: AttachmentMessage) => {
+        if (msg.type === "hello") {
+          substrateTree.handleHello(pair.serverConn, msg.payload as HelloPayload);
+        }
+      });
+
+      const transientNode = makeNodeInfo("transient-1", { address: "10.0.0.1" });
+      const transientGossip = new GossipProtocol(transientNode, 3, silentLogger());
+      const transientTree = makeTreeManager(transientNode, transientGossip, { inbound: "false" });
+
+      const welcome = await transientTree.attach(pair.clientConn);
+      expect(welcome).not.toBeNull();
+
+      // Inspect cached alternatives. Should include substrate-1, peer-a,
+      // peer-b — but NOT transient-1 (self).
+      const cached = (transientTree as unknown as { lastKnownAlternatives: AlternativeParent[] })
+        .lastKnownAlternatives;
+      const ids = cached.map((a) => a.id).sort();
+      expect(ids).toEqual(["peer-a", "peer-b", "substrate-1"]);
+
+      substrateTree.stop();
+      transientTree.stop();
+      await pair.cleanup();
+    });
+
+    it("parseSeedAddress handles host:port and rejects malformed input", () => {
+      const tree = makeTreeManager(makeNodeInfo("t-1"), new GossipProtocol(makeNodeInfo("t-1"), 3, silentLogger()));
+      const parse = (s: string) =>
+        (tree as unknown as { parseSeedAddress: (s: string) => AlternativeParent | null })
+          .parseSeedAddress(s);
+
+      expect(parse("10.0.0.5:8080")).toEqual({
+        id: "seed-10.0.0.5:8080",
+        address: "10.0.0.5",
+        http_port: 8080,
+      });
+      // IPv6-style is split on lastIndexOf(":") so it works for [::1]:8080-style only;
+      // bare "::1:8080" would parse address="::1" port=8080. Acceptable for now.
+      expect(parse("host.example:443")).toEqual({
+        id: "seed-host.example:443",
+        address: "host.example",
+        http_port: 443,
+      });
+      // Malformed
+      expect(parse("no-colon")).toBeNull();
+      expect(parse(":8080")).toBeNull();
+      expect(parse("host:")).toBeNull();
+      expect(parse("host:notaport")).toBeNull();
+      expect(parse("host:0")).toBeNull();
+      expect(parse("host:99999")).toBeNull();
+
+      tree.stop();
+    });
+
+    it("close handler on a stale connection does not clobber the active parent", async () => {
+      const pairA = await createPair();
+      const pairB = await createPair();
+
+      const substrateA = makeNodeInfo("substrate-a");
+      const substrateAGossip = new GossipProtocol(substrateA, 3, silentLogger());
+      const substrateATree = makeTreeManager(substrateA, substrateAGossip);
+      pairA.serverConn.on("attachment", (msg: AttachmentMessage) => {
+        if (msg.type === "hello") {
+          substrateATree.handleHello(pairA.serverConn, msg.payload as HelloPayload);
+        }
+      });
+
+      const substrateB = makeNodeInfo("substrate-b");
+      const substrateBGossip = new GossipProtocol(substrateB, 3, silentLogger());
+      const substrateBTree = makeTreeManager(substrateB, substrateBGossip);
+      pairB.serverConn.on("attachment", (msg: AttachmentMessage) => {
+        if (msg.type === "hello") {
+          substrateBTree.handleHello(pairB.serverConn, msg.payload as HelloPayload);
+        }
+      });
+
+      const transient = makeNodeInfo("transient-1", { address: "10.0.0.1" });
+      const transientGossip = new GossipProtocol(transient, 3, silentLogger());
+      const transientTree = makeTreeManager(transient, transientGossip, { inbound: "false" });
+
+      // Attach to A.
+      const welcomeA = await transientTree.attach(pairA.clientConn);
+      expect(welcomeA).not.toBeNull();
+      expect(transientTree.parent).toBe(pairA.clientConn);
+
+      // Now attach to B (simulating a successful reattach to a new parent).
+      const welcomeB = await transientTree.attach(pairB.clientConn);
+      expect(welcomeB).not.toBeNull();
+      expect(transientTree.parent).toBe(pairB.clientConn);
+
+      // Close the OLD pairA connection. Its close handler must not
+      // clobber the current parent (B) — the identity check guards this.
+      pairA.clientConn.close();
+      // Give the close event a chance to fire.
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(transientTree.parent).toBe(pairB.clientConn);
+
+      substrateATree.stop();
+      substrateBTree.stop();
+      transientTree.stop();
+      await pairA.cleanup();
+      await pairB.cleanup();
+    });
+
+    it("ungraceful close on the active parent triggers the reattach loop", async () => {
+      const pair = await createPair();
+
+      const substrateNode = makeNodeInfo("substrate-1");
+      const substrateGossip = new GossipProtocol(substrateNode, 3, silentLogger());
+      const substrateTree = makeTreeManager(substrateNode, substrateGossip);
+      pair.serverConn.on("attachment", (msg: AttachmentMessage) => {
+        if (msg.type === "hello") {
+          substrateTree.handleHello(pair.serverConn, msg.payload as HelloPayload);
+        }
+      });
+
+      const transient = makeNodeInfo("transient-1", { address: "10.0.0.1" });
+      const transientGossip = new GossipProtocol(transient, 3, silentLogger());
+      const transientTree = makeTreeManager(transient, transientGossip, { inbound: "false" });
+
+      // Wire a seedProvider that records calls. The reattach loop walks
+      // cached topology first; substrate-1 is the only entry there and
+      // its address is the test pair's port — when we close pair.clientConn
+      // the substrate is still listening, so reattach to it would actually
+      // succeed. To force fall-through to the seed layer, replace cached
+      // alternatives with an unreachable address after attach.
+      let seedCalls = 0;
+      transientTree.setSeedProvider(() => {
+        seedCalls++;
+        return []; // empty seed list — loop will sleep then retry
+      });
+
+      const welcome = await transientTree.attach(pair.clientConn);
+      expect(welcome).not.toBeNull();
+
+      // Force cached alternatives to a single unreachable entry so the
+      // cached layer fails fast (5s timeout) and the loop falls through
+      // to the seed provider.
+      (transientTree as unknown as { lastKnownAlternatives: AlternativeParent[] })
+        .lastKnownAlternatives = [
+        { id: "ghost", address: "127.0.0.1", http_port: 1, enclave: "default" },
+      ];
+
+      // Close ungracefully — no goodbye sent.
+      pair.clientConn.close();
+
+      // Poll briefly for the seed provider to be hit. The cached entry
+      // (port 1) refuses TCP fast (sub-second), then the loop reaches
+      // the seed layer.
+      const deadline = Date.now() + 8_000;
+      while (seedCalls === 0 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(seedCalls).toBeGreaterThan(0);
+
+      // stop() must wake the reattach loop's backoff sleep.
+      substrateTree.stop();
+      transientTree.stop();
+      await pair.cleanup();
+    }, 15_000);
+
+    it("stop() sets stopping flag and resolves pending sleeps promptly", async () => {
+      const tree = makeTreeManager(makeNodeInfo("t-1"), new GossipProtocol(makeNodeInfo("t-1"), 3, silentLogger()));
+      const internal = tree as unknown as {
+        stopping: boolean;
+        sleep: (ms: number) => Promise<void>;
+      };
+
+      expect(internal.stopping).toBe(false);
+      // Start a long sleep that would normally block the reattach loop
+      // for 60s. stop() should wake it within milliseconds via the
+      // stopSignal race.
+      const sleepPromise = internal.sleep(60_000);
+
+      tree.stop();
+      expect(internal.stopping).toBe(true);
+
+      // Race the sleep resolution against a short timeout to confirm
+      // it actually unblocks (and isn't relying on the 60s timer firing).
+      const result = await Promise.race([
+        sleepPromise.then(() => "resolved"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 100)),
+      ]);
+      expect(result).toBe("resolved");
     });
   });
 });
