@@ -30,6 +30,37 @@ import type { GossipProtocol } from "./gossip.js";
 /** Default maximum number of transient node attachments. */
 export const DEFAULT_MAX_CHILDREN = 100;
 
+/** Initial backoff before retrying a failed reattach cycle. */
+export const REATTACH_BACKOFF_INITIAL_MS = 5_000;
+
+/** Cap on exponential backoff between full reattach cycles. */
+export const REATTACH_BACKOFF_MAX_MS = 60_000;
+
+/**
+ * Per-attempt connect timeout for cached-topology alternatives. Shorter
+ * than seed-list timeout because cached entries are speculative — they
+ * may have left the substrate since the cache was taken (#108).
+ */
+export const CACHED_ALT_CONNECT_TIMEOUT_MS = 5_000;
+
+/** Per-attempt connect timeout for fresh seed-list alternatives. */
+export const SEED_CONNECT_TIMEOUT_MS = 10_000;
+
+/**
+ * Total deadline for the cached-topology layer of a single reattach cycle.
+ * Without this cap, a stale cache with N entries could waste
+ * N × CACHED_ALT_CONNECT_TIMEOUT_MS before falling through to fresh seeds.
+ */
+export const CACHED_LAYER_DEADLINE_MS = 30_000;
+
+/** Alternative-parent shape used for reattach (matches goodbye payload). */
+export interface AlternativeParent {
+  id: string;
+  address: string;
+  http_port: number;
+  enclave?: string;
+}
+
 // --- Types ---
 
 export type NodeRole = "substrate" | "transient";
@@ -83,6 +114,35 @@ export class TreeManager {
   /** Whether a reattachment attempt is currently in progress. */
   private reattaching = false;
 
+  /**
+   * Snapshot of the substrate's topology captured from welcome at attach
+   * time. Used as the cached-alternatives layer for ungraceful-disconnect
+   * reattach (#108). Stale by definition — entries may have left the
+   * cluster since attach — so per-attempt and total-layer timeouts are
+   * shorter than the seed-list layer. Refreshing this during attach is
+   * out of scope and tracked by #67/#68.
+   */
+  private lastKnownAlternatives: AlternativeParent[] = [];
+
+  /**
+   * Returns the current bootstrap seed list (host:http-port). Used as
+   * the freshest reattach fallback when cached alternatives are exhausted.
+   * Wired in index.ts; mirrors the seedProvider pattern in ClusterNode (#85).
+   */
+  private seedProvider: (() => string[]) | null = null;
+
+  /** Set in stop(); causes the reattach loop and any sleeps to exit. */
+  private stopping = false;
+
+  /**
+   * Resolves when stop() is called. The reattach loop's backoff sleep
+   * races against this so a shutdown wakes it within milliseconds rather
+   * than waiting up to a full backoff interval. setTimeout naturally fires
+   * if shutdown doesn't intervene.
+   */
+  private stopSignal: Promise<void>;
+  private resolveStopSignal!: () => void;
+
   constructor(
     localNode: NodeInfo,
     gossip: GossipProtocol,
@@ -93,6 +153,9 @@ export class TreeManager {
     this.gossip = gossip;
     this.logger = logger;
     this.options = options;
+    this.stopSignal = new Promise<void>((resolve) => {
+      this.resolveStopSignal = resolve;
+    });
 
     // Resolve role from config: true = substrate, false = transient
     if (options.inbound === "true") {
@@ -132,6 +195,16 @@ export class TreeManager {
    */
   setReattachCallback(cb: (conn: WebSocketConnection) => void): void {
     this.onReattachCallback = cb;
+  }
+
+  /**
+   * Wire the seed-list provider used as the freshest reattach fallback.
+   * For public-network deployments this typically closes over the omega
+   * refresher's currentList; for private it snapshots REPRAM_PEERS.
+   * Null disables the seed-list layer (#108).
+   */
+  setSeedProvider(fn: (() => string[]) | null): void {
+    this.seedProvider = fn;
   }
 
   // --- Server-side: handle incoming attachments ---
@@ -312,29 +385,57 @@ export class TreeManager {
 
     conn.remoteNodeId = welcome.your_position.parent_id;
 
-    // Handle parent disconnection
-    conn.on("close", () => {
-      this.logger.warn(
-        `Substrate attachment to ${conn.remoteNodeId ?? "unknown"} lost`,
-      );
-      this.parentConnection = null;
-    });
+    // Snapshot the substrate's topology as cached reattach alternatives.
+    // Excludes self. Stale by definition; deadline + per-attempt-timeout
+    // bound the cost of trying ghosts before falling through to seeds (#108).
+    this.lastKnownAlternatives = [];
+    for (const sync of welcome.topology) {
+      const info = sync.node_info;
+      if (!info || info.id === this.localNode.id) continue;
+      this.lastKnownAlternatives.push({
+        id: info.id,
+        address: info.address,
+        http_port: info.http_port,
+        enclave: info.enclave,
+      });
+    }
 
-    // Handle goodbye from parent (graceful shutdown → proactive migration)
+    // Handle goodbye from parent (graceful shutdown → proactive migration).
+    // Identity-aware: only fires reattach if this conn is still our parent
+    // (a stale handler from a previous attach must not clobber a successful
+    // reattach to a new parent).
     conn.on("attachment", (msg: AttachmentMessage) => {
       if (msg.type === "goodbye") {
+        if (this.parentConnection !== conn) return;
         const payload = msg.payload as GoodbyePayload;
         this.logger.info(
           `Substrate node sent goodbye: ${payload.reason} ` +
             `(${payload.alternative_parents.length} alternatives)`,
         );
         this.parentConnection = null;
-
-        // Proactive migration — try alternatives before falling back to bootstrap
-        if (payload.alternative_parents.length > 0) {
-          this.reattachToAlternative(payload.alternative_parents);
-        }
+        void this.triggerReattach(payload.alternative_parents);
       }
+    });
+
+    // Handle parent disconnection (graceful close after goodbye, or
+    // ungraceful TCP drop / crash / NAT rebind). The `!== conn` guard
+    // catches two cases:
+    //   1. Stale handler: this conn was replaced by a successful reattach
+    //      to a new parent — parentConnection now points at the new conn.
+    //   2. Post-goodbye close: the goodbye handler already nulled
+    //      parentConnection, so `null !== conn` short-circuits triggering
+    //      a duplicate reattach (the single-flight flag would block it
+    //      anyway, but this avoids the spurious entry).
+    // For ungraceful disconnects there are no fresh goodbye-supplied
+    // alternatives, so triggerReattach falls through to cached topology
+    // and then the seed list (#108).
+    conn.on("close", () => {
+      if (this.parentConnection !== conn) return;
+      this.logger.warn(
+        `Substrate attachment to ${conn.remoteNodeId ?? "unknown"} lost`,
+      );
+      this.parentConnection = null;
+      void this.triggerReattach(undefined);
     });
 
     this.logger.info(
@@ -349,57 +450,174 @@ export class TreeManager {
   // --- Reattachment ---
 
   /**
-   * Attempt to reattach to an alternative substrate node after receiving
-   * a goodbye from the current parent. Tries each alternative in order,
-   * falls back to logged warning if all fail.
+   * Entry point for reattach. Single-flight via the `reattaching` flag —
+   * concurrent calls (e.g., goodbye handler and close handler firing
+   * back-to-back) collapse to one running loop. Pass goodbye-supplied
+   * alternatives if available; pass undefined for ungraceful disconnect
+   * (the loop will use cached topology and the seed list).
    *
-   * This is fire-and-forget — the transient node continues operating
-   * with local storage while reattachment is in progress.
+   * Fire-and-forget — the transient node continues serving local reads
+   * while reattach is in progress (#108).
    */
-  private async reattachToAlternative(
-    alternatives: GoodbyePayload["alternative_parents"],
+  private async triggerReattach(
+    suppliedAlternatives: AlternativeParent[] | undefined,
   ): Promise<void> {
-    if (this.reattaching) return; // prevent concurrent reattachment
+    if (this.reattaching || this.stopping) return;
     this.reattaching = true;
-
     try {
-      for (const alt of alternatives) {
-        try {
-          this.logger.info(
-            `Attempting reattachment to ${alt.id} (${alt.address}:${alt.http_port})`,
-          );
+      await this.reattachLoop(suppliedAlternatives);
+    } finally {
+      this.reattaching = false;
+    }
+  }
 
-          const conn = await connectToSubstrate(
-            alt.address,
-            alt.http_port,
-            this.options.clusterSecret,
-            this.logger,
-            10_000,
-          );
+  /**
+   * Full reattach loop with three layers, exponential backoff, and
+   * stop-aware sleeps. Runs until success or stop() (#108):
+   *
+   *   1. Goodbye payload alternatives (if any) — freshest, single-shot.
+   *   2. Cached `welcome.topology` from attach time — local, fast,
+   *      possibly stale. Bounded by per-attempt timeout AND total layer
+   *      deadline so a fully-stale cache can't waste minutes before
+   *      falling through.
+   *   3. Seed list from seedProvider — slowest but guaranteed-fresh.
+   *
+   * Between full cycles, sleeps with exponential backoff capped at
+   * REATTACH_BACKOFF_MAX_MS. Backoff resets implicitly on success
+   * (the loop returns).
+   */
+  private async reattachLoop(
+    suppliedAlternatives: AlternativeParent[] | undefined,
+  ): Promise<void> {
+    let backoffMs = REATTACH_BACKOFF_INITIAL_MS;
 
-          const welcome = await this.attach(conn);
-          if (welcome) {
-            this.logger.info(`Reattached to ${alt.id} — gossip resumed`);
+    while (!this.stopping) {
+      // Layer 1: supplied alternatives (goodbye payload). Used once on
+      // the first iteration if present; subsequent iterations skip this
+      // layer because the goodbye payload is no fresher than the cached
+      // topology by then.
+      if (suppliedAlternatives && suppliedAlternatives.length > 0) {
+        if (await this.tryAlternatives(suppliedAlternatives, SEED_CONNECT_TIMEOUT_MS, undefined)) {
+          return;
+        }
+        suppliedAlternatives = undefined;
+      }
 
-            // Notify server to set up message routing on new connection
-            this.onReattachCallback?.(conn);
-            conn.startHeartbeat();
-            return;
-          }
+      // Layer 2: cached welcome topology. Per-attempt 5s, layer total 30s.
+      if (this.lastKnownAlternatives.length > 0) {
+        const deadline = Date.now() + CACHED_LAYER_DEADLINE_MS;
+        if (await this.tryAlternatives(this.lastKnownAlternatives, CACHED_ALT_CONNECT_TIMEOUT_MS, deadline)) {
+          return;
+        }
+      }
 
-          conn.close();
-        } catch (err) {
-          this.logger.warn(`Reattachment to ${alt.id} failed: ${err}`);
+      // Layer 3: seed list. Per-attempt 10s; small N (typically 2-5).
+      const seeds = this.seedProvider?.() ?? [];
+      const seedAlts: AlternativeParent[] = [];
+      for (const seed of seeds) {
+        const parsed = this.parseSeedAddress(seed);
+        if (parsed !== null) seedAlts.push(parsed);
+      }
+      if (seedAlts.length > 0) {
+        if (await this.tryAlternatives(seedAlts, SEED_CONNECT_TIMEOUT_MS, undefined)) {
+          return;
         }
       }
 
       this.logger.warn(
-        "All alternative substrate nodes failed — operating in degraded mode " +
-          "(local store only until heartbeat-based reattachment or restart)",
+        `All reattach paths failed — sleeping ${backoffMs}ms before retry ` +
+          "(local store still serves reads; quorum writes degraded until reattach)",
       );
-    } finally {
-      this.reattaching = false;
+      await this.sleep(backoffMs);
+      backoffMs = Math.min(backoffMs * 2, REATTACH_BACKOFF_MAX_MS);
     }
+  }
+
+  /**
+   * Walk a list of alternative substrates, attempting WebSocket attach
+   * to each. Returns true on the first success. Honors stopping flag and
+   * an optional layer deadline for the cached-topology case.
+   */
+  private async tryAlternatives(
+    alts: AlternativeParent[],
+    perAttemptTimeoutMs: number,
+    deadlineMs: number | undefined,
+  ): Promise<boolean> {
+    for (const alt of alts) {
+      if (this.stopping) return false;
+      if (deadlineMs !== undefined && Date.now() >= deadlineMs) {
+        this.logger.warn(
+          "Cached-alternatives layer hit deadline; falling through to seed list",
+        );
+        return false;
+      }
+
+      this.logger.info(
+        `Attempting reattachment to ${alt.id} (${alt.address}:${alt.http_port})`,
+      );
+      try {
+        const conn = await connectToSubstrate(
+          alt.address,
+          alt.http_port,
+          this.options.clusterSecret,
+          this.logger,
+          perAttemptTimeoutMs,
+        );
+        const welcome = await this.attach(conn);
+        if (welcome) {
+          // Race guard: the conn could have dropped between welcome
+          // receipt and now. If its close handler already fired, it
+          // tried to triggerReattach but was blocked by the single-flight
+          // `reattaching` flag (we hold it). Returning true here would
+          // mark the cycle a success and exit the outer loop, leaving
+          // the node parentless with no further retry. Detect via
+          // identity + isClosed and treat as a per-alternative failure
+          // so the outer loop continues.
+          if (this.parentConnection !== conn || conn.isClosed) {
+            this.logger.warn(
+              `Reattachment to ${alt.id} dropped before activation; trying next`,
+            );
+            continue;
+          }
+          this.logger.info(`Reattached to ${alt.id} — gossip resumed`);
+          this.onReattachCallback?.(conn);
+          conn.startHeartbeat();
+          return true;
+        }
+        if (!conn.isClosed) conn.close();
+      } catch (err) {
+        this.logger.warn(`Reattachment to ${alt.id} failed: ${err}`);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Parse a seed string of the form "host:http-port" into an
+   * AlternativeParent. Returns null on malformed input. The id is a
+   * synthetic label since seeds carry no node identity until attach.
+   */
+  private parseSeedAddress(seed: string): AlternativeParent | null {
+    const idx = seed.lastIndexOf(":");
+    if (idx <= 0 || idx === seed.length - 1) return null;
+    const address = seed.slice(0, idx);
+    const portStr = seed.slice(idx + 1);
+    const http_port = parseInt(portStr, 10);
+    if (isNaN(http_port) || http_port <= 0 || http_port > 65535) return null;
+    return { id: `seed-${seed}`, address, http_port };
+  }
+
+  /**
+   * Sleep for ms or until stop() is called, whichever comes first. Races
+   * a setTimeout against stopSignal so a shutdown wakes the reattach
+   * loop within milliseconds rather than at end-of-backoff.
+   */
+  private sleep(ms: number): Promise<void> {
+    if (this.stopping) return Promise.resolve();
+    return Promise.race([
+      new Promise<void>((resolve) => setTimeout(resolve, ms)),
+      this.stopSignal,
+    ]);
   }
 
   // --- Relay: ACK routing ---
@@ -504,9 +722,19 @@ export class TreeManager {
   }
 
   /**
-   * Clean shutdown: send goodbyes, clear state.
+   * Clean shutdown: send goodbyes, clear state, cancel any in-flight
+   * reattach loop and pending backoff sleeps.
    */
   stop(): void {
+    // Set stopping first so any close handlers that fire during teardown
+    // (when we close the parent below) short-circuit at triggerReattach.
+    this.stopping = true;
+
+    // Wake any sleeping backoff in the reattach loop so it observes
+    // stopping and exits promptly. setTimeout still fires later but its
+    // resolved promise is now harmless — the loop is gone.
+    this.resolveStopSignal();
+
     this.sendGoodbyeToChildren();
 
     // Clean up ACK route timers
