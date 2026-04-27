@@ -148,7 +148,10 @@ func (p *Protocol) HandleBootstrap(req *BootstrapRequest) *BootstrapResponse {
 		Enclave:  enclave,
 	}
 
-	// Add the new node as a peer
+	// Add the new node as a peer. addPeer is a no-op when newNode.ID
+	// matches our own (e.g., a node bootstrapping against an omega list
+	// that contains itself); the chokepoint warns and the self-skip in
+	// Bootstrap normally prevents that path from being reached at all (#87).
 	p.addPeer(newNode)
 	logging.Info("[%s] Node %s joined via bootstrap", p.localNode.ID, req.NodeID)
 

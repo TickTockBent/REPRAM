@@ -545,7 +545,11 @@ export class HTTPServer {
         enclave,
       };
 
-      // Add the new node as a peer
+      // Add the new node as a peer. addPeer is a no-op when newPeer.id
+      // matches our own (e.g., a node bootstrapping against an omega list
+      // that contains itself); the chokepoint warns and the self-skip in
+      // bootstrapFromPeers normally prevents that path from being reached
+      // at all (#87).
       this.clusterNode.gossip.addPeer(newPeer);
       this.logger.info(`[${this.config.nodeId}] Node ${newPeer.id} joined via bootstrap`);
 
