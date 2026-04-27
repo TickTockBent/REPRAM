@@ -175,13 +175,28 @@ export class SecurityMiddleware {
   /**
    * Run all security checks. Returns the client IP if allowed,
    * or null if the request was rejected (response already sent).
+   *
+   * The per-IP rate limiter is bypassed on inter-cluster endpoints
+   * (`/v1/gossip/message`, `/v1/bootstrap`):
+   *   1. With REPRAM_CLUSTER_SECRET set, those endpoints are HMAC-gated;
+   *      authenticated peer traffic at cluster volumes legitimately
+   *      exceeds the client-tier per-IP rate.
+   *   2. In open mode the operator has explicitly accepted no-auth on
+   *      the cluster plane — applying client-tier rate limiting there
+   *      is inconsistent with that trust model.
+   * Either way, applying the client rate limit broke gossip at modest
+   * volumes (F6 burn-in symptom, #86). Other checks (size, scanner,
+   * headers) still apply.
    */
   check(req: IncomingMessage, res: ServerResponse): string | null {
     applySecurityHeaders(res);
 
     const clientIP = getClientIP(req, this.trustProxy);
 
-    if (!this.rateLimiter.allow(clientIP)) {
+    const path = (req.url ?? "").split("?")[0];
+    const isPeerEndpoint = path === "/v1/gossip/message" || path === "/v1/bootstrap";
+
+    if (!isPeerEndpoint && !this.rateLimiter.allow(clientIP)) {
       res.writeHead(429, { "Content-Type": "text/plain" });
       res.end("Rate limit exceeded");
       return null;
