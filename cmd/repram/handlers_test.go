@@ -627,3 +627,82 @@ func TestKeysSortedOrder(t *testing.T) {
 		t.Fatalf("keys not sorted: %v", keys)
 	}
 }
+
+// --- #91: keys must not contain '/' ---
+
+// TestSlashKeyReturns400_PUT locks in #91: a request to PUT /v1/data/foo%2Fbar
+// must return 400, not gorilla/mux's silent 404 from the route mismatch.
+func TestSlashKeyReturns400_PUT(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	// Client sends an encoded slash; gorilla/mux decodes it before routing,
+	// so the path becomes /v1/data/foo/bar and falls to NotFoundHandler.
+	req := httptest.NewRequest("PUT", "/v1/data/foo%2Fbar", strings.NewReader("data"))
+	w := httptest.NewRecorder()
+	server.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "key must not contain") {
+		t.Fatalf("expected error message about keys with '/', got: %s", w.Body.String())
+	}
+}
+
+// TestSlashKeyReturns400_GET mirrors the PUT test for read paths.
+func TestSlashKeyReturns400_GET(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest("GET", "/v1/data/foo%2Fbar", nil)
+	w := httptest.NewRecorder()
+	server.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestUnknownPathStill404 verifies the NotFoundHandler only converts
+// /v1/data/... 404s into 400s — anything else keeps the standard 404.
+func TestUnknownPathStill404(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest("GET", "/v1/nonexistent/route", nil)
+	w := httptest.NewRecorder()
+	server.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown route, got %d", w.Code)
+	}
+}
+
+// TestSlashOnlyKeyReturns400_NotRedirect locks in the parity-gap fix
+// surfaced by PR #104 review: /v1/data/%2F (slash-only key) decodes
+// to /v1/data//. Without SkipClean(true), gorilla/mux normalizes the
+// double slash to /v1/data/ and returns 301 before NotFoundHandler
+// can fire, so a PUT client sees a redirect that converts to GET per
+// RFC 9110 and never gets a coherent 400 for the original PUT. With
+// SkipClean, the original path reaches the router and 400 is returned
+// directly. TS already returned 400 here; this brings Go to parity.
+func TestSlashOnlyKeyReturns400_NotRedirect(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	for _, method := range []string{"PUT", "GET"} {
+		t.Run(method, func(t *testing.T) {
+			req := httptest.NewRequest(method, "/v1/data/%2F", strings.NewReader("data"))
+			w := httptest.NewRecorder()
+			server.Router().ServeHTTP(w, req)
+
+			if w.Code == http.StatusMovedPermanently || w.Code == http.StatusPermanentRedirect {
+				t.Fatalf("got %d redirect — SkipClean should prevent this; PUT clients can't follow without losing the body", w.Code)
+			}
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}

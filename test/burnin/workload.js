@@ -21,10 +21,9 @@ const REF_SET_SIZE = 200;
 const GRAVEYARD_SIZE = 200;
 const AGENT_COUNT = 100;
 
-// IMPORTANT: keys cannot contain '/' — see preflight finding F11.
-// gorilla/mux on the Go server doesn't UseEncodedPath, so URL-encoded
-// slashes get normalized back into path separators and never match the
-// /v1/data/{key} route. Use '-' as the hierarchy delimiter instead.
+// Keys must not contain '/' — server returns 400. Keys are opaque,
+// single-segment strings; use ':' or '-' as a hierarchy delimiter
+// (see docs/patterns.md "Key Naming Conventions").
 
 // REPRAM_MIN_TTL defaults to 300 (5 min). Graveyard set is written with this
 // TTL and the setup() sleeps long enough for it to expire before the main

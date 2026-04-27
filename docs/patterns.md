@@ -34,7 +34,7 @@ The agent patterns above are the primary motivation, but the primitive is genera
 
 ## Key Naming Conventions
 
-REPRAM doesn't enforce key structure — keys are opaque strings. But consistent naming helps agents discover each other's data and avoids collisions across unrelated workloads. These conventions are suggestions, not protocol requirements.
+Keys are opaque, single-segment strings. The server enforces one rule: **keys must not contain `/`** (the request returns 400). Everything else is convention — consistent naming helps agents discover each other's data and avoids collisions across unrelated workloads. These conventions are suggestions, not protocol requirements.
 
 ### Namespace prefixes
 
@@ -49,7 +49,7 @@ Use a prefix to indicate the key's role:
 | `state:` | State machine / job status | `state:job-9f3a` |
 | `broadcast:` | Ephemeral broadcast channel | `broadcast:config:feature-flags` |
 
-Separate hierarchy levels with `:` (colon). This is a convention, not a separator the server understands — but it plays well with prefix-based listing (`/v1/keys?prefix=lock:`).
+Separate hierarchy levels with `:` (colon) or `-` (hyphen). The server doesn't parse hierarchy — these are just convention — but `:` plays well with prefix-based listing (`/v1/keys?prefix=lock:`). Don't use `/`: the server rejects it with 400.
 
 ### Key generation strategies
 
