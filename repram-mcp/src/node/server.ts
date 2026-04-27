@@ -18,6 +18,7 @@ import { WebSocketConnection, type AttachmentMessage, type HelloPayload } from "
 import type { WireMessage } from "./types.js";
 import type { Transport } from "./gossip.js";
 import { TreeManager, type InboundCapability } from "./tree.js";
+import { metricsHandler } from "./metrics.js";
 
 // ─── Configuration ───────────────────────────────────────────────────
 
@@ -305,6 +306,10 @@ export class HTTPServer {
     }
     if (path === "/v1/topology" && method === "GET") {
       this.topologyHandler(req, res);
+      return;
+    }
+    if (path === "/v1/metrics" && method === "GET") {
+      void metricsHandler(req, res);
       return;
     }
     if (path === "/v1/gossip/message" && method === "POST") {

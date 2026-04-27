@@ -1,0 +1,153 @@
+// REPRAM 2.1 burn-in workload (k6).
+//
+// Spec: docs/internal/REPRAM-2.1-Minimal-BurnIn.md, "Workload" section.
+//
+// Run:
+//   k6 run \
+//     -e REPRAM_NODES=http://10.0.20.72:8080,http://10.0.10.81:8080,http://10.0.10.104:8080 \
+//     -e BURNIN_DURATION=48h \
+//     test/burnin/workload.js
+//
+// Output: stdout summary at end-of-run, plus k6's built-in metrics. Pipe
+// metrics to Prometheus via `--out experimental-prometheus-rw=...` if you
+// want them on the burn-in dashboard alongside REPRAM's own metrics.
+
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+import { Counter } from 'k6/metrics';
+
+const NODES = (__ENV.REPRAM_NODES || 'http://localhost:8080').split(',').map(s => s.trim());
+const REF_SET_SIZE = 200;
+const GRAVEYARD_SIZE = 200;
+const AGENT_COUNT = 100;
+
+// IMPORTANT: keys cannot contain '/' — see preflight finding F11.
+// gorilla/mux on the Go server doesn't UseEncodedPath, so URL-encoded
+// slashes get normalized back into path separators and never match the
+// /v1/data/{key} route. Use '-' as the hierarchy delimiter instead.
+
+// REPRAM_MIN_TTL defaults to 300 (5 min). Graveyard set is written with this
+// TTL and the setup() sleeps long enough for it to expire before the main
+// workload starts hitting it — that way GET-expired actually exercises the
+// expired-key path, not just a miss.
+const GRAVEYARD_TTL_SEC = 300;
+const GRAVEYARD_WARMUP_SEC = 360;
+
+// Long-lived reference set: 24h TTL covers most of a 48h run. After hour 24
+// these natural-expire and GET-existing will start returning 404 from the
+// ref-set arm. That's expected — the ref set is a retention probe for the
+// first refresh cycles, not a 48h invariant.
+const REF_TTL_SEC = 24 * 3600;
+
+export const options = {
+    setupTimeout: '15m',
+    scenarios: {
+        workload: {
+            executor: 'constant-arrival-rate',
+            rate: 50,
+            timeUnit: '1s',
+            duration: __ENV.BURNIN_DURATION || '48h',
+            preAllocatedVUs: 30,
+            maxVUs: 60,
+        },
+    },
+    thresholds: {
+        // Hard failures should be near zero. 202s tracked separately.
+        'http_req_failed{op:put}': ['rate<0.01'],
+        'http_req_failed{op:get_existing}': ['rate<0.02'],
+    },
+};
+
+const soft202 = new Counter('soft_failures_202');
+const refMissUnexpected = new Counter('ref_get_unexpected_404');
+const expiredHitUnexpected = new Counter('graveyard_get_unexpected_200');
+
+export function setup() {
+    console.log(`burn-in workload: ${NODES.length} nodes — ${NODES.join(', ')}`);
+    console.log(`  ref set: ${REF_SET_SIZE} keys @ ${REF_TTL_SEC}s TTL`);
+    console.log(`  graveyard: ${GRAVEYARD_SIZE} keys @ ${GRAVEYARD_TTL_SEC}s TTL (warmup ${GRAVEYARD_WARMUP_SEC}s)`);
+
+    // Write to one node — gossip replicates to the others. Use the first node
+    // so the seed traffic origin is deterministic.
+    const seed = NODES[0];
+
+    for (let i = 0; i < REF_SET_SIZE; i++) {
+        http.put(
+            `${seed}/v1/data/bench-ref-${i}`,
+            JSON.stringify({ i, kind: 'ref' }),
+            { headers: { 'Content-Type': 'application/json', 'X-TTL': String(REF_TTL_SEC) } },
+        );
+    }
+    for (let i = 0; i < GRAVEYARD_SIZE; i++) {
+        http.put(
+            `${seed}/v1/data/bench-graveyard-${i}`,
+            JSON.stringify({ i, kind: 'graveyard' }),
+            { headers: { 'Content-Type': 'application/json', 'X-TTL': String(GRAVEYARD_TTL_SEC) } },
+        );
+    }
+
+    console.log(`waiting ${GRAVEYARD_WARMUP_SEC}s for graveyard to expire before main run`);
+    sleep(GRAVEYARD_WARMUP_SEC);
+    console.log('warmup complete; starting workload');
+    return { startedAt: Date.now() };
+}
+
+export default function () {
+    const node = NODES[__ITER % NODES.length];
+    const r = Math.random();
+    if (r < 0.40)       doPut(node);
+    else if (r < 0.70)  doGetExisting(node);
+    else if (r < 0.85)  doGetExpired(node);
+    else if (r < 0.95)  doHead(node);
+    else                doList(node);
+}
+
+function doPut(node) {
+    const agentId = __VU % AGENT_COUNT;
+    const key = `bench-agent-${agentId}-${__ITER}`;
+    const ttlSec = 300 + Math.floor(Math.random() * (7200 - 300));
+    const body = JSON.stringify({ vu: __VU, iter: __ITER, ts: Date.now() });
+    const res = http.put(
+        `${node}/v1/data/${key}`,
+        body,
+        {
+            headers: { 'Content-Type': 'application/json', 'X-TTL': String(ttlSec) },
+            tags: { op: 'put' },
+        },
+    );
+    if (res.status === 202) soft202.add(1);
+    check(res, { 'PUT 200/201/202': (r) => r.status === 200 || r.status === 201 || r.status === 202 });
+}
+
+function doGetExisting(node) {
+    const i = Math.floor(Math.random() * REF_SET_SIZE);
+    const key = `bench-ref-${i}`;
+    const res = http.get(`${node}/v1/data/${key}`, { tags: { op: 'get_existing' } });
+    if (res.status === 404) refMissUnexpected.add(1);
+    check(res, { 'GET ref 200': (r) => r.status === 200 });
+}
+
+function doGetExpired(node) {
+    const i = Math.floor(Math.random() * GRAVEYARD_SIZE);
+    const key = `bench-graveyard-${i}`;
+    const res = http.get(`${node}/v1/data/${key}`, { tags: { op: 'get_expired' } });
+    if (res.status === 200) expiredHitUnexpected.add(1);
+    check(res, { 'GET expired 404': (r) => r.status === 404 });
+}
+
+function doHead(node) {
+    const i = Math.floor(Math.random() * REF_SET_SIZE);
+    const key = `bench-ref-${i}`;
+    const res = http.request('HEAD', `${node}/v1/data/${key}`, null, { tags: { op: 'head' } });
+    check(res, { 'HEAD 200': (r) => r.status === 200 });
+}
+
+function doList(node) {
+    const agentId = Math.floor(Math.random() * AGENT_COUNT);
+    const prefix = `bench-agent-${agentId}-`;
+    const res = http.get(
+        `${node}/v1/keys?prefix=${encodeURIComponent(prefix)}&limit=100`,
+        { tags: { op: 'list' } },
+    );
+    check(res, { 'list 200': (r) => r.status === 200 });
+}
