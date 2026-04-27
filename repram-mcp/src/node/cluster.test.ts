@@ -1053,3 +1053,94 @@ describe("ClusterNode ACK reverse-routing", () => {
     tree.stop();
   });
 });
+
+// --- #85: isolation recovery ---
+
+describe("ClusterNode isolation recovery", () => {
+  it("re-bootstraps when peer count is 0 and a rebootstrapFn is wired", async () => {
+    const node = new ClusterNode(defaultOptions(), silentLogger());
+    node.setTransport(createMockTransport().transport);
+
+    // Spy on gossip.addPeer to confirm discovered peers are registered.
+    const addPeerSpy = vi.spyOn(node.gossip, "addPeer");
+
+    const discoveredPeer: NodeInfo = {
+      id: "rediscovered",
+      address: "10.0.0.9",
+      port: 9090,
+      httpPort: 8080,
+      enclave: "default",
+    };
+    let calls = 0;
+    node.setRebootstrapFn(async () => {
+      calls += 1;
+      return [discoveredPeer];
+    });
+
+    expect(node.gossip.getPeers().length).toBe(0);
+    const recovered = await node.checkIsolationAndRecover();
+
+    expect(recovered).toBe(true);
+    expect(calls).toBe(1);
+    expect(addPeerSpy).toHaveBeenCalledWith(discoveredPeer);
+    expect(node.gossip.getPeers().length).toBe(1);
+  });
+
+  it("is a no-op when peers exist", async () => {
+    const node = new ClusterNode(defaultOptions(), silentLogger());
+    node.setTransport(createMockTransport().transport);
+    node.gossip.addPeer({
+      id: "existing",
+      address: "10.0.0.2",
+      port: 9090,
+      httpPort: 8080,
+      enclave: "default",
+    });
+
+    let calls = 0;
+    node.setRebootstrapFn(async () => {
+      calls += 1;
+      return [];
+    });
+
+    const recovered = await node.checkIsolationAndRecover();
+    expect(recovered).toBe(false);
+    expect(calls).toBe(0);
+  });
+
+  it("returns false when no rebootstrapFn is wired", async () => {
+    const node = new ClusterNode(defaultOptions(), silentLogger());
+    node.setTransport(createMockTransport().transport);
+
+    const recovered = await node.checkIsolationAndRecover();
+    expect(recovered).toBe(false);
+  });
+
+  it("returns false when rebootstrapFn discovers no peers", async () => {
+    const node = new ClusterNode(defaultOptions(), silentLogger());
+    node.setTransport(createMockTransport().transport);
+
+    let calls = 0;
+    node.setRebootstrapFn(async () => {
+      calls += 1;
+      return [];
+    });
+
+    const recovered = await node.checkIsolationAndRecover();
+    expect(recovered).toBe(false);
+    expect(calls).toBe(1);
+  });
+
+  it("swallows rebootstrapFn errors and returns false", async () => {
+    const node = new ClusterNode(defaultOptions(), silentLogger());
+    node.setTransport(createMockTransport().transport);
+
+    node.setRebootstrapFn(async () => {
+      throw new Error("network unreachable");
+    });
+
+    // Should not throw.
+    const recovered = await node.checkIsolationAndRecover();
+    expect(recovered).toBe(false);
+  });
+});

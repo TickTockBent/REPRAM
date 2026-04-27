@@ -98,6 +98,33 @@ async function bootstrap(server: HTTPServer, config: ServerConfig, logger: Logge
       rootList,
     );
     void refresher.run();
+
+    // Public network: re-bootstrap pulls from the refresher's current
+    // signed list, so a node that fully isolates picks up whatever
+    // roots are live now, not whatever it started with (#85, F5).
+    server.clusterNode.setRebootstrapFn(async () => {
+      const list = refresher.currentList;
+      if (list.nodes.length === 0) return [];
+      return await bootstrapFromPeers(
+        list.nodes,
+        server.clusterNode.localNode,
+        config.clusterSecret,
+        logger,
+      );
+    });
+  } else if (seedPeers.length > 0) {
+    // Private / REPRAM_PEERS: re-bootstrap reuses the static seed list.
+    // Capture by closure so the goroutine sees the same slice we started
+    // with (#85, F5).
+    const seedSnapshot = [...seedPeers];
+    server.clusterNode.setRebootstrapFn(async () => {
+      return await bootstrapFromPeers(
+        seedSnapshot,
+        server.clusterNode.localNode,
+        config.clusterSecret,
+        logger,
+      );
+    });
   }
 
   if (seedPeers.length === 0) return;
