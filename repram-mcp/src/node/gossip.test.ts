@@ -193,6 +193,32 @@ describe("GossipProtocol peer management", () => {
     proto.removePeer("peer-1");
     expect(metrics.onPeersActive).toHaveBeenCalledWith(0);
   });
+
+  // #87 (F7): addPeer must reject the local node and return false. This
+  // is the single chokepoint that keeps self out of every iterator that
+  // touches this.peers (broadcast, ping, topology sync, etc.).
+  it("rejects self and returns false", () => {
+    const local = makeNode({ id: "test-node" });
+    const proto = new GossipProtocol(local, 3, silentLogger());
+    const metrics = mockMetrics();
+    proto.enableMetrics(metrics);
+
+    const added = proto.addPeer(local);
+
+    expect(added).toBe(false);
+    expect(proto.getPeers()).toHaveLength(0);
+    expect(metrics.onPeersActive).not.toHaveBeenCalled();
+    expect(metrics.onPeerJoin).not.toHaveBeenCalled();
+  });
+
+  it("returns true when adding a non-self peer", () => {
+    const proto = new GossipProtocol(makeNode({ id: "test-node" }), 3, silentLogger());
+
+    const added = proto.addPeer(makeNode({ id: "other" }));
+
+    expect(added).toBe(true);
+    expect(proto.getPeers()).toHaveLength(1);
+  });
 });
 
 // --- Message routing ---

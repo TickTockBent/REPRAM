@@ -150,11 +150,27 @@ export class GossipProtocol {
 
   // --- Peer management ---
 
-  addPeer(node: NodeInfo): void {
+  /**
+   * Adds node to the peer set, or rejects and warns if node is self.
+   * Returns true if the node was added or updated, false if rejected.
+   *
+   * Self-rejection is the single chokepoint that keeps self out of the
+   * peer map across all entry points (handleSync, bootstrapHandler,
+   * performTopologySync, etc.). The warn log surfaces any caller path
+   * that ends up trying to add self, which is always a bug (#82, #87).
+   */
+  addPeer(node: NodeInfo): boolean {
+    if (node.id === this.localNode.id) {
+      this.logger.warn(
+        `[${this.localNode.id}] addPeer rejected: attempted to add self (${node.id}) — caller likely missing a self-filter`,
+      );
+      return false;
+    }
     this.peers.set(node.id, node);
     this.peerFailures.delete(node.id); // reset failure counter on (re-)add
     this.metricsCallbacks?.onPeersActive(this.peers.size);
     this.metricsCallbacks?.onPeerJoin();
+    return true;
   }
 
   removePeer(nodeId: string): void {

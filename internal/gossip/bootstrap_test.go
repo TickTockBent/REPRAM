@@ -3,6 +3,7 @@ package gossip
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -169,6 +170,102 @@ func TestBootstrap_ContinuesAfterSeedFailure(t *testing.T) {
 	}
 	if peers := p.GetPeers(); len(peers) != 1 || peers[0].ID != "good" {
 		t.Fatalf("expected to discover peer 'good' from the working seed, got %v", nodeIDs(peers))
+	}
+}
+
+// TestAddPeer_RejectsSelf locks in #87 (F7): addPeer must refuse to add
+// the local node and return false. This is the single chokepoint that
+// keeps self out of every iterator that touches p.peers.
+func TestAddPeer_RejectsSelf(t *testing.T) {
+	p, _ := newTestProtocol()
+
+	added := p.addPeer(p.localNode)
+	if added {
+		t.Fatalf("addPeer(localNode) returned true; expected false (self should be rejected)")
+	}
+	if peers := p.GetPeers(); len(peers) != 0 {
+		t.Fatalf("expected 0 peers after self-add attempt, got %d: %v", len(peers), nodeIDs(peers))
+	}
+}
+
+// TestAddPeer_AcceptsOthers verifies the rejection is specific to self
+// and does not regress the normal addPeer path.
+func TestAddPeer_AcceptsOthers(t *testing.T) {
+	p, _ := newTestProtocol()
+	other := &Node{ID: "other", Address: "10.0.0.1", Port: 9090, HTTPPort: 8080, Enclave: "default"}
+
+	added := p.addPeer(other)
+	if !added {
+		t.Fatalf("addPeer(other) returned false; expected true")
+	}
+	if peers := p.GetPeers(); len(peers) != 1 || peers[0].ID != "other" {
+		t.Fatalf("expected [other], got %v", nodeIDs(peers))
+	}
+}
+
+// TestBootstrap_SkipsSelfInSeedList locks in #87 option C: when the seed
+// list contains the bootstrapping node's own advertised address (which is
+// always true for omega-listed roots), the loop must skip it rather than
+// POST a self-bootstrap. The httptest server here would record the hit if
+// the loop didn't skip.
+func TestBootstrap_SkipsSelfInSeedList(t *testing.T) {
+	otherHits := 0
+	srvOther := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherHits++
+		resp := BootstrapResponse{Success: true, Peers: []*Node{
+			{ID: "other", Address: "10.0.0.2", Port: 9090, HTTPPort: 8080, Enclave: "default"},
+		}}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(srvOther.Close)
+
+	p, _ := newTestProtocol()
+	// Self-advertised address per #82 spec: address:HTTPPort
+	selfAdvertised := fmt.Sprintf("%s:%d", p.localNode.Address, p.localNode.HTTPPort)
+
+	if err := p.Bootstrap(context.Background(), []string{
+		selfAdvertised,             // would self-bootstrap if not skipped
+		stripScheme(srvOther.URL),  // real seed
+	}); err != nil {
+		t.Fatalf("bootstrap failed: %v", err)
+	}
+
+	if otherHits != 1 {
+		t.Fatalf("real seed hit %d times; expected 1", otherHits)
+	}
+	got := nodeIDs(p.GetPeers())
+	if len(got) != 1 || got[0] != "other" {
+		t.Fatalf("peers = %v, want [other]", got)
+	}
+}
+
+// TestSelfBootstrapResponseDoesNotPolluteMap reproduces the F7 burn-in
+// scenario in isolation: a seed sends back a response that includes the
+// joiner's own ID (because the seed addPeer'd it then included it in the
+// response). Even with the option-C skip in place, this defends against
+// a non-omega seed list where self might still slip through, or any other
+// path where a seed legitimately echoes the joiner's ID. addPeer's
+// self-filter must catch it.
+func TestSelfBootstrapResponseDoesNotPolluteMap(t *testing.T) {
+	p, _ := newTestProtocol()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Buggy / hostile seed includes the joiner's own ID in its response
+		resp := BootstrapResponse{Success: true, Peers: []*Node{
+			{ID: p.localNode.ID, Address: "evil", Port: 1, HTTPPort: 1, Enclave: "default"},
+			{ID: "real", Address: "real", Port: 9090, HTTPPort: 8080, Enclave: "default"},
+		}}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(srv.Close)
+
+	if err := p.Bootstrap(context.Background(), []string{stripScheme(srv.URL)}); err != nil {
+		t.Fatalf("bootstrap failed: %v", err)
+	}
+
+	for _, peer := range p.GetPeers() {
+		if peer.ID == p.localNode.ID {
+			t.Fatalf("self leaked into peer set despite caller-side filter and addPeer self-filter")
+		}
 	}
 }
 
