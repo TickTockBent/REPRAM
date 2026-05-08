@@ -1,6 +1,6 @@
 # REPRAM 2.1 — Burn-in Test Harness
 
-Operator runbook for the 48-hour baseline test described in
+Operator runbook for the 72-hour burn-in test described in
 `docs/internal/REPRAM-2.1-Minimal-BurnIn.md`.
 
 ## What's here
@@ -12,7 +12,7 @@ Operator runbook for the 48-hour baseline test described in
 | `Dockerfile.ts-node` | Burn-in image for the TS node, with baked test pubkey. |
 | `build-images.sh` | Build both images from a pubkey file. |
 | `sign-loop.sh` | Re-sign + republish the omega TXT record every 25 min. |
-| `workload.js` | k6 workload generator (50 ops/sec, 48h). |
+| `workload.js` | k6 workload generator (50 ops/sec, 72h). |
 | `prometheus-scrape.yml` | Drop-in scrape job for the existing Prometheus stack. |
 | `grafana-dashboard.json` | 6-panel dashboard, importable to Grafana. |
 
@@ -56,16 +56,19 @@ appear in the signed list (`NODES` in `sign-loop.sh`).
 
 ```bash
 docker run -d --name repram-node-a \
-  -p 8080:8080 -p 9090:9090 \
+  -p 18080:18080 -p 6060:6060 \
   -v /var/lib/repram/cache:/data/cache \
   -e REPRAM_NETWORK=public \
   -e REPRAM_ENCLAVE=default \
   -e REPRAM_LOG_LEVEL=info \
   -e REPRAM_NODE_ID=node-a \
   -e REPRAM_ADDRESS=10.0.20.72 \
-  -e REPRAM_GOSSIP_PORT=9090 \
-  -e REPRAM_HTTP_PORT=8080 \
-  --dns 127.0.0.1 \
+  -e REPRAM_GOSSIP_PORT=18080 \
+  -e REPRAM_HTTP_PORT=18080 \
+  -e REPRAM_RATE_LIMIT=10000 \
+  -e REPRAM_PPROF_ENABLED=true \
+  -e REPRAM_PPROF_ADDR=0.0.0.0:6060 \
+  --dns 10.0.20.72 \
   ticktockbent/repram-node:experimental
 ```
 
@@ -79,15 +82,18 @@ bind mount:
 
 ```powershell
 docker run -d --name repram-node-b `
-  -p 8080:8080 -p 9090:9090 `
+  -p 18080:18080 -p 6060:6060 `
   -v C:\repram-cache:/data/cache `
   -e REPRAM_NETWORK=public `
   -e REPRAM_ENCLAVE=default `
   -e REPRAM_LOG_LEVEL=info `
   -e REPRAM_NODE_ID=node-b `
   -e REPRAM_ADDRESS=10.0.10.81 `
-  -e REPRAM_GOSSIP_PORT=9090 `
-  -e REPRAM_HTTP_PORT=8080 `
+  -e REPRAM_GOSSIP_PORT=18080 `
+  -e REPRAM_HTTP_PORT=18080 `
+  -e REPRAM_RATE_LIMIT=10000 `
+  -e REPRAM_PPROF_ENABLED=true `
+  -e REPRAM_PPROF_ADDR=0.0.0.0:6060 `
   --dns 10.0.20.72 `
   ticktockbent/repram-node:experimental
 ```
@@ -96,17 +102,20 @@ docker run -d --name repram-node-b `
 
 ```powershell
 docker run -d --name repram-node-c `
-  -p 8080:8080 -p 9090:9090 `
+  -p 18080:18080 -p 6060:6060 `
   -v C:\repram-cache:/data/cache `
   -e REPRAM_NETWORK=public `
   -e REPRAM_ENCLAVE=default `
   -e REPRAM_LOG_LEVEL=info `
   -e REPRAM_NODE_ID=node-c `
   -e REPRAM_ADDRESS=10.0.10.104 `
-  -e REPRAM_GOSSIP_PORT=9090 `
-  -e REPRAM_HTTP_PORT=8080 `
+  -e REPRAM_GOSSIP_PORT=18080 `
+  -e REPRAM_HTTP_PORT=18080 `
+  -e REPRAM_RATE_LIMIT=10000 `
+  -e REPRAM_PPROF_ENABLED=true `
+  -e REPRAM_PPROF_ADDR=0.0.0.0:6060 `
   --dns 10.0.20.72 `
-  ticktockbent/repram-node:experimental-ts
+  ticktockbent/repram-node:experimental-ts --standalone
 ```
 
 The TS image already has `REPRAM_MODE=standalone` baked in.
@@ -132,8 +141,8 @@ DNSMASQ_HOSTS_FILE=/etc/dnsmasq.d/repram-burnin.conf \
 
 # 3. workload generator
 k6 run \
-  -e REPRAM_NODES=http://10.0.20.72:8080,http://10.0.10.81:8080,http://10.0.10.104:8080 \
-  -e BURNIN_DURATION=48h \
+  -e REPRAM_NODES=http://10.0.20.72:18080,http://10.0.10.81:18080,http://10.0.10.104:18080 \
+  -e BURNIN_DURATION=72h \
   test/burnin/workload.js
 ```
 
@@ -176,16 +185,17 @@ All six dashboard panels have full data on both Go and TS nodes:
 
 ## Pre-flight checks
 
-Before kicking off the 48h run:
+Before kicking off the 72h run:
 
 1. **dnsmasq reachable from each node:** `dig TXT _bootstrap.repram.io @<observer-ip>` returns the omega target; following with `dig TXT _omega.repram.io @<observer-ip>` returns the signed list.
 2. **All three nodes recognize themselves:** check the startup log for `Initial root status: bootstrap root` on node-a and `Initial root status: not a root` on node-b/c.
-3. **Cluster is connected:** `curl http://10.0.20.72:8080/v1/topology` shows all three nodes.
+3. **Cluster is connected:** `curl http://10.0.20.72:18080/v1/topology` shows all three nodes.
 4. **All three nodes self-recognize as roots:** `Initial root status: bootstrap root` in each startup log (every address in the signed list is a root).
 5. **Cache files exist after the first refresh:** `ls /data/cache/root-list.json` (in container) or the bind-mount equivalent.
-6. **Workload generator can write:** `curl -X PUT http://10.0.20.72:8080/v1/data/test -d hi -H "X-TTL: 300"` returns 200.
+6. **Workload generator can write:** `curl -X PUT http://10.0.20.72:18080/v1/data/test -d hi -H "X-TTL: 300"` returns 201.
+7. **pprof responding:** `curl http://10.0.20.72:6060/debug/pprof/` returns the Go pprof index (Go nodes) or `curl -X POST http://10.0.10.104:6060/debug/pprof/heap` triggers a TS heap snapshot.
 
-If any of these fail, stop and fix before starting the 48h timer.
+If any of these fail, stop and fix before starting the 72h timer.
 
 ## Teardown
 
@@ -193,12 +203,23 @@ If any of these fail, stop and fix before starting the 48h timer.
 # 1. Capture artifacts (per the burn-in spec)
 mkdir -p burn-in-$(date +%Y-%m-%d)
 cd burn-in-$(date +%Y-%m-%d)
-for node in node-a node-b node-c; do
-    curl -s http://${node}-ip:8080/debug/pprof/heap > heap-${node}.pprof
-    curl -s http://${node}-ip:8080/debug/pprof/goroutine > goroutine-${node}.pprof
-    curl -s http://${node}-ip:8080/v1/status > status-${node}.json
-    curl -s http://${node}-ip:8080/v1/topology > topology-${node}.json
+for node_ip in 10.0.20.72 10.0.10.81 10.0.10.104; do
+    curl -s http://${node_ip}:18080/v1/status > status-${node_ip}.json
+    curl -s http://${node_ip}:18080/v1/topology > topology-${node_ip}.json
 done
+
+# Go nodes: standard pprof binary profiles (go tool pprof compatible)
+for go_ip in 10.0.20.72 10.0.10.81; do
+    curl -s http://${go_ip}:6060/debug/pprof/heap > heap-${go_ip}.pprof
+    curl -s http://${go_ip}:6060/debug/pprof/goroutine > goroutine-${go_ip}.pprof
+done
+
+# TS node: V8 heap snapshot (writes file inside container) + JSON stats
+curl -s -X POST http://10.0.10.104:6060/debug/pprof/heap > heap-ts-response.json
+curl -s http://10.0.10.104:6060/debug/pprof/stats > stats-ts.json
+# The heap response contains {"path":"/tmp/repram-heap-<ts>.heapsnapshot"}.
+# Copy it out of the container:
+#   docker cp repram-node-c:$(jq -r .path heap-ts-response.json) ./heap-ts.heapsnapshot
 # Copy logs, dnsmasq logs, prometheus snapshot, cache files (root-list.json)
 
 # 2. Stop everything

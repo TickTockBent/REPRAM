@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Capture a single-line burn-in snapshot per cycle. Run by cron every 30
-# minutes during the 48h test. Output is appended to the log file
+# minutes during the burn-in test. Output is appended to the log file
 # specified in $SNAPSHOT_LOG (default: ~/.repram-burnin/snapshots.log).
 #
 # Each cycle emits one section per node and a header so the file can be

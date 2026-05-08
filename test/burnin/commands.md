@@ -219,7 +219,7 @@ observer's dnsmasq via the host's LAN IP.
 
 ```bash
 docker run -d --name repram-node-a \
-  -p 18080:18080 \
+  -p 18080:18080 -p 6060:6060 \
   -v /var/lib/repram/cache:/data/cache \
   -e REPRAM_NETWORK=public \
   -e REPRAM_ENCLAVE=default \
@@ -229,6 +229,8 @@ docker run -d --name repram-node-a \
   -e REPRAM_GOSSIP_PORT=18080 \
   -e REPRAM_HTTP_PORT=18080 \
   -e REPRAM_RATE_LIMIT=10000 \
+  -e REPRAM_PPROF_ENABLED=true \
+  -e REPRAM_PPROF_ADDR=0.0.0.0:6060 \
   --dns 10.0.20.72 \
   ticktockbent/repram-node:experimental
 ```
@@ -280,7 +282,7 @@ docker rm repram-smoke 2>$null
 if (-Not (Test-Path C:\repram-cache)) { New-Item -ItemType Directory -Path C:\repram-cache | Out-Null }
 
 docker run -d --name repram-node-b `
-  -p 18080:18080 `
+  -p 18080:18080 -p 6060:6060 `
   -v C:\repram-cache:/data/cache `
   -e REPRAM_NETWORK=public `
   -e REPRAM_ENCLAVE=default `
@@ -290,6 +292,8 @@ docker run -d --name repram-node-b `
   -e REPRAM_GOSSIP_PORT=18080 `
   -e REPRAM_HTTP_PORT=18080 `
   -e REPRAM_RATE_LIMIT=10000 `
+  -e REPRAM_PPROF_ENABLED=true `
+  -e REPRAM_PPROF_ADDR=0.0.0.0:6060 `
   --dns 10.0.20.72 `
   ticktockbent/repram-node:experimental
 
@@ -306,7 +310,7 @@ docker rm repram-smoke 2>$null
 if (-Not (Test-Path C:\repram-cache)) { New-Item -ItemType Directory -Path C:\repram-cache | Out-Null }
 
 docker run -d --name repram-node-c `
-  -p 18080:18080 `
+  -p 18080:18080 -p 6060:6060 `
   -v C:\repram-cache:/data/cache `
   -e REPRAM_NETWORK=public `
   -e REPRAM_ENCLAVE=default `
@@ -316,6 +320,8 @@ docker run -d --name repram-node-c `
   -e REPRAM_GOSSIP_PORT=18080 `
   -e REPRAM_HTTP_PORT=18080 `
   -e REPRAM_RATE_LIMIT=10000 `
+  -e REPRAM_PPROF_ENABLED=true `
+  -e REPRAM_PPROF_ADDR=0.0.0.0:6060 `
   --dns 10.0.20.72 `
   ticktockbent/repram-node:experimental-ts --standalone
 
@@ -479,11 +485,11 @@ account for ~5 minutes after a handful of failures. If you trip it,
 
 ---
 
-## Task 32 — Launch the long-runners (start the 48h timer)
+## Task 32 — Launch the long-runners (start the 72h timer)
 
 ### 32a. Passwordless sudo for sign-loop
 
-sign-loop.sh runs every 25 min for 48h. It needs to write to
+sign-loop.sh runs every 25 min for 72h. It needs to write to
 `/etc/dnsmasq.d/repram-burnin.conf` and restart dnsmasq each cycle —
 prompting for sudo every cycle defeats the unattended-loop point.
 
@@ -506,7 +512,7 @@ echo "exit=$?"
 **Option A — Docker (recommended; consistent with everything else):**
 
 ```bash
-# Smoke test it first (10s, 5 ops/sec) before committing to 48h
+# Smoke test it first (10s, 5 ops/sec) before committing to 72h
 docker run --rm -i --network host \
   -v /home/ticktockbent/projects/infrastructure/repram/test/burnin:/work \
   -e REPRAM_NODES=http://10.0.20.72:18080,http://10.0.10.81:18080,http://10.0.10.104:18080 \
@@ -546,9 +552,9 @@ Look at the summary at the end:
 - No `setup() ran error` or fetch failures
 - ~500 requests in 10s × 50 RPS
 
-If anything's red, fix before launching the 48h.
+If anything's red, fix before launching the 72h.
 
-### 32d. Long-running tmux session (launch the 48h timer)
+### 32d. Long-running tmux session (launch the 72h timer)
 
 Three panes — each independent.
 
@@ -564,7 +570,7 @@ DNSMASQ_HOSTS_FILE=/etc/dnsmasq.d/repram-burnin.conf \
 docker run --rm -i --network host \
   -v /home/ticktockbent/projects/infrastructure/repram/test/burnin:/work \
   -e REPRAM_NODES=http://10.0.20.72:18080,http://10.0.10.81:18080,http://10.0.10.104:18080 \
-  -e BURNIN_DURATION=48h \
+  -e BURNIN_DURATION=72h \
   -e K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write \
   grafana/k6 run --out experimental-prometheus-rw /work/workload.js \
   | tee -a $HOME/.repram-burnin/k6.log
@@ -572,7 +578,7 @@ docker run --rm -i --network host \
 # Pane 3: dashboard watcher — keep eyes on it during initial 30 min
 echo "Open: http://localhost:3000/d/repram-burnin-2-1/"
 echo "Start time:  $(date -Is)"
-echo "Expected end: $(date -Is -d '+48 hours')"
+echo "Expected end: $(date -Is -d '+72 hours')"
 ```
 
 For Prometheus remote-write to accept k6's pushes, Prometheus needs
