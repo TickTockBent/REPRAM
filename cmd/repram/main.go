@@ -77,7 +77,7 @@ func main() {
 	pprofEnabled := strings.EqualFold(os.Getenv("REPRAM_PPROF_ENABLED"), "true")
 	pprofAddr := os.Getenv("REPRAM_PPROF_ADDR")
 	if pprofAddr == "" {
-		pprofAddr = ":6060"
+		pprofAddr = "127.0.0.1:6060"
 	}
 
 	// Resolve bootstrap peers.
@@ -252,13 +252,15 @@ func main() {
 		<-sigChan
 		logging.Info("Shutting down — draining in-flight requests...")
 
-		if pprofServer != nil {
-			pprofServer.Close()
-		}
-
 		// Give in-flight requests up to 10 seconds to complete
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
+
+		if pprofServer != nil {
+			if err := pprofServer.Shutdown(shutdownCtx); err != nil {
+				logging.Warn("pprof server shutdown error: %v", err)
+			}
+		}
 
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			logging.Warn("HTTP server shutdown error: %v", err)

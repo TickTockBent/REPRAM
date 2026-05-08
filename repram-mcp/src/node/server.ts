@@ -7,6 +7,8 @@
 
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { writeHeapSnapshot, getHeapStatistics, getHeapSpaceStatistics } from "node:v8";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import { Logger } from "./logger.js";
@@ -43,8 +45,10 @@ export interface ServerConfig {
   inbound: InboundCapability;
   /** Maximum transient node attachments (0 = never accept). */
   maxChildren: number;
-  /** Enable /debug/pprof/ diagnostic endpoints. */
+  /** Enable /debug/pprof/ diagnostic endpoints on a separate listener. */
   pprofEnabled: boolean;
+  /** Address for the pprof listener (default: 127.0.0.1:6060). */
+  pprofAddr: string;
 }
 
 /**
@@ -71,6 +75,7 @@ export function loadConfig(embedded = false): ServerConfig {
     inbound: (process.env.REPRAM_INBOUND ?? "false") as InboundCapability,
     maxChildren: envInt("REPRAM_MAX_CHILDREN", 100),
     pprofEnabled: (process.env.REPRAM_PPROF_ENABLED ?? "").toLowerCase() === "true",
+    pprofAddr: process.env.REPRAM_PPROF_ADDR ?? "127.0.0.1:6060",
   };
 }
 
@@ -94,6 +99,8 @@ export class HTTPServer {
   private config: ServerConfig;
   private securityMW: SecurityMiddleware;
   private startTime = Date.now();
+  private pprofServer: Server | null = null;
+  private heapSnapshotInProgress = false;
 
   /** Active WebSocket connections from attached transient nodes. */
   private wsConnections = new Set<WebSocketConnection>();
@@ -220,11 +227,33 @@ export class HTTPServer {
         this.logger.info(
           `  Replication: ${this.config.replicationFactor}  TTL range: ${this.config.minTTL}-${this.config.maxTTL}s`,
         );
+
         if (this.config.pprofEnabled) {
-          this.logger.info(`  pprof: enabled on /debug/pprof/ (do not expose in untrusted environments)`);
+          this.startPprofServer();
         }
+
         resolve();
       });
+    });
+  }
+
+  private startPprofServer(): void {
+    const pprofHandler = (req: IncomingMessage, res: ServerResponse) => {
+      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+      this.pprofHandler(res, url.pathname, req.method ?? "GET");
+    };
+
+    this.pprofServer = createServer(pprofHandler);
+    const [host, portStr] = this.config.pprofAddr.includes(":")
+      ? this.config.pprofAddr.split(":")
+      : ["127.0.0.1", this.config.pprofAddr];
+    const port = parseInt(portStr, 10);
+
+    this.pprofServer.listen(port, host, () => {
+      this.logger.info(`  pprof: listening on ${host}:${port} (do not expose in untrusted environments)`);
+    });
+    this.pprofServer.on("error", (err) => {
+      this.logger.warn(`pprof server error: ${err.message}`);
     });
   }
 
@@ -248,6 +277,14 @@ export class HTTPServer {
 
     this.wss.close();
 
+    if (this.pprofServer) {
+      await new Promise<void>((resolve) => {
+        this.pprofServer!.close(() => resolve());
+        setTimeout(() => resolve(), 5_000);
+      });
+      this.pprofServer = null;
+    }
+
     await new Promise<void>((resolve) => {
       this.server.close(() => resolve());
       // Force close after 10s drain timeout
@@ -262,6 +299,11 @@ export class HTTPServer {
   /** Return the underlying http.Server (for testing). */
   getServer(): Server {
     return this.server;
+  }
+
+  /** Return the pprof http.Server if running (for testing). */
+  getPprofServer(): Server | null {
+    return this.pprofServer;
   }
 
   // ─── Request router ──────────────────────────────────────────────
@@ -280,13 +322,6 @@ export class HTTPServer {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
     const method = req.method ?? "GET";
-
-    // Diagnostic endpoints — before security checks (mirrors Go's separate
-    // pprof listener: no rate limiting on the diagnostic plane).
-    if (this.config.pprofEnabled && path.startsWith("/debug/pprof/")) {
-      this.pprofHandler(res, path, method);
-      return;
-    }
 
     // Security checks (rate limit, scanner, size)
     const clientIP = this.securityMW.check(req, res);
@@ -601,11 +636,19 @@ export class HTTPServer {
 
   private pprofHandler(res: ServerResponse, path: string, method: string): void {
     if (path === "/debug/pprof/heap" && method === "POST") {
+      if (this.heapSnapshotInProgress) {
+        sendJSON(res, 429, { error: "heap snapshot already in progress" });
+        return;
+      }
+      this.heapSnapshotInProgress = true;
       try {
-        const snapshotPath = writeHeapSnapshot();
+        const filename = `repram-heap-${Date.now()}.heapsnapshot`;
+        const snapshotPath = writeHeapSnapshot(join(tmpdir(), filename));
         sendJSON(res, 200, { path: snapshotPath });
       } catch (err) {
         sendJSON(res, 500, { error: `heap snapshot failed: ${err}` });
+      } finally {
+        this.heapSnapshotInProgress = false;
       }
       return;
     }

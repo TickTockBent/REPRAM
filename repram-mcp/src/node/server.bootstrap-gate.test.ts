@@ -35,6 +35,7 @@ function publicConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
     inbound: "false",
     maxChildren: 100,
     pprofEnabled: false,
+    pprofAddr: "127.0.0.1:0",
     ...overrides,
   };
 }
