@@ -14,8 +14,8 @@ scrape_configs:
     scrape_interval: 15s
     static_configs:
       - targets:
-          - 10.0.20.72:8080
-          - 10.0.10.81:8080
+          - 10.0.20.72:18080
+          - 10.0.10.81:18080
         labels:
           cluster: burnin
           impl: go
@@ -28,7 +28,7 @@ scrape_configs:
     scrape_interval: 15s
     static_configs:
       - targets:
-          - 10.0.10.104:8080
+          - 10.0.10.104:18080
         labels:
           cluster: burnin
           impl: ts

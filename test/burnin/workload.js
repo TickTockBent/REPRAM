@@ -32,11 +32,11 @@ const AGENT_COUNT = 100;
 const GRAVEYARD_TTL_SEC = 300;
 const GRAVEYARD_WARMUP_SEC = 360;
 
-// Long-lived reference set: 24h TTL covers most of a 48h run. After hour 24
-// these natural-expire and GET-existing will start returning 404 from the
-// ref-set arm. That's expected — the ref set is a retention probe for the
-// first refresh cycles, not a 48h invariant.
-const REF_TTL_SEC = 24 * 3600;
+// Long-lived reference set: 72h TTL covers the full run. After expiry,
+// GET-existing will start returning 404 from the ref-set arm. The ref set
+// is a retention probe, not an invariant — if the run exceeds REF_TTL,
+// that's expected behavior.
+const REF_TTL_SEC = 72 * 3600;
 
 export const options = {
     setupTimeout: '15m',
@@ -45,7 +45,7 @@ export const options = {
             executor: 'constant-arrival-rate',
             rate: 50,
             timeUnit: '1s',
-            duration: __ENV.BURNIN_DURATION || '48h',
+            duration: __ENV.BURNIN_DURATION || '72h',
             preAllocatedVUs: 30,
             maxVUs: 60,
         },
