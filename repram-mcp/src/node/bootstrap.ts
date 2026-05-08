@@ -237,6 +237,7 @@ export async function notifyPeerAboutNewNode(
           signal: controller.signal,
         });
 
+        await response.text();
         if (response.ok) {
           logger.debug(`Notified ${peerAddr} about new node (attempt ${attempt + 1})`);
           return;

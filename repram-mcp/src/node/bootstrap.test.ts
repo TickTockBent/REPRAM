@@ -270,7 +270,7 @@ describe("bootstrapFromPeers", () => {
 
 describe("notifyPeerAboutNewNode", () => {
   it("sends bootstrap request to peer", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("") });
     vi.stubGlobal("fetch", fetchMock);
 
     const logger = silentLogger();
@@ -294,7 +294,7 @@ describe("notifyPeerAboutNewNode", () => {
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(new Error("fail1"))
       .mockRejectedValueOnce(new Error("fail2"))
-      .mockResolvedValueOnce({ ok: true });
+      .mockResolvedValueOnce({ ok: true, text: () => Promise.resolve("") });
     vi.stubGlobal("fetch", fetchMock);
 
     const logger = silentLogger();

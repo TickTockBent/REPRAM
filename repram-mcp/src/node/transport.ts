@@ -25,7 +25,6 @@ export class HTTPTransport {
   async send(target: NodeInfo, msg: Message): Promise<void> {
     const wireMsg = messageToWire(msg);
     const jsonBody = JSON.stringify(wireMsg);
-    const bodyBuffer = Buffer.from(jsonBody);
 
     const url = `http://${target.address}:${target.httpPort}/v1/gossip/message`;
 
@@ -34,7 +33,7 @@ export class HTTPTransport {
     };
 
     if (this.clusterSecret) {
-      headers["X-Repram-Signature"] = signBody(this.clusterSecret, bodyBuffer);
+      headers["X-Repram-Signature"] = signBody(this.clusterSecret, Buffer.from(jsonBody));
     }
 
     const controller = new AbortController();
@@ -48,10 +47,13 @@ export class HTTPTransport {
         signal: controller.signal,
       });
 
+      // Drain the response body so undici can return the socket to its
+      // pool. Without this, each request pins a new socket and its
+      // internal buffers accumulate as external memory (#94).
+      await response.text();
+
       if (!response.ok) {
         this.logger.warn(`Message rejected by ${target.id} with status ${response.status}`);
-      } else {
-        this.logger.debug(`Sent ${msg.type} message to ${target.id} at ${url}`);
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
