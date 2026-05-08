@@ -96,6 +96,7 @@ export class RepramClient implements RepramClientInterface {
       body: data,
     });
 
+    await response.text();
     return {
       status: response.status,
       statusText: response.statusText,
@@ -105,6 +106,8 @@ export class RepramClient implements RepramClientInterface {
   async retrieve(key: string): Promise<RetrieveResult | null> {
     const response = await fetch(`${this.baseUrl}/v1/data/${encodeURIComponent(key)}`);
 
+    const data = await response.text();
+
     if (response.status === 404) {
       return null;
     }
@@ -112,8 +115,6 @@ export class RepramClient implements RepramClientInterface {
     if (!response.ok) {
       throw new Error(`REPRAM retrieve failed: ${response.status} ${response.statusText}`);
     }
-
-    const data = await response.text();
     const createdAt = response.headers.get("X-Created-At") ?? "";
     const remainingTtlSeconds = parseInt(response.headers.get("X-Remaining-TTL") ?? "0", 10);
     const originalTtlSeconds = parseInt(response.headers.get("X-Original-TTL") ?? "0", 10);

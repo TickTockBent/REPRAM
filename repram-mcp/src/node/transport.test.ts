@@ -186,7 +186,7 @@ describe("round-trip serialization", () => {
 
 describe("HTTPTransport.send", () => {
   it("sends POST with JSON body", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve("") });
     vi.stubGlobal("fetch", fetchMock);
 
     const logger = new Logger("error");
@@ -207,7 +207,7 @@ describe("HTTPTransport.send", () => {
   });
 
   it("includes HMAC signature when secret is set", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve("") });
     vi.stubGlobal("fetch", fetchMock);
 
     const logger = new Logger("error");
@@ -221,7 +221,7 @@ describe("HTTPTransport.send", () => {
   });
 
   it("omits HMAC signature when secret is empty", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve("") });
     vi.stubGlobal("fetch", fetchMock);
 
     const logger = new Logger("error");
