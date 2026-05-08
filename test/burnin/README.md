@@ -204,15 +204,22 @@ If any of these fail, stop and fix before starting the 72h timer.
 mkdir -p burn-in-$(date +%Y-%m-%d)
 cd burn-in-$(date +%Y-%m-%d)
 for node_ip in 10.0.20.72 10.0.10.81 10.0.10.104; do
-    # Go nodes: standard pprof binary profiles
-    curl -s http://${node_ip}:6060/debug/pprof/heap > heap-${node_ip}.pprof
-    curl -s http://${node_ip}:6060/debug/pprof/goroutine > goroutine-${node_ip}.pprof
-    # TS node (10.0.10.104): heap snapshot + stats
-    # curl -s -X POST http://10.0.10.104:6060/debug/pprof/heap  # returns {"path":"..."}
-    # curl -s http://10.0.10.104:6060/debug/pprof/stats > stats-ts.json
     curl -s http://${node_ip}:18080/v1/status > status-${node_ip}.json
     curl -s http://${node_ip}:18080/v1/topology > topology-${node_ip}.json
 done
+
+# Go nodes: standard pprof binary profiles (go tool pprof compatible)
+for go_ip in 10.0.20.72 10.0.10.81; do
+    curl -s http://${go_ip}:6060/debug/pprof/heap > heap-${go_ip}.pprof
+    curl -s http://${go_ip}:6060/debug/pprof/goroutine > goroutine-${go_ip}.pprof
+done
+
+# TS node: V8 heap snapshot (writes file inside container) + JSON stats
+curl -s -X POST http://10.0.10.104:6060/debug/pprof/heap > heap-ts-response.json
+curl -s http://10.0.10.104:6060/debug/pprof/stats > stats-ts.json
+# The heap response contains {"path":"/tmp/repram-heap-<ts>.heapsnapshot"}.
+# Copy it out of the container:
+#   docker cp repram-node-c:$(jq -r .path heap-ts-response.json) ./heap-ts.heapsnapshot
 # Copy logs, dnsmasq logs, prometheus snapshot, cache files (root-list.json)
 
 # 2. Stop everything
