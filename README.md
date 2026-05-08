@@ -197,20 +197,22 @@ REPRAM accepts requests from any origin. This is intentional — REPRAM is permi
 | `REPRAM_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` and `X-Real-IP` headers for client IP detection. Set to `true` when running behind a reverse proxy (nginx, Cloudflare, etc.). |
 | `REPRAM_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `REPRAM_MAX_STORAGE_MB` | `0` | Max data storage in MB (0 = unlimited). Rejects writes with 507 when full. Tracks payload bytes only — actual memory usage is higher due to per-entry overhead (~80 bytes + key length per entry). For workloads with many small values, set conservatively. |
+| `REPRAM_PPROF_ENABLED` | `false` | Enable pprof/profiling diagnostic endpoints. Go: separate listener on `REPRAM_PPROF_ADDR`. TS: heap snapshot and stats endpoints. Do not expose in untrusted environments. |
+| `REPRAM_PPROF_ADDR` | `127.0.0.1:6060` | Address for the pprof listener (only used when `REPRAM_PPROF_ENABLED=true`). Loopback-only by default — set to `0.0.0.0:6060` to allow external access. |
 
 ## Building from Source
 
 ```bash
 # Go node
 make build          # Build Go binary to bin/repram
-make test           # Run Go tests (83 tests)
+make test           # Run Go tests (155 tests)
 make docker-build   # Build Docker image (ticktockbent/repram-node:latest)
 
 # TypeScript node / MCP server
 cd repram-mcp
 npm install
 npm run build       # Compile TypeScript
-npm test            # Run tests (248 tests)
+npm test            # Run tests (381 tests)
 ```
 
 ## Documentation

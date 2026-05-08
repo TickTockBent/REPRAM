@@ -61,8 +61,8 @@ Both languages:
 - Write tests for new functionality
 - Ensure all tests pass:
   ```bash
-  make test                             # Go (83 tests)
-  cd repram-mcp && npm test             # TypeScript (248 tests)
+  make test                             # Go (155 tests)
+  cd repram-mcp && npm test             # TypeScript (381 tests)
   ```
 - Include both unit and integration tests where appropriate
 

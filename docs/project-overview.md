@@ -74,7 +74,7 @@ REPRAM is `pipe`, not `grep`. It doesn't know or care what flows through it — 
 * **Storage**: In-memory with TTL-based expiration and configurable capacity limits
 * **Discovery**: DNS SRV/A records for public network, static peer list for private
 * **Agent Interface**: Model Context Protocol (MCP) over stdio, with in-process calls for embedded mode
-* **Testing**: 83 Go tests + 248 TypeScript tests (331 total)
+* **Testing**: 155 Go tests + 381 TypeScript tests (536 total)
 
 ## Resilience Through Ephemerality
 

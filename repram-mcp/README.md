@@ -89,6 +89,8 @@ All settings via `REPRAM_*` environment variables. Defaults differ between embed
 | `REPRAM_LOG_LEVEL` | `warn` | `info` | Log level (debug/info/warn/error) |
 | `REPRAM_URL` | _(not set)_ | n/a | External node URL (MCP mode only; skips embedded node) |
 | `REPRAM_PEERS` | _(not set)_ | _(not set)_ | Comma-separated peer addresses for bootstrap |
+| `REPRAM_PPROF_ENABLED` | `false` | `false` | Enable pprof diagnostic endpoints (heap snapshot, stats) |
+| `REPRAM_PPROF_ADDR` | `127.0.0.1:6060` | `127.0.0.1:6060` | Address for the pprof listener |
 
 ## HTTP API (v1)
 
@@ -113,7 +115,7 @@ The TypeScript node uses the same JSON wire format and HMAC-SHA256 signing as th
 ```bash
 npm install
 npm run build
-npm test          # 248 tests
+npm test          # 381 tests
 ```
 
 ## License
