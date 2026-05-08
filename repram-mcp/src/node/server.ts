@@ -238,22 +238,33 @@ export class HTTPServer {
   }
 
   private startPprofServer(): void {
-    const pprofHandler = (req: IncomingMessage, res: ServerResponse) => {
+    const addr = this.config.pprofAddr;
+    const lastColon = addr.lastIndexOf(":");
+    let host: string;
+    let port: number;
+    if (lastColon >= 0) {
+      host = addr.slice(0, lastColon) || "127.0.0.1";
+      port = parseInt(addr.slice(lastColon + 1), 10);
+    } else {
+      host = "127.0.0.1";
+      port = parseInt(addr, 10);
+    }
+    if (isNaN(port)) {
+      this.logger.warn(`pprof: invalid address "${addr}" — pprof not started`);
+      return;
+    }
+
+    const handler = (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
       this.pprofHandler(res, url.pathname, req.method ?? "GET");
     };
 
-    this.pprofServer = createServer(pprofHandler);
-    const [host, portStr] = this.config.pprofAddr.includes(":")
-      ? this.config.pprofAddr.split(":")
-      : ["127.0.0.1", this.config.pprofAddr];
-    const port = parseInt(portStr, 10);
-
-    this.pprofServer.listen(port, host, () => {
-      this.logger.info(`  pprof: listening on ${host}:${port} (do not expose in untrusted environments)`);
-    });
+    this.pprofServer = createServer(handler);
     this.pprofServer.on("error", (err) => {
       this.logger.warn(`pprof server error: ${err.message}`);
+    });
+    this.pprofServer.listen(port, host, () => {
+      this.logger.info(`  pprof: listening on ${host}:${port} (do not expose in untrusted environments)`);
     });
   }
 
@@ -279,8 +290,8 @@ export class HTTPServer {
 
     if (this.pprofServer) {
       await new Promise<void>((resolve) => {
-        this.pprofServer!.close(() => resolve());
-        setTimeout(() => resolve(), 5_000);
+        const tid = setTimeout(() => resolve(), 5_000);
+        this.pprofServer!.close(() => { clearTimeout(tid); resolve(); });
       });
       this.pprofServer = null;
     }

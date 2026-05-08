@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"errors"
+	// Registers pprof handlers on http.DefaultServeMux unconditionally;
+	// only exposed via a listener when REPRAM_PPROF_ENABLED=true.
 	_ "net/http/pprof"
 
 	"github.com/gorilla/mux"
@@ -252,15 +254,21 @@ func main() {
 		<-sigChan
 		logging.Info("Shutting down — draining in-flight requests...")
 
-		// Give in-flight requests up to 10 seconds to complete
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer shutdownCancel()
-
+		// Shut down pprof first with a short deadline. pprof has no
+		// data-plane responsibilities; a 2s cap prevents a long-running
+		// CPU profile (/debug/pprof/profile, 30s default) from starving
+		// the main server's drain window.
 		if pprofServer != nil {
-			if err := pprofServer.Shutdown(shutdownCtx); err != nil {
+			pprofCtx, pprofCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			if err := pprofServer.Shutdown(pprofCtx); err != nil {
 				logging.Warn("pprof server shutdown error: %v", err)
 			}
+			pprofCancel()
 		}
+
+		// Give in-flight data-plane requests up to 10 seconds to complete
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
 
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			logging.Warn("HTTP server shutdown error: %v", err)
