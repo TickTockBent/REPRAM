@@ -214,7 +214,6 @@ export async function notifyPeerAboutNewNode(
   maxRetries: number = 3,
 ): Promise<void> {
   const jsonBody = JSON.stringify(request);
-  const bodyBuffer = Buffer.from(jsonBody);
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -223,7 +222,7 @@ export async function notifyPeerAboutNewNode(
         "Content-Type": "application/json",
       };
       if (clusterSecret) {
-        headers["X-Repram-Signature"] = signBody(clusterSecret, bodyBuffer);
+        headers["X-Repram-Signature"] = signBody(clusterSecret, Buffer.from(jsonBody));
       }
 
       const controller = new AbortController();
@@ -237,11 +236,12 @@ export async function notifyPeerAboutNewNode(
           signal: controller.signal,
         });
 
-        await response.text();
+        const responseText = await response.text();
         if (response.ok) {
           logger.debug(`Notified ${peerAddr} about new node (attempt ${attempt + 1})`);
           return;
         }
+        logger.warn(`Notify ${peerAddr} returned ${response.status}: ${responseText.slice(0, 200)}`);
       } finally {
         clearTimeout(timeout);
       }

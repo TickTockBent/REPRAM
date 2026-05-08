@@ -50,10 +50,12 @@ export class HTTPTransport {
       // Drain the response body so undici can return the socket to its
       // pool. Without this, each request pins a new socket and its
       // internal buffers accumulate as external memory (#94).
-      await response.text();
+      const responseText = await response.text();
 
       if (!response.ok) {
-        this.logger.warn(`Message rejected by ${target.id} with status ${response.status}`);
+        this.logger.warn(`Message rejected by ${target.id} with status ${response.status}: ${responseText.slice(0, 200)}`);
+      } else {
+        this.logger.debug(`Sent ${msg.type} message to ${target.id} at ${url}`);
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
