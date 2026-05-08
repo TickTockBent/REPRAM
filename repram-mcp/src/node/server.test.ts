@@ -27,6 +27,10 @@ function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
     trustProxy: false,
     maxStorageBytes: 0,
     logLevel: "error",
+    inbound: "false",
+    maxChildren: 100,
+    pprofEnabled: false,
+    pprofAddr: "127.0.0.1:0",
     ...overrides,
   };
 }
@@ -667,5 +671,124 @@ describe("WebSocket upgrade on /v1/ws", () => {
 
     expect(shutdownServer.getWSConnections().size).toBe(0);
     ws.close();
+  });
+});
+
+// ─── pprof diagnostic endpoints (#97) ────────────────────────────────
+
+/** Make an HTTP request to the pprof server (separate listener). */
+function pprofRequest(
+  server: HTTPServer,
+  method: string,
+  path: string,
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const pprofSrv = server.getPprofServer();
+    if (!pprofSrv) {
+      reject(new Error("pprof server not running"));
+      return;
+    }
+    const addr = pprofSrv.address();
+    if (!addr || typeof addr === "string") {
+      reject(new Error("pprof server not started"));
+      return;
+    }
+
+    const req = http.request(
+      { hostname: "127.0.0.1", port: addr.port, method, path },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString(),
+          });
+        });
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+describe("pprof endpoints", () => {
+  it("no pprof server when disabled", async () => {
+    const server = new HTTPServer(testConfig({ pprofEnabled: false }), silentLogger());
+    server.setTransport(mockTransport());
+    await server.start();
+
+    expect(server.getPprofServer()).toBeNull();
+
+    // /debug/pprof/* on the main server should 404
+    const res = await request(server, "GET", "/debug/pprof/stats");
+    expect(res.status).toBe(404);
+    await server.stop();
+  });
+
+  it("GET /debug/pprof/stats returns heap statistics when enabled", async () => {
+    const server = new HTTPServer(testConfig({ pprofEnabled: true }), silentLogger());
+    server.setTransport(mockTransport());
+    await server.start();
+
+    const res = await pprofRequest(server, "GET", "/debug/pprof/stats");
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.process).toHaveProperty("rss");
+    expect(body.process).toHaveProperty("heapUsed");
+    expect(body.process).toHaveProperty("external");
+    expect(body.heap).toHaveProperty("total_heap_size");
+    expect(body.spaces).toBeInstanceOf(Array);
+    await server.stop();
+  });
+
+  it("POST /debug/pprof/heap writes a heap snapshot and returns path", async () => {
+    const server = new HTTPServer(testConfig({ pprofEnabled: true }), silentLogger());
+    server.setTransport(mockTransport());
+    await server.start();
+
+    let snapshotPath: string | undefined;
+    try {
+      const res = await pprofRequest(server, "POST", "/debug/pprof/heap");
+      expect(res.status).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.path).toMatch(/\.heapsnapshot$/);
+      snapshotPath = body.path;
+    } finally {
+      if (snapshotPath) {
+        const { unlinkSync } = await import("node:fs");
+        try { unlinkSync(snapshotPath); } catch { /* may already be gone */ }
+      }
+      await server.stop();
+    }
+  });
+
+  it("returns 404 for unknown pprof sub-path", async () => {
+    const server = new HTTPServer(testConfig({ pprofEnabled: true }), silentLogger());
+    server.setTransport(mockTransport());
+    await server.start();
+
+    const res = await pprofRequest(server, "GET", "/debug/pprof/unknown");
+    expect(res.status).toBe(404);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe("unknown pprof endpoint");
+    await server.stop();
+  });
+
+  it("pprof on separate listener is independent of main server rate limiting", async () => {
+    const server = new HTTPServer(testConfig({ pprofEnabled: true, rateLimit: 1 }), silentLogger());
+    server.setTransport(mockTransport());
+    await server.start();
+
+    // Exhaust the rate limiter on the main server
+    await request(server, "GET", "/v1/health");
+    await request(server, "GET", "/v1/health");
+    const limited = await request(server, "GET", "/v1/health");
+    expect(limited.status).toBe(429);
+
+    // pprof on separate port is unaffected
+    const pprof = await pprofRequest(server, "GET", "/debug/pprof/stats");
+    expect(pprof.status).toBe(200);
+    await server.stop();
   });
 });

@@ -6,6 +6,9 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
+import { writeHeapSnapshot, getHeapStatistics, getHeapSpaceStatistics } from "node:v8";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import { Logger } from "./logger.js";
@@ -42,6 +45,10 @@ export interface ServerConfig {
   inbound: InboundCapability;
   /** Maximum transient node attachments (0 = never accept). */
   maxChildren: number;
+  /** Enable /debug/pprof/ diagnostic endpoints on a separate listener. */
+  pprofEnabled: boolean;
+  /** Address for the pprof listener (default: 127.0.0.1:6060). */
+  pprofAddr: string;
 }
 
 /**
@@ -67,6 +74,8 @@ export function loadConfig(embedded = false): ServerConfig {
     logLevel: process.env.REPRAM_LOG_LEVEL ?? (embedded ? "warn" : "info"),
     inbound: (process.env.REPRAM_INBOUND ?? "false") as InboundCapability,
     maxChildren: envInt("REPRAM_MAX_CHILDREN", 100),
+    pprofEnabled: (process.env.REPRAM_PPROF_ENABLED ?? "").toLowerCase() === "true",
+    pprofAddr: process.env.REPRAM_PPROF_ADDR ?? "127.0.0.1:6060",
   };
 }
 
@@ -90,6 +99,8 @@ export class HTTPServer {
   private config: ServerConfig;
   private securityMW: SecurityMiddleware;
   private startTime = Date.now();
+  private pprofServer: Server | null = null;
+  private heapSnapshotInProgress = false;
 
   /** Active WebSocket connections from attached transient nodes. */
   private wsConnections = new Set<WebSocketConnection>();
@@ -216,8 +227,44 @@ export class HTTPServer {
         this.logger.info(
           `  Replication: ${this.config.replicationFactor}  TTL range: ${this.config.minTTL}-${this.config.maxTTL}s`,
         );
+
+        if (this.config.pprofEnabled) {
+          this.startPprofServer();
+        }
+
         resolve();
       });
+    });
+  }
+
+  private startPprofServer(): void {
+    const addr = this.config.pprofAddr;
+    const lastColon = addr.lastIndexOf(":");
+    let host: string;
+    let port: number;
+    if (lastColon >= 0) {
+      host = addr.slice(0, lastColon) || "127.0.0.1";
+      port = parseInt(addr.slice(lastColon + 1), 10);
+    } else {
+      host = "127.0.0.1";
+      port = parseInt(addr, 10);
+    }
+    if (isNaN(port)) {
+      this.logger.warn(`pprof: invalid address "${addr}" — pprof not started`);
+      return;
+    }
+
+    const handler = (req: IncomingMessage, res: ServerResponse) => {
+      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+      this.pprofHandler(res, url.pathname, req.method ?? "GET");
+    };
+
+    this.pprofServer = createServer(handler);
+    this.pprofServer.on("error", (err) => {
+      this.logger.warn(`pprof server error: ${err.message}`);
+    });
+    this.pprofServer.listen(port, host, () => {
+      this.logger.info(`  pprof: listening on ${host}:${port} (do not expose in untrusted environments)`);
     });
   }
 
@@ -241,6 +288,14 @@ export class HTTPServer {
 
     this.wss.close();
 
+    if (this.pprofServer) {
+      await new Promise<void>((resolve) => {
+        const tid = setTimeout(() => resolve(), 5_000);
+        this.pprofServer!.close(() => { clearTimeout(tid); resolve(); });
+      });
+      this.pprofServer = null;
+    }
+
     await new Promise<void>((resolve) => {
       this.server.close(() => resolve());
       // Force close after 10s drain timeout
@@ -257,6 +312,11 @@ export class HTTPServer {
     return this.server;
   }
 
+  /** Return the pprof http.Server if running (for testing). */
+  getPprofServer(): Server | null {
+    return this.pprofServer;
+  }
+
   // ─── Request router ──────────────────────────────────────────────
 
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
@@ -270,13 +330,13 @@ export class HTTPServer {
       return;
     }
 
-    // Security checks (rate limit, scanner, size)
-    const clientIP = this.securityMW.check(req, res);
-    if (!clientIP) return; // rejected
-
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
     const method = req.method ?? "GET";
+
+    // Security checks (rate limit, scanner, size)
+    const clientIP = this.securityMW.check(req, res);
+    if (!clientIP) return; // rejected
 
     // Route matching
     const dataMatch = path.match(/^\/v1\/data\/(.+)$/);
@@ -581,6 +641,39 @@ export class HTTPServer {
         })),
       });
     });
+  }
+
+  // ─── Profiling ───────────────────────────────────────────────────
+
+  private pprofHandler(res: ServerResponse, path: string, method: string): void {
+    if (path === "/debug/pprof/heap" && method === "POST") {
+      if (this.heapSnapshotInProgress) {
+        sendJSON(res, 429, { error: "heap snapshot already in progress" });
+        return;
+      }
+      this.heapSnapshotInProgress = true;
+      try {
+        const filename = `repram-heap-${Date.now()}.heapsnapshot`;
+        const snapshotPath = writeHeapSnapshot(join(tmpdir(), filename));
+        sendJSON(res, 200, { path: snapshotPath });
+      } catch (err) {
+        sendJSON(res, 500, { error: `heap snapshot failed: ${err}` });
+      } finally {
+        this.heapSnapshotInProgress = false;
+      }
+      return;
+    }
+
+    if (path === "/debug/pprof/stats" && method === "GET") {
+      sendJSON(res, 200, {
+        process: process.memoryUsage(),
+        heap: getHeapStatistics(),
+        spaces: getHeapSpaceStatistics(),
+      });
+      return;
+    }
+
+    sendJSON(res, 404, { error: "unknown pprof endpoint" });
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────

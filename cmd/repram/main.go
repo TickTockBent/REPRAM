@@ -17,6 +17,9 @@ import (
 	"time"
 
 	"errors"
+	// Registers pprof handlers on http.DefaultServeMux unconditionally;
+	// only exposed via a listener when REPRAM_PPROF_ENABLED=true.
+	_ "net/http/pprof"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
@@ -72,6 +75,11 @@ func main() {
 	network := os.Getenv("REPRAM_NETWORK")
 	if network == "" {
 		network = "public"
+	}
+	pprofEnabled := strings.EqualFold(os.Getenv("REPRAM_PPROF_ENABLED"), "true")
+	pprofAddr := os.Getenv("REPRAM_PPROF_ADDR")
+	if pprofAddr == "" {
+		pprofAddr = "127.0.0.1:6060"
 	}
 
 	// Resolve bootstrap peers.
@@ -211,11 +219,31 @@ func main() {
 	} else {
 		logging.Info("  Gossip authentication: none (open mode)")
 	}
+	if pprofEnabled {
+		logging.Info("  pprof: enabled on %s (do not expose in untrusted environments)", pprofAddr)
+	}
 
 	// Create HTTP server for graceful shutdown support
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", httpPort),
 		Handler: server.Router(),
+	}
+
+	// Optional pprof server on a separate listener (diagnostic plane).
+	// Uses http.DefaultServeMux which has pprof handlers auto-registered
+	// via the net/http/pprof blank import.
+	var pprofServer *http.Server
+	if pprofEnabled {
+		pprofServer = &http.Server{
+			Addr:    pprofAddr,
+			Handler: http.DefaultServeMux,
+		}
+		go func() {
+			logging.Info("pprof listening on %s", pprofAddr)
+			if err := pprofServer.ListenAndServe(); err != http.ErrServerClosed {
+				logging.Warn("pprof server error: %v", err)
+			}
+		}()
 	}
 
 	// Graceful shutdown: drain in-flight requests before exiting
@@ -226,7 +254,19 @@ func main() {
 		<-sigChan
 		logging.Info("Shutting down — draining in-flight requests...")
 
-		// Give in-flight requests up to 10 seconds to complete
+		// Shut down pprof first with a short deadline. pprof has no
+		// data-plane responsibilities; a 2s cap prevents a long-running
+		// CPU profile (/debug/pprof/profile, 30s default) from starving
+		// the main server's drain window.
+		if pprofServer != nil {
+			pprofCtx, pprofCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			if err := pprofServer.Shutdown(pprofCtx); err != nil {
+				logging.Warn("pprof server shutdown error: %v", err)
+			}
+			pprofCancel()
+		}
+
+		// Give in-flight data-plane requests up to 10 seconds to complete
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 

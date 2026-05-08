@@ -706,3 +706,46 @@ func TestSlashOnlyKeyReturns400_NotRedirect(t *testing.T) {
 		})
 	}
 }
+
+// --- #97: pprof on separate listener ---
+
+func TestPprofDefaultServeMuxHasHandlers(t *testing.T) {
+	// The blank import of net/http/pprof registers handlers on
+	// http.DefaultServeMux. Verify they respond.
+	req := httptest.NewRequest("GET", "/debug/pprof/", nil)
+	w := httptest.NewRecorder()
+	http.DefaultServeMux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /debug/pprof/, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "goroutine") {
+		t.Fatal("pprof index should list goroutine profile")
+	}
+}
+
+func TestPprofHeapProfile(t *testing.T) {
+	req := httptest.NewRequest("GET", "/debug/pprof/heap", nil)
+	w := httptest.NewRecorder()
+	http.DefaultServeMux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /debug/pprof/heap, got %d", w.Code)
+	}
+	if w.Body.Len() == 0 {
+		t.Fatal("heap profile should not be empty")
+	}
+}
+
+func TestPprofNotOnMainRouter(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest("GET", "/debug/pprof/", nil)
+	w := httptest.NewRecorder()
+	server.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("pprof should NOT be on the main router; expected 404, got %d", w.Code)
+	}
+}
