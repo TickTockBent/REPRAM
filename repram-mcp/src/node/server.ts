@@ -6,6 +6,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
+import { writeHeapSnapshot, getHeapStatistics, getHeapSpaceStatistics } from "node:v8";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import { Logger } from "./logger.js";
@@ -42,6 +43,8 @@ export interface ServerConfig {
   inbound: InboundCapability;
   /** Maximum transient node attachments (0 = never accept). */
   maxChildren: number;
+  /** Enable /debug/pprof/ diagnostic endpoints. */
+  pprofEnabled: boolean;
 }
 
 /**
@@ -67,6 +70,7 @@ export function loadConfig(embedded = false): ServerConfig {
     logLevel: process.env.REPRAM_LOG_LEVEL ?? (embedded ? "warn" : "info"),
     inbound: (process.env.REPRAM_INBOUND ?? "false") as InboundCapability,
     maxChildren: envInt("REPRAM_MAX_CHILDREN", 100),
+    pprofEnabled: (process.env.REPRAM_PPROF_ENABLED ?? "").toLowerCase() === "true",
   };
 }
 
@@ -216,6 +220,9 @@ export class HTTPServer {
         this.logger.info(
           `  Replication: ${this.config.replicationFactor}  TTL range: ${this.config.minTTL}-${this.config.maxTTL}s`,
         );
+        if (this.config.pprofEnabled) {
+          this.logger.info(`  pprof: enabled on /debug/pprof/ (do not expose in untrusted environments)`);
+        }
         resolve();
       });
     });
@@ -270,13 +277,20 @@ export class HTTPServer {
       return;
     }
 
-    // Security checks (rate limit, scanner, size)
-    const clientIP = this.securityMW.check(req, res);
-    if (!clientIP) return; // rejected
-
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
     const method = req.method ?? "GET";
+
+    // Diagnostic endpoints — before security checks (mirrors Go's separate
+    // pprof listener: no rate limiting on the diagnostic plane).
+    if (this.config.pprofEnabled && path.startsWith("/debug/pprof/")) {
+      this.pprofHandler(res, path, method);
+      return;
+    }
+
+    // Security checks (rate limit, scanner, size)
+    const clientIP = this.securityMW.check(req, res);
+    if (!clientIP) return; // rejected
 
     // Route matching
     const dataMatch = path.match(/^\/v1\/data\/(.+)$/);
@@ -581,6 +595,31 @@ export class HTTPServer {
         })),
       });
     });
+  }
+
+  // ─── Profiling ───────────────────────────────────────────────────
+
+  private pprofHandler(res: ServerResponse, path: string, method: string): void {
+    if (path === "/debug/pprof/heap" && method === "POST") {
+      try {
+        const snapshotPath = writeHeapSnapshot();
+        sendJSON(res, 200, { path: snapshotPath });
+      } catch (err) {
+        sendJSON(res, 500, { error: `heap snapshot failed: ${err}` });
+      }
+      return;
+    }
+
+    if (path === "/debug/pprof/stats" && method === "GET") {
+      sendJSON(res, 200, {
+        process: process.memoryUsage(),
+        heap: getHeapStatistics(),
+        spaces: getHeapSpaceStatistics(),
+      });
+      return;
+    }
+
+    sendJSON(res, 404, { error: "unknown pprof endpoint" });
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"errors"
+	_ "net/http/pprof"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
@@ -72,6 +73,11 @@ func main() {
 	network := os.Getenv("REPRAM_NETWORK")
 	if network == "" {
 		network = "public"
+	}
+	pprofEnabled := strings.EqualFold(os.Getenv("REPRAM_PPROF_ENABLED"), "true")
+	pprofAddr := os.Getenv("REPRAM_PPROF_ADDR")
+	if pprofAddr == "" {
+		pprofAddr = ":6060"
 	}
 
 	// Resolve bootstrap peers.
@@ -211,11 +217,31 @@ func main() {
 	} else {
 		logging.Info("  Gossip authentication: none (open mode)")
 	}
+	if pprofEnabled {
+		logging.Info("  pprof: enabled on %s (do not expose in untrusted environments)", pprofAddr)
+	}
 
 	// Create HTTP server for graceful shutdown support
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", httpPort),
 		Handler: server.Router(),
+	}
+
+	// Optional pprof server on a separate listener (diagnostic plane).
+	// Uses http.DefaultServeMux which has pprof handlers auto-registered
+	// via the net/http/pprof blank import.
+	var pprofServer *http.Server
+	if pprofEnabled {
+		pprofServer = &http.Server{
+			Addr:    pprofAddr,
+			Handler: http.DefaultServeMux,
+		}
+		go func() {
+			logging.Info("pprof listening on %s", pprofAddr)
+			if err := pprofServer.ListenAndServe(); err != http.ErrServerClosed {
+				logging.Warn("pprof server error: %v", err)
+			}
+		}()
 	}
 
 	// Graceful shutdown: drain in-flight requests before exiting
@@ -225,6 +251,10 @@ func main() {
 	go func() {
 		<-sigChan
 		logging.Info("Shutting down — draining in-flight requests...")
+
+		if pprofServer != nil {
+			pprofServer.Close()
+		}
 
 		// Give in-flight requests up to 10 seconds to complete
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)

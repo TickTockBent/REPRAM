@@ -45,6 +45,7 @@ function substrateConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
     logLevel: "error",
     inbound: "true",
     maxChildren: DEFAULT_MAX_CHILDREN,
+    pprofEnabled: false,
     ...overrides,
   };
 }

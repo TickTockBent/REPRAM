@@ -27,6 +27,9 @@ function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
     trustProxy: false,
     maxStorageBytes: 0,
     logLevel: "error",
+    inbound: "false",
+    maxChildren: 100,
+    pprofEnabled: false,
     ...overrides,
   };
 }
@@ -667,5 +670,86 @@ describe("WebSocket upgrade on /v1/ws", () => {
 
     expect(shutdownServer.getWSConnections().size).toBe(0);
     ws.close();
+  });
+});
+
+// ─── pprof diagnostic endpoints (#97) ────────────────────────────────
+
+describe("pprof endpoints", () => {
+  let server: HTTPServer;
+
+  afterAll(async () => {
+    if (server) await server.stop();
+  });
+
+  it("returns 404 for /debug/pprof/* when disabled", async () => {
+    server = new HTTPServer(testConfig({ pprofEnabled: false }), silentLogger());
+    server.setTransport(mockTransport());
+    await server.start();
+
+    const res = await request(server, "GET", "/debug/pprof/stats");
+    expect(res.status).toBe(404);
+    await server.stop();
+  });
+
+  it("GET /debug/pprof/stats returns heap statistics when enabled", async () => {
+    server = new HTTPServer(testConfig({ pprofEnabled: true }), silentLogger());
+    server.setTransport(mockTransport());
+    await server.start();
+
+    const res = await request(server, "GET", "/debug/pprof/stats");
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.process).toHaveProperty("rss");
+    expect(body.process).toHaveProperty("heapUsed");
+    expect(body.process).toHaveProperty("external");
+    expect(body.heap).toHaveProperty("total_heap_size");
+    expect(body.spaces).toBeInstanceOf(Array);
+    await server.stop();
+  });
+
+  it("POST /debug/pprof/heap writes a heap snapshot and returns path", async () => {
+    server = new HTTPServer(testConfig({ pprofEnabled: true }), silentLogger());
+    server.setTransport(mockTransport());
+    await server.start();
+
+    const res = await request(server, "POST", "/debug/pprof/heap");
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.path).toMatch(/\.heapsnapshot$/);
+
+    // Clean up the snapshot file
+    const { unlinkSync } = await import("node:fs");
+    try { unlinkSync(body.path); } catch { /* may already be gone */ }
+    await server.stop();
+  });
+
+  it("returns 404 for unknown pprof sub-path", async () => {
+    server = new HTTPServer(testConfig({ pprofEnabled: true }), silentLogger());
+    server.setTransport(mockTransport());
+    await server.start();
+
+    const res = await request(server, "GET", "/debug/pprof/unknown");
+    expect(res.status).toBe(404);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe("unknown pprof endpoint");
+    await server.stop();
+  });
+
+  it("pprof endpoints bypass rate limiting", async () => {
+    server = new HTTPServer(testConfig({ pprofEnabled: true, rateLimit: 1 }), silentLogger());
+    server.setTransport(mockTransport());
+    await server.start();
+
+    // Exhaust the rate limiter via a normal endpoint
+    await request(server, "GET", "/v1/health");
+    await request(server, "GET", "/v1/health");
+    const limited = await request(server, "GET", "/v1/health");
+    expect(limited.status).toBe(429);
+
+    // pprof should still work
+    const pprof = await request(server, "GET", "/debug/pprof/stats");
+    expect(pprof.status).toBe(200);
+    await server.stop();
   });
 });

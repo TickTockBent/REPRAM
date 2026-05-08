@@ -34,6 +34,7 @@ function publicConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
     logLevel: "error",
     inbound: "false",
     maxChildren: 100,
+    pprofEnabled: false,
     ...overrides,
   };
 }
