@@ -238,7 +238,9 @@ export class GossipProtocol {
       nodeInfo: this.localNode, // include identity and enclave membership
     };
 
-    this.transport?.send(peer, pong);
+    this.transport?.send(peer, pong).catch((err) => {
+      this.logger.warn(`[${this.localNode.id}] Failed to send PONG to ${peer.id}: ${err}`);
+    });
   }
 
   private handlePong(msg: Message): void {

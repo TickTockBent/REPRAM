@@ -16,6 +16,7 @@ import type { Logger } from "./logger.js";
 import type { Message, NodeInfo, WireMessage, WireNodeInfo } from "./types.js";
 
 const gossipAgent = new Agent({ keepAlive: true, maxSockets: 4 });
+const bootstrapAgent = new Agent({ keepAlive: true, maxSockets: 2 });
 
 export class HTTPTransport {
   private localNode: NodeInfo;
@@ -43,6 +44,7 @@ export class HTTPTransport {
     }
 
     return new Promise<void>((resolve, reject) => {
+      let settled = false;
       const req = httpRequest(
         {
           hostname: target.address,
@@ -56,24 +58,29 @@ export class HTTPTransport {
           let body = "";
           res.on("data", (chunk: Buffer) => { body += chunk; });
           res.on("end", () => {
+            if (settled) return;
+            settled = true;
             if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
               this.logger.debug(`Sent ${msg.type} message to ${target.id}`);
-              resolve();
             } else {
               this.logger.warn(`Message rejected by ${target.id} with status ${res.statusCode}: ${body.slice(0, 200)}`);
-              resolve();
             }
+            resolve();
           });
         },
       );
 
       req.on("error", (err) => {
+        if (settled) return;
+        settled = true;
         this.logger.warn(`Failed to send message to ${target.id}: ${err}`);
         reject(err);
       });
 
       req.setTimeout(5_000, () => {
         req.destroy();
+        if (settled) return;
+        settled = true;
         this.logger.warn(`Send to ${target.id} timed out`);
         reject(new Error("timeout"));
       });
@@ -176,21 +183,22 @@ export function httpPost(
         path: parsed.pathname + parsed.search,
         method: "POST",
         headers: { ...headers, "Content-Length": String(Buffer.byteLength(body)) },
-        agent: gossipAgent,
+        agent: bootstrapAgent,
       },
       (res) => {
         let responseBody = "";
         res.on("data", (chunk: Buffer) => { responseBody += chunk; });
         res.on("end", () => {
-          resolve({ statusCode: res.statusCode ?? 0, body: responseBody });
+          if (!settled) { settled = true; resolve({ statusCode: res.statusCode ?? 0, body: responseBody }); }
         });
       },
     );
 
-    req.on("error", reject);
+    let settled = false;
+    req.on("error", (err) => { if (!settled) { settled = true; reject(err); } });
     req.setTimeout(timeoutMs, () => {
       req.destroy();
-      reject(new Error("timeout"));
+      if (!settled) { settled = true; reject(new Error("timeout")); }
     });
     req.end(body);
   });
