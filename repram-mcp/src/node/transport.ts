@@ -176,6 +176,7 @@ export function httpPost(
 ): Promise<HttpPostResult> {
   const parsed = new URL(url);
   return new Promise((resolve, reject) => {
+    let settled = false;
     const req = httpRequest(
       {
         hostname: parsed.hostname,
@@ -194,7 +195,6 @@ export function httpPost(
       },
     );
 
-    let settled = false;
     req.on("error", (err) => { if (!settled) { settled = true; reject(err); } });
     req.setTimeout(timeoutMs, () => {
       req.destroy();

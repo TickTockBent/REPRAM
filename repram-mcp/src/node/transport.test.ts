@@ -11,7 +11,7 @@ vi.mock("node:http", () => ({
 }));
 
 // Import after mock so the module picks up the mocked http
-const { HTTPTransport, messageToWire, wireToMessage } = await import("./transport.js");
+const { HTTPTransport, messageToWire, wireToMessage, httpPost } = await import("./transport.js");
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -273,7 +273,7 @@ describe("HTTPTransport.send", () => {
     expect(opts.headers["X-Repram-Signature"]).toBeUndefined();
   });
 
-  it("handles request error gracefully (no throw)", async () => {
+  it("rejects on request error", async () => {
     const req = new EventEmitter() as EventEmitter & {
       end: ReturnType<typeof vi.fn>;
       setTimeout: ReturnType<typeof vi.fn>;
@@ -338,5 +338,139 @@ describe("HTTPTransport.handleIncoming", () => {
       timestamp: 0,
       message_id: "x",
     });
+  });
+});
+
+// --- httpPost ---
+
+describe("httpPost", () => {
+  it("resolves with status code and body on success", async () => {
+    const req = new EventEmitter() as EventEmitter & {
+      end: ReturnType<typeof vi.fn>;
+      setTimeout: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    req.end = vi.fn();
+    req.setTimeout = vi.fn();
+    req.destroy = vi.fn();
+
+    mockRequest.mockImplementation((_opts: unknown, callback: (res: unknown) => void) => {
+      process.nextTick(() => {
+        const res = new EventEmitter() as EventEmitter & { statusCode: number };
+        res.statusCode = 200;
+        callback(res);
+        process.nextTick(() => {
+          res.emit("data", Buffer.from('{"ok":true}'));
+          res.emit("end");
+        });
+      });
+      return req;
+    });
+
+    const result = await httpPost("http://10.0.0.1:8080/v1/bootstrap", '{"test":1}', { "Content-Type": "application/json" });
+
+    expect(result.statusCode).toBe(200);
+    expect(result.body).toBe('{"ok":true}');
+  });
+
+  it("parses URL into hostname, port, and path", async () => {
+    const req = new EventEmitter() as EventEmitter & {
+      end: ReturnType<typeof vi.fn>;
+      setTimeout: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    req.end = vi.fn();
+    req.setTimeout = vi.fn();
+    req.destroy = vi.fn();
+
+    mockRequest.mockImplementation((_opts: unknown, callback: (res: unknown) => void) => {
+      process.nextTick(() => {
+        const res = new EventEmitter() as EventEmitter & { statusCode: number };
+        res.statusCode = 200;
+        callback(res);
+        process.nextTick(() => res.emit("end"));
+      });
+      return req;
+    });
+
+    await httpPost("http://myhost:9090/v1/some/path?q=1", "{}", {});
+
+    const opts = mockRequest.mock.calls[0][0];
+    expect(opts.hostname).toBe("myhost");
+    expect(String(opts.port)).toBe("9090");
+    expect(opts.path).toBe("/v1/some/path?q=1");
+    expect(opts.method).toBe("POST");
+  });
+
+  it("rejects on connection error", async () => {
+    const req = new EventEmitter() as EventEmitter & {
+      end: ReturnType<typeof vi.fn>;
+      setTimeout: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    req.end = vi.fn();
+    req.setTimeout = vi.fn();
+    req.destroy = vi.fn();
+
+    mockRequest.mockImplementation(() => {
+      process.nextTick(() => req.emit("error", new Error("ECONNREFUSED")));
+      return req;
+    });
+
+    await expect(httpPost("http://10.0.0.1:8080/v1/test", "{}", {})).rejects.toThrow("ECONNREFUSED");
+  });
+
+  it("rejects on timeout and destroys the request", async () => {
+    const req = new EventEmitter() as EventEmitter & {
+      end: ReturnType<typeof vi.fn>;
+      setTimeout: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    req.end = vi.fn();
+    req.destroy = vi.fn();
+
+    let timeoutCb: () => void;
+    req.setTimeout = vi.fn((_ms: number, cb: () => void) => { timeoutCb = cb; });
+
+    mockRequest.mockImplementation(() => req);
+
+    const promise = httpPost("http://10.0.0.1:8080/v1/test", "{}", {}, 100);
+
+    // Trigger the timeout callback
+    process.nextTick(() => timeoutCb());
+
+    await expect(promise).rejects.toThrow("timeout");
+    expect(req.destroy).toHaveBeenCalled();
+  });
+
+  it("settled guard prevents double-settlement on timeout after response start", async () => {
+    const req = new EventEmitter() as EventEmitter & {
+      end: ReturnType<typeof vi.fn>;
+      setTimeout: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    req.end = vi.fn();
+    req.destroy = vi.fn();
+
+    let timeoutCb: () => void;
+    req.setTimeout = vi.fn((_ms: number, cb: () => void) => { timeoutCb = cb; });
+
+    const res = new EventEmitter() as EventEmitter & { statusCode: number };
+    res.statusCode = 200;
+
+    mockRequest.mockImplementation((_opts: unknown, callback: (r: unknown) => void) => {
+      process.nextTick(() => {
+        callback(res);
+        // Response ends, then timeout fires — settled flag should prevent double-settlement
+        process.nextTick(() => {
+          res.emit("end");
+          process.nextTick(() => timeoutCb());
+        });
+      });
+      return req;
+    });
+
+    const result = await httpPost("http://10.0.0.1:8080/v1/test", "{}", {});
+    expect(result.statusCode).toBe(200);
   });
 });
