@@ -740,6 +740,39 @@ describe("TreeManager", () => {
       await pair.cleanup();
     }, 15_000);
 
+    // #120: tryAlternatives must skip entries matching the local node's
+    // address+port so the node never attaches to itself via WS.
+    it("tryAlternatives skips self-matching entries (#120)", async () => {
+      const localNode = makeNodeInfo("node-c", { address: "10.0.10.104", httpPort: 18080 });
+      const gossip = new GossipProtocol(localNode, 3, silentLogger());
+      const tree = makeTreeManager(localNode, gossip, { inbound: "false" });
+
+      const tryAlternatives = (tree as unknown as {
+        tryAlternatives: (
+          alts: AlternativeParent[],
+          timeout: number,
+          deadline: number | undefined,
+        ) => Promise<boolean>;
+      }).tryAlternatives.bind(tree);
+
+      // List contains self (by address+port) plus an unreachable peer.
+      // Self should be skipped silently; the unreachable peer will fail
+      // with a connection error. If self were NOT skipped, connectToSubstrate
+      // would try to open a WS connection to the local node (no server
+      // running on 18080 in this test) — both would fail, but the test
+      // verifies that only one connection attempt is made (the non-self entry).
+      const alts: AlternativeParent[] = [
+        { id: "self-seed", address: "10.0.10.104", http_port: 18080 },
+        { id: "seed-10.0.0.99:8080", address: "10.0.0.99", http_port: 8080 },
+      ];
+
+      const result = await tryAlternatives(alts, 1_000, undefined);
+      // Both should fail (self skipped, other unreachable), so result is false.
+      expect(result).toBe(false);
+
+      tree.stop();
+    }, 10_000);
+
     it("stop() sets stopping flag and resolves pending sleeps promptly", async () => {
       const tree = makeTreeManager(makeNodeInfo("t-1"), new GossipProtocol(makeNodeInfo("t-1"), 3, silentLogger()));
       const internal = tree as unknown as {

@@ -552,6 +552,13 @@ export class TreeManager {
         return false;
       }
 
+      // Skip self — seed-list layer uses synthetic IDs so the ID filter
+      // in welcome-topology population doesn't catch it. Address+port is
+      // the reliable self-check across all layers (#120).
+      if (alt.address === this.localNode.address && alt.http_port === this.localNode.httpPort) {
+        continue;
+      }
+
       this.logger.info(
         `Attempting reattachment to ${alt.id} (${alt.address}:${alt.http_port})`,
       );

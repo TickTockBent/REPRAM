@@ -169,8 +169,19 @@ async function attachToSubstrate(
   seedPeers: string[],
   logger: Logger,
 ): Promise<void> {
+  // Same self-skip as bootstrapFromPeers (#87): the seed list may include
+  // this node's own address (e.g., omega root list). Attaching to self
+  // makes the node both substrate and transient for itself, routing all
+  // PUTs through the self-WS connection instead of broadcasting (#120).
+  const selfAdvertised = `${config.address}:${config.httpPort}`;
+
   // Try each seed peer for WS attachment
   for (const seed of seedPeers) {
+    if (seed === selfAdvertised) {
+      logger.debug(`Skipping self in WS attachment candidates (${seed})`);
+      continue;
+    }
+
     const [address, portStr] = seed.split(":");
     const port = parseInt(portStr, 10);
     if (!address || isNaN(port)) continue;
