@@ -1,10 +1,22 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { bootstrapFromPeers, notifyPeerAboutNewNode } from "./bootstrap.js";
 import { Logger } from "./logger.js";
 import type { NodeInfo } from "./types.js";
 
+const mockHttpPost = vi.fn();
+
+vi.mock("./transport.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./transport.js")>();
+  return {
+    ...actual,
+    httpPost: mockHttpPost,
+  };
+});
+
+const { bootstrapFromPeers, notifyPeerAboutNewNode } = await import("./bootstrap.js");
+
 afterEach(() => {
   vi.restoreAllMocks();
+  mockHttpPost.mockReset();
 });
 
 function silentLogger(): Logger {
@@ -22,6 +34,10 @@ function makeLocalNode(overrides: Partial<NodeInfo> = {}): NodeInfo {
   };
 }
 
+function mockSuccessResponse(peers: unknown[]) {
+  return { statusCode: 200, body: JSON.stringify({ success: true, peers }) };
+}
+
 // Note: the omega-based signed-root-list discovery path
 // (resolveOmegaBootstrap) is exercised under src/node/trust/ — see
 // resolver.test.ts, cache.test.ts, and refresher.test.ts. The legacy
@@ -31,17 +47,10 @@ function makeLocalNode(overrides: Partial<NodeInfo> = {}): NodeInfo {
 
 describe("bootstrapFromPeers", () => {
   it("returns discovered peers on success", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        peers: [
-          { id: "peer-1", address: "10.0.0.1", port: 9090, http_port: 8080, enclave: "default" },
-          { id: "peer-2", address: "10.0.0.2", port: 9090, http_port: 8080 },
-        ],
-      }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    mockHttpPost.mockResolvedValue(mockSuccessResponse([
+      { id: "peer-1", address: "10.0.0.1", port: 9090, http_port: 8080, enclave: "default" },
+      { id: "peer-2", address: "10.0.0.2", port: 9090, http_port: 8080 },
+    ]));
 
     const logger = silentLogger();
     vi.spyOn(logger, "info").mockImplementation(() => {});
@@ -59,16 +68,10 @@ describe("bootstrapFromPeers", () => {
   });
 
   it("filters out self from discovered peers", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        peers: [
-          { id: "test-node", address: "localhost", port: 9090, http_port: 8080 },
-          { id: "other-node", address: "10.0.0.2", port: 9090, http_port: 8080 },
-        ],
-      }),
-    }));
+    mockHttpPost.mockResolvedValue(mockSuccessResponse([
+      { id: "test-node", address: "localhost", port: 9090, http_port: 8080 },
+      { id: "other-node", address: "10.0.0.2", port: 9090, http_port: 8080 },
+    ]));
 
     const logger = silentLogger();
     vi.spyOn(logger, "info").mockImplementation(() => {});
@@ -85,16 +88,11 @@ describe("bootstrapFromPeers", () => {
   });
 
   it("continues to next seed on failure", async () => {
-    const fetchMock = vi.fn()
+    mockHttpPost
       .mockRejectedValueOnce(new Error("connection refused"))
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          peers: [{ id: "peer-1", address: "10.0.0.3", port: 9090, http_port: 8080 }],
-        }),
-      });
-    vi.stubGlobal("fetch", fetchMock);
+      .mockResolvedValueOnce(mockSuccessResponse([
+        { id: "peer-1", address: "10.0.0.3", port: 9090, http_port: 8080 },
+      ]));
 
     const logger = silentLogger();
     vi.spyOn(logger, "info").mockImplementation(() => {});
@@ -108,21 +106,16 @@ describe("bootstrapFromPeers", () => {
     );
 
     expect(peers).toHaveLength(1);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mockHttpPost).toHaveBeenCalledTimes(2);
   });
 
   // #82 (F3): the old loop returned after the first successful seed,
   // leaving later seeds unaware of the joiner until topology sync. The
   // fixed loop contacts every seed.
   it("contacts every seed even after the first succeeds", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        peers: [{ id: "shared", address: "10.0.0.9", port: 9090, http_port: 8080 }],
-      }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    mockHttpPost.mockResolvedValue(mockSuccessResponse([
+      { id: "shared", address: "10.0.0.9", port: 9090, http_port: 8080 },
+    ]));
 
     const logger = silentLogger();
     vi.spyOn(logger, "info").mockImplementation(() => {});
@@ -134,8 +127,8 @@ describe("bootstrapFromPeers", () => {
       logger,
     );
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    const urls = fetchMock.mock.calls.map((c) => c[0]);
+    expect(mockHttpPost).toHaveBeenCalledTimes(3);
+    const urls = mockHttpPost.mock.calls.map((c) => c[0]);
     expect(urls).toContain("http://seed-a:8080/v1/bootstrap");
     expect(urls).toContain("http://seed-b:8080/v1/bootstrap");
     expect(urls).toContain("http://seed-c:8080/v1/bootstrap");
@@ -146,14 +139,9 @@ describe("bootstrapFromPeers", () => {
   // must skip it — otherwise the node POSTs a bootstrap to itself and
   // pollutes its peer map with self.
   it("skips self in the seed list", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        peers: [{ id: "other", address: "10.0.0.2", port: 9090, http_port: 8080 }],
-      }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    mockHttpPost.mockResolvedValue(mockSuccessResponse([
+      { id: "other", address: "10.0.0.2", port: 9090, http_port: 8080 },
+    ]));
 
     const logger = silentLogger();
     vi.spyOn(logger, "info").mockImplementation(() => {});
@@ -167,8 +155,8 @@ describe("bootstrapFromPeers", () => {
       logger,
     );
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe("http://real-seed:8080/v1/bootstrap");
+    expect(mockHttpPost).toHaveBeenCalledTimes(1);
+    expect(mockHttpPost.mock.calls[0][0]).toBe("http://real-seed:8080/v1/bootstrap");
   });
 
   // #82 (F4): when multiple seeds report the same peer, the caller
@@ -176,14 +164,9 @@ describe("bootstrapFromPeers", () => {
   // the response — that's how a single-seed bootstrap learns about the
   // seed at all — so dedup runs on the caller side.)
   it("dedupes peers reported by multiple seeds", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        peers: [{ id: "shared", address: "10.0.0.9", port: 9090, http_port: 8080 }],
-      }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    mockHttpPost.mockResolvedValue(mockSuccessResponse([
+      { id: "shared", address: "10.0.0.9", port: 9090, http_port: 8080 },
+    ]));
 
     const logger = silentLogger();
     vi.spyOn(logger, "info").mockImplementation(() => {});
@@ -200,7 +183,7 @@ describe("bootstrapFromPeers", () => {
   });
 
   it("returns empty array when all seeds fail", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("refused")));
+    mockHttpPost.mockRejectedValue(new Error("refused"));
 
     const logger = silentLogger();
     vi.spyOn(logger, "info").mockImplementation(() => {});
@@ -216,12 +199,8 @@ describe("bootstrapFromPeers", () => {
     expect(peers).toEqual([]);
   });
 
-  it("includes HMAC signature when secret is set", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true, peers: [] }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+  it("includes HMAC signature in headers", async () => {
+    mockHttpPost.mockResolvedValue(mockSuccessResponse([]));
 
     const logger = silentLogger();
     vi.spyOn(logger, "info").mockImplementation(() => {});
@@ -233,17 +212,13 @@ describe("bootstrapFromPeers", () => {
       logger,
     );
 
-    const [, opts] = fetchMock.mock.calls[0];
-    expect(opts.headers["X-Repram-Signature"]).toBeDefined();
-    expect(opts.headers["X-Repram-Signature"]).toMatch(/^[0-9a-f]{64}$/);
+    const headers = mockHttpPost.mock.calls[0][2];
+    expect(headers["X-Repram-Signature"]).toBeDefined();
+    expect(headers["X-Repram-Signature"]).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("sends correct bootstrap request body", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true, peers: [] }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    mockHttpPost.mockResolvedValue(mockSuccessResponse([]));
 
     const logger = silentLogger();
     vi.spyOn(logger, "info").mockImplementation(() => {});
@@ -255,9 +230,9 @@ describe("bootstrapFromPeers", () => {
       logger,
     );
 
-    const [url, opts] = fetchMock.mock.calls[0];
+    const [url, bodyStr] = mockHttpPost.mock.calls[0];
     expect(url).toBe("http://10.0.0.1:8080/v1/bootstrap");
-    const body = JSON.parse(opts.body);
+    const body = JSON.parse(bodyStr);
     expect(body.node_id).toBe("my-node");
     expect(body.address).toBe("192.168.1.1");
     expect(body.gossip_port).toBe(9091);
@@ -270,8 +245,7 @@ describe("bootstrapFromPeers", () => {
 
 describe("notifyPeerAboutNewNode", () => {
   it("sends bootstrap request to peer", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("") });
-    vi.stubGlobal("fetch", fetchMock);
+    mockHttpPost.mockResolvedValue({ statusCode: 200, body: "" });
 
     const logger = silentLogger();
     vi.spyOn(logger, "debug").mockImplementation(() => {});
@@ -283,19 +257,18 @@ describe("notifyPeerAboutNewNode", () => {
       logger,
     );
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url] = fetchMock.mock.calls[0];
+    expect(mockHttpPost).toHaveBeenCalledTimes(1);
+    const [url] = mockHttpPost.mock.calls[0];
     expect(url).toBe("http://10.0.0.2:8080/v1/bootstrap");
   });
 
   it("retries on failure with backoff", async () => {
     vi.useFakeTimers();
 
-    const fetchMock = vi.fn()
+    mockHttpPost
       .mockRejectedValueOnce(new Error("fail1"))
       .mockRejectedValueOnce(new Error("fail2"))
-      .mockResolvedValueOnce({ ok: true, text: () => Promise.resolve("") });
-    vi.stubGlobal("fetch", fetchMock);
+      .mockResolvedValueOnce({ statusCode: 200, body: "" });
 
     const logger = silentLogger();
     vi.spyOn(logger, "warn").mockImplementation(() => {});
@@ -317,7 +290,7 @@ describe("notifyPeerAboutNewNode", () => {
 
     await notifyPromise;
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(mockHttpPost).toHaveBeenCalledTimes(3);
     expect(logger.warn).toHaveBeenCalledTimes(2); // 2 retries
 
     vi.useRealTimers();
@@ -326,7 +299,7 @@ describe("notifyPeerAboutNewNode", () => {
   it("logs error after all retries exhausted", async () => {
     vi.useFakeTimers();
 
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("permanent failure")));
+    mockHttpPost.mockRejectedValue(new Error("permanent failure"));
 
     const logger = silentLogger();
     vi.spyOn(logger, "warn").mockImplementation(() => {});

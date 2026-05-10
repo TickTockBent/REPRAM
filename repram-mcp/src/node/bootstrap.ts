@@ -7,6 +7,7 @@
  */
 
 import { signBody } from "./auth.js";
+import { httpPost } from "./transport.js";
 import type { Logger } from "./logger.js";
 import type { NodeInfo } from "./types.js";
 import { fetchSigned } from "./trust/resolver.js";
@@ -154,10 +155,9 @@ async function sendBootstrapRequest(
   seedAddr: string,
   request: BootstrapRequest,
   clusterSecret: string,
-  logger: Logger,
+  _logger: Logger,
 ): Promise<NodeInfo[]> {
   const jsonBody = JSON.stringify(request);
-  const bodyBuffer = Buffer.from(jsonBody);
 
   const url = `http://${seedAddr}/v1/bootstrap`;
   const headers: Record<string, string> = {
@@ -165,33 +165,21 @@ async function sendBootstrapRequest(
   };
 
   if (clusterSecret) {
-    headers["X-Repram-Signature"] = signBody(clusterSecret, bodyBuffer);
+    headers["X-Repram-Signature"] = signBody(clusterSecret, Buffer.from(jsonBody));
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
+  const result = await httpPost(url, jsonBody, headers);
 
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: jsonBody,
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`bootstrap rejected with status ${response.status}`);
-    }
-
-    const body = (await response.json()) as BootstrapResponse;
-    if (!body.success) {
-      throw new Error("bootstrap failed");
-    }
-
-    return (body.peers ?? []).map(wirePeerToNodeInfo);
-  } finally {
-    clearTimeout(timeout);
+  if (result.statusCode < 200 || result.statusCode >= 300) {
+    throw new Error(`bootstrap rejected with status ${result.statusCode}`);
   }
+
+  const body = JSON.parse(result.body) as BootstrapResponse;
+  if (!body.success) {
+    throw new Error("bootstrap failed");
+  }
+
+  return (body.peers ?? []).map(wirePeerToNodeInfo);
 }
 
 function wirePeerToNodeInfo(peer: WireBootstrapPeer): NodeInfo {
@@ -225,26 +213,13 @@ export async function notifyPeerAboutNewNode(
         headers["X-Repram-Signature"] = signBody(clusterSecret, Buffer.from(jsonBody));
       }
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5_000);
+      const result = await httpPost(url, jsonBody, headers);
 
-      try {
-        const response = await fetch(url, {
-          method: "POST",
-          headers,
-          body: jsonBody,
-          signal: controller.signal,
-        });
-
-        const responseText = await response.text();
-        if (response.ok) {
-          logger.debug(`Notified ${peerAddr} about new node (attempt ${attempt + 1})`);
-          return;
-        }
-        logger.warn(`Notify ${peerAddr} returned ${response.status}: ${responseText.slice(0, 200)}`);
-      } finally {
-        clearTimeout(timeout);
+      if (result.statusCode >= 200 && result.statusCode < 300) {
+        logger.debug(`Notified ${peerAddr} about new node (attempt ${attempt + 1})`);
+        return;
       }
+      logger.warn(`Notify ${peerAddr} returned ${result.statusCode}: ${result.body.slice(0, 200)}`);
     } catch (err) {
       if (attempt === maxRetries - 1) {
         logger.error(`Failed to notify ${peerAddr} after ${maxRetries} attempts: ${err}`);

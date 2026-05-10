@@ -4,11 +4,18 @@
  * Port of internal/gossip/http_transport.go. Handles serialization
  * between internal Message objects and the JSON wire format (WireMessage),
  * including base64 encoding of binary data for Go compatibility.
+ *
+ * Uses node:http instead of fetch/undici to avoid connection pool
+ * contention, ArrayBuffer accumulation, and head-of-line blocking
+ * under sustained gossip load (#94, #116, #117).
  */
 
+import { request as httpRequest, Agent } from "node:http";
 import { signBody } from "./auth.js";
 import type { Logger } from "./logger.js";
 import type { Message, NodeInfo, WireMessage, WireNodeInfo } from "./types.js";
+
+const gossipAgent = new Agent({ keepAlive: true, maxSockets: 4 });
 
 export class HTTPTransport {
   private localNode: NodeInfo;
@@ -26,46 +33,53 @@ export class HTTPTransport {
     const wireMsg = messageToWire(msg);
     const jsonBody = JSON.stringify(wireMsg);
 
-    const url = `http://${target.address}:${target.httpPort}/v1/gossip/message`;
-
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "Content-Length": String(Buffer.byteLength(jsonBody)),
     };
 
     if (this.clusterSecret) {
       headers["X-Repram-Signature"] = signBody(this.clusterSecret, Buffer.from(jsonBody));
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5_000);
+    return new Promise<void>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          hostname: target.address,
+          port: target.httpPort,
+          path: "/v1/gossip/message",
+          method: "POST",
+          headers,
+          agent: gossipAgent,
+        },
+        (res) => {
+          let body = "";
+          res.on("data", (chunk: Buffer) => { body += chunk; });
+          res.on("end", () => {
+            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+              this.logger.debug(`Sent ${msg.type} message to ${target.id}`);
+              resolve();
+            } else {
+              this.logger.warn(`Message rejected by ${target.id} with status ${res.statusCode}: ${body.slice(0, 200)}`);
+              resolve();
+            }
+          });
+        },
+      );
 
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: jsonBody,
-        signal: controller.signal,
+      req.on("error", (err) => {
+        this.logger.warn(`Failed to send message to ${target.id}: ${err}`);
+        reject(err);
       });
 
-      // Drain the response body so undici can return the socket to its
-      // pool. Without this, each request pins a new socket and its
-      // internal buffers accumulate as external memory (#94).
-      const responseText = await response.text();
-
-      if (!response.ok) {
-        this.logger.warn(`Message rejected by ${target.id} with status ${response.status}: ${responseText.slice(0, 200)}`);
-      } else {
-        this.logger.debug(`Sent ${msg.type} message to ${target.id} at ${url}`);
-      }
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
+      req.setTimeout(5_000, () => {
+        req.destroy();
         this.logger.warn(`Send to ${target.id} timed out`);
-      } else {
-        this.logger.warn(`Failed to send message to ${target.id}: ${err}`);
-      }
-    } finally {
-      clearTimeout(timeout);
-    }
+        reject(new Error("timeout"));
+      });
+
+      req.end(jsonBody);
+    });
   }
 
   setMessageHandler(handler: (msg: Message) => void): void {
@@ -138,4 +152,46 @@ function wireToNodeInfo(wire: WireNodeInfo): NodeInfo {
     httpPort: wire.http_port,
     enclave: wire.enclave ?? "default",
   };
+}
+
+// --- Shared HTTP helper ---
+
+export interface HttpPostResult {
+  statusCode: number;
+  body: string;
+}
+
+export function httpPost(
+  url: string,
+  body: string,
+  headers: Record<string, string>,
+  timeoutMs = 5_000,
+): Promise<HttpPostResult> {
+  const parsed = new URL(url);
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port || 80,
+        path: parsed.pathname + parsed.search,
+        method: "POST",
+        headers: { ...headers, "Content-Length": String(Buffer.byteLength(body)) },
+        agent: gossipAgent,
+      },
+      (res) => {
+        let responseBody = "";
+        res.on("data", (chunk: Buffer) => { responseBody += chunk; });
+        res.on("end", () => {
+          resolve({ statusCode: res.statusCode ?? 0, body: responseBody });
+        });
+      },
+    );
+
+    req.on("error", reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error("timeout"));
+    });
+    req.end(body);
+  });
 }

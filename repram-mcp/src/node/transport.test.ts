@@ -1,10 +1,21 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { HTTPTransport, messageToWire, wireToMessage } from "./transport.js";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { EventEmitter } from "node:events";
 import { Logger } from "./logger.js";
 import type { Message, NodeInfo, WireMessage } from "./types.js";
 
+const mockRequest = vi.fn();
+
+vi.mock("node:http", () => ({
+  request: mockRequest,
+  Agent: vi.fn(),
+}));
+
+// Import after mock so the module picks up the mocked http
+const { HTTPTransport, messageToWire, wireToMessage } = await import("./transport.js");
+
 afterEach(() => {
   vi.restoreAllMocks();
+  mockRequest.mockReset();
 });
 
 function makeNodeInfo(overrides: Partial<NodeInfo> = {}): NodeInfo {
@@ -30,6 +41,36 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
     messageId: "1740484800000000000-0",
     ...overrides,
   };
+}
+
+/**
+ * Sets up mockRequest to simulate a successful or failing HTTP response.
+ * Returns the fake request object for assertions.
+ */
+function setupMockRequest(statusCode: number, responseBody = "") {
+  const req = new EventEmitter() as EventEmitter & {
+    end: ReturnType<typeof vi.fn>;
+    setTimeout: ReturnType<typeof vi.fn>;
+    destroy: ReturnType<typeof vi.fn>;
+  };
+  req.end = vi.fn();
+  req.setTimeout = vi.fn();
+  req.destroy = vi.fn();
+
+  mockRequest.mockImplementation((_opts: unknown, callback: (res: unknown) => void) => {
+    process.nextTick(() => {
+      const res = new EventEmitter() as EventEmitter & { statusCode: number };
+      res.statusCode = statusCode;
+      callback(res);
+      process.nextTick(() => {
+        if (responseBody) res.emit("data", Buffer.from(responseBody));
+        res.emit("end");
+      });
+    });
+    return req;
+  });
+
+  return req;
 }
 
 // --- Serialization ---
@@ -186,8 +227,7 @@ describe("round-trip serialization", () => {
 
 describe("HTTPTransport.send", () => {
   it("sends POST with JSON body", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve("") });
-    vi.stubGlobal("fetch", fetchMock);
+    const req = setupMockRequest(200);
 
     const logger = new Logger("error");
     const transport = new HTTPTransport(makeNodeInfo(), "", logger);
@@ -195,53 +235,66 @@ describe("HTTPTransport.send", () => {
 
     await transport.send(target, makeMessage());
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe("http://10.0.0.2:8081/v1/gossip/message");
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    const opts = mockRequest.mock.calls[0][0];
+    expect(opts.hostname).toBe("10.0.0.2");
+    expect(opts.port).toBe(8081);
+    expect(opts.path).toBe("/v1/gossip/message");
     expect(opts.method).toBe("POST");
     expect(opts.headers["Content-Type"]).toBe("application/json");
 
-    const body = JSON.parse(opts.body);
+    const body = JSON.parse(req.end.mock.calls[0][0]);
     expect(body.type).toBe("PUT");
     expect(body.message_id).toBeDefined();
   });
 
   it("includes HMAC signature when secret is set", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve("") });
-    vi.stubGlobal("fetch", fetchMock);
+    setupMockRequest(200);
 
     const logger = new Logger("error");
     const transport = new HTTPTransport(makeNodeInfo(), "my-secret", logger);
 
     await transport.send(makeNodeInfo({ id: "target" }), makeMessage());
 
-    const [, opts] = fetchMock.mock.calls[0];
+    const opts = mockRequest.mock.calls[0][0];
     expect(opts.headers["X-Repram-Signature"]).toBeDefined();
     expect(opts.headers["X-Repram-Signature"]).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("omits HMAC signature when secret is empty", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve("") });
-    vi.stubGlobal("fetch", fetchMock);
+    setupMockRequest(200);
 
     const logger = new Logger("error");
     const transport = new HTTPTransport(makeNodeInfo(), "", logger);
 
     await transport.send(makeNodeInfo({ id: "target" }), makeMessage());
 
-    const [, opts] = fetchMock.mock.calls[0];
+    const opts = mockRequest.mock.calls[0][0];
     expect(opts.headers["X-Repram-Signature"]).toBeUndefined();
   });
 
-  it("handles fetch failure gracefully (no throw)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connection refused")));
+  it("handles request error gracefully (no throw)", async () => {
+    const req = new EventEmitter() as EventEmitter & {
+      end: ReturnType<typeof vi.fn>;
+      setTimeout: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    req.end = vi.fn();
+    req.setTimeout = vi.fn();
+    req.destroy = vi.fn();
+
+    mockRequest.mockImplementation(() => {
+      process.nextTick(() => req.emit("error", new Error("connection refused")));
+      return req;
+    });
 
     const logger = new Logger("error");
     vi.spyOn(logger, "warn").mockImplementation(() => {});
     const transport = new HTTPTransport(makeNodeInfo(), "", logger);
 
-    // Should not throw
-    await transport.send(makeNodeInfo({ id: "target" }), makeMessage());
+    await expect(
+      transport.send(makeNodeInfo({ id: "target" }), makeMessage()),
+    ).rejects.toThrow("connection refused");
     expect(logger.warn).toHaveBeenCalled();
   });
 });

@@ -407,15 +407,7 @@ export class GossipProtocol {
       this.logger.debug(
         `[${this.localNode.id}] Broadcasting ${msg.type} to ${peers.length} enclave peers (${this.localNode.enclave})`,
       );
-      for (const peer of peers) {
-        try {
-          await this.transport.send(peer, msg);
-        } catch (err) {
-          this.logger.warn(
-            `[${this.localNode.id}] Failed to send to enclave peer ${peer.id}: ${err}`,
-          );
-        }
-      }
+      await this.sendToAll(peers, msg);
     } else {
       // Large enclave: √N probabilistic fanout
       const count = fanoutSize(peers.length);
@@ -423,15 +415,7 @@ export class GossipProtocol {
       this.logger.debug(
         `[${this.localNode.id}] Fanout ${msg.type} to ${targets.length}/${peers.length} enclave peers (${this.localNode.enclave})`,
       );
-      for (const peer of targets) {
-        try {
-          await this.transport.send(peer, msg);
-        } catch (err) {
-          this.logger.warn(
-            `[${this.localNode.id}] Failed to send to enclave peer ${peer.id}: ${err}`,
-          );
-        }
-      }
+      await this.sendToAll(targets, msg);
     }
   }
 
@@ -451,15 +435,7 @@ export class GossipProtocol {
     this.logger.debug(
       `[${this.localNode.id}] Forwarding ${msg.type} (key: ${msg.key}) to ${targets.length} enclave peers`,
     );
-    for (const peer of targets) {
-      try {
-        await this.transport!.send(peer, msg);
-      } catch (err) {
-        this.logger.warn(
-          `[${this.localNode.id}] Failed to forward to enclave peer ${peer.id}: ${err}`,
-        );
-      }
-    }
+    await this.sendToAll(targets, msg);
   }
 
   /** Send a message to a specific node. */
@@ -476,12 +452,18 @@ export class GossipProtocol {
     this.logger.debug(
       `[${this.localNode.id}] Broadcasting ${msg.type} to ${peers.length} peers`,
     );
-    for (const peer of peers) {
-      try {
-        await this.transport.send(peer, msg);
-      } catch (err) {
+    await this.sendToAll(peers, msg);
+  }
+
+  /** Send a message to multiple peers in parallel. */
+  private async sendToAll(peers: NodeInfo[], msg: Message): Promise<void> {
+    const results = await Promise.allSettled(
+      peers.map((peer) => this.transport!.send(peer, msg)),
+    );
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === "rejected") {
         this.logger.warn(
-          `[${this.localNode.id}] Failed to send to peer ${peer.id}: ${err}`,
+          `[${this.localNode.id}] Failed to send to peer ${peers[i].id}: ${(results[i] as PromiseRejectedResult).reason}`,
         );
       }
     }
