@@ -5,9 +5,10 @@
  * between internal Message objects and the JSON wire format (WireMessage),
  * including base64 encoding of binary data for Go compatibility.
  *
- * Uses node:http instead of fetch/undici to avoid connection pool
- * contention, ArrayBuffer accumulation, and head-of-line blocking
- * under sustained gossip load (#94, #116, #117).
+ * Uses node:http with one dedicated Agent per peer — a persistent
+ * connection that's always warm, no pool contention, no burst queuing.
+ * Gossip talks to a fixed, known set of peers for the lifetime of the
+ * process; a connection pool is the wrong abstraction (#116, #117).
  */
 
 import { request as httpRequest, Agent } from "node:http";
@@ -15,7 +16,6 @@ import { signBody } from "./auth.js";
 import type { Logger } from "./logger.js";
 import type { Message, NodeInfo, WireMessage, WireNodeInfo } from "./types.js";
 
-const gossipAgent = new Agent({ keepAlive: true, maxSockets: 4 });
 const bootstrapAgent = new Agent({ keepAlive: true, maxSockets: 2 });
 
 export class HTTPTransport {
@@ -23,11 +23,40 @@ export class HTTPTransport {
   private clusterSecret: string;
   private logger: Logger;
   private messageHandler: ((msg: Message) => void) | null = null;
+  private peerAgents = new Map<string, Agent>();
 
   constructor(localNode: NodeInfo, clusterSecret: string, logger: Logger) {
     this.localNode = localNode;
     this.clusterSecret = clusterSecret;
     this.logger = logger;
+  }
+
+  private agentFor(target: NodeInfo): Agent {
+    const key = `${target.address}:${target.httpPort}`;
+    let agent = this.peerAgents.get(key);
+    if (!agent) {
+      agent = new Agent({ keepAlive: true, maxSockets: 1 });
+      this.peerAgents.set(key, agent);
+      this.logger.debug(`Created dedicated connection for peer ${target.id} (${key})`);
+    }
+    return agent;
+  }
+
+  onPeerRemoved(peer: NodeInfo): void {
+    const key = `${peer.address}:${peer.httpPort}`;
+    const agent = this.peerAgents.get(key);
+    if (agent) {
+      agent.destroy();
+      this.peerAgents.delete(key);
+      this.logger.debug(`Closed dedicated connection for evicted peer ${peer.id} (${key})`);
+    }
+  }
+
+  destroy(): void {
+    for (const agent of this.peerAgents.values()) {
+      agent.destroy();
+    }
+    this.peerAgents.clear();
   }
 
   async send(target: NodeInfo, msg: Message): Promise<void> {
@@ -52,7 +81,7 @@ export class HTTPTransport {
           path: "/v1/gossip/message",
           method: "POST",
           headers,
-          agent: gossipAgent,
+          agent: this.agentFor(target),
         },
         (res) => {
           let body = "";

@@ -28,6 +28,8 @@ export const MAX_SEEN_MESSAGES = 100_000;
 export interface Transport {
   send(target: NodeInfo, msg: Message): Promise<void>;
   setMessageHandler(handler: (msg: Message) => void): void;
+  onPeerRemoved?(peer: NodeInfo): void;
+  destroy?(): void;
 }
 
 // --- Message ID generation ---
@@ -146,6 +148,7 @@ export class GossipProtocol {
       clearInterval(this.topologySyncTimer);
       this.topologySyncTimer = null;
     }
+    this.transport?.destroy?.();
   }
 
   // --- Peer management ---
@@ -174,8 +177,10 @@ export class GossipProtocol {
   }
 
   removePeer(nodeId: string): void {
+    const peer = this.peers.get(nodeId);
     this.peers.delete(nodeId);
     this.peerFailures.delete(nodeId);
+    if (peer) this.transport?.onPeerRemoved?.(peer);
     this.metricsCallbacks?.onPeersActive(this.peers.size);
   }
 
