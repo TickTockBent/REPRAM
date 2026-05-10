@@ -5,9 +5,13 @@ import type { Message, NodeInfo, WireMessage } from "./types.js";
 
 const mockRequest = vi.fn();
 
+class MockAgent {
+  destroy = vi.fn();
+}
+
 vi.mock("node:http", () => ({
   request: mockRequest,
-  Agent: vi.fn(),
+  Agent: MockAgent,
 }));
 
 // Import after mock so the module picks up the mocked http
@@ -472,5 +476,66 @@ describe("httpPost", () => {
 
     const result = await httpPost("http://10.0.0.1:8080/v1/test", "{}", {});
     expect(result.statusCode).toBe(200);
+  });
+});
+
+// --- Peer connection lifecycle ---
+
+describe("HTTPTransport peer connection lifecycle", () => {
+  it("creates a dedicated agent per peer on first send", async () => {
+    setupMockRequest(200);
+
+    const logger = new Logger("error");
+    const transport = new HTTPTransport(makeNodeInfo(), "", logger);
+
+    const peer1 = makeNodeInfo({ id: "peer-1", address: "10.0.0.1", httpPort: 8080 });
+    const peer2 = makeNodeInfo({ id: "peer-2", address: "10.0.0.2", httpPort: 8080 });
+
+    await transport.send(peer1, makeMessage());
+    await transport.send(peer2, makeMessage());
+    await transport.send(peer1, makeMessage()); // reuses existing agent
+
+    // Each call uses its own agent instance — 2 unique agents created
+    const agents = mockRequest.mock.calls.map((c: unknown[]) => (c[0] as { agent: unknown }).agent);
+    expect(agents[0]).toBe(agents[2]); // same peer-1 agent reused
+    expect(agents[0]).not.toBe(agents[1]); // different agents for different peers
+  });
+
+  it("onPeerRemoved destroys the agent for that peer", async () => {
+    setupMockRequest(200);
+
+    const logger = new Logger("error");
+    const transport = new HTTPTransport(makeNodeInfo(), "", logger);
+
+    const peer = makeNodeInfo({ id: "peer-1", address: "10.0.0.1", httpPort: 8080 });
+    await transport.send(peer, makeMessage());
+
+    const firstAgent = mockRequest.mock.calls[0][0].agent as MockAgent;
+
+    // The agent was created — now remove the peer
+    transport.onPeerRemoved(peer);
+    expect(firstAgent.destroy).toHaveBeenCalledTimes(1);
+
+    // Sending again should create a fresh agent
+    await transport.send(peer, makeMessage());
+    const agents = mockRequest.mock.calls.map((c: unknown[]) => (c[0] as { agent: unknown }).agent);
+    expect(agents[0]).not.toBe(agents[1]);
+  });
+
+  it("destroy cleans up all peer agents", async () => {
+    setupMockRequest(200);
+
+    const logger = new Logger("error");
+    const transport = new HTTPTransport(makeNodeInfo(), "", logger);
+
+    await transport.send(makeNodeInfo({ id: "p1", address: "10.0.0.1" }), makeMessage());
+    await transport.send(makeNodeInfo({ id: "p2", address: "10.0.0.2" }), makeMessage());
+
+    transport.destroy();
+
+    // After destroy, sending creates new agents
+    await transport.send(makeNodeInfo({ id: "p1", address: "10.0.0.1" }), makeMessage());
+    const agents = mockRequest.mock.calls.map((c: unknown[]) => (c[0] as { agent: unknown }).agent);
+    expect(agents[0]).not.toBe(agents[2]); // new agent after destroy
   });
 });
