@@ -169,6 +169,10 @@ export class GossipProtocol {
       );
       return false;
     }
+    const existing = this.peers.get(node.id);
+    if (existing && (existing.address !== node.address || existing.httpPort !== node.httpPort)) {
+      this.transport?.onPeerRemoved?.(existing);
+    }
     this.peers.set(node.id, node);
     this.peerFailures.delete(node.id); // reset failure counter on (re-)add
     this.metricsCallbacks?.onPeersActive(this.peers.size);

@@ -510,8 +510,11 @@ describe("HTTPTransport peer connection lifecycle", () => {
     const peer = makeNodeInfo({ id: "peer-1", address: "10.0.0.1", httpPort: 8080 });
     await transport.send(peer, makeMessage());
 
+    const firstAgent = mockRequest.mock.calls[0][0].agent as MockAgent;
+
     // The agent was created — now remove the peer
     transport.onPeerRemoved(peer);
+    expect(firstAgent.destroy).toHaveBeenCalledTimes(1);
 
     // Sending again should create a fresh agent
     await transport.send(peer, makeMessage());
