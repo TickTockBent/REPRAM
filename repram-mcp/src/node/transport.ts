@@ -35,7 +35,7 @@ export class HTTPTransport {
     const key = `${target.address}:${target.httpPort}`;
     let agent = this.peerAgents.get(key);
     if (!agent) {
-      agent = new Agent({ keepAlive: true, maxSockets: 1 });
+      agent = new Agent({ keepAlive: true, maxSockets: 8 });
       this.peerAgents.set(key, agent);
       this.logger.debug(`Created dedicated connection for peer ${target.id} (${key})`);
     }
