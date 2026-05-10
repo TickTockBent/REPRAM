@@ -755,20 +755,22 @@ describe("TreeManager", () => {
         ) => Promise<boolean>;
       }).tryAlternatives.bind(tree);
 
-      // List contains self (by address+port) plus an unreachable peer.
-      // Self should be skipped silently; the unreachable peer will fail
-      // with a connection error. If self were NOT skipped, connectToSubstrate
-      // would try to open a WS connection to the local node (no server
-      // running on 18080 in this test) — both would fail, but the test
-      // verifies that only one connection attempt is made (the non-self entry).
-      const alts: AlternativeParent[] = [
+      // Pass ONLY a self-matching entry. If self-skip works, the loop body
+      // never executes connectToSubstrate, so the call returns false almost
+      // instantly. If self-skip is broken, connectToSubstrate tries to open
+      // a TCP connection to 10.0.10.104:18080 (unreachable in CI), which
+      // blocks for the full 5s perAttemptTimeout before failing.
+      const selfOnlyAlts: AlternativeParent[] = [
         { id: "self-seed", address: "10.0.10.104", http_port: 18080 },
-        { id: "seed-10.0.0.99:8080", address: "10.0.0.99", http_port: 8080 },
       ];
 
-      const result = await tryAlternatives(alts, 1_000, undefined);
-      // Both should fail (self skipped, other unreachable), so result is false.
+      const start = Date.now();
+      const result = await tryAlternatives(selfOnlyAlts, 5_000, undefined);
+      const elapsed = Date.now() - start;
+
       expect(result).toBe(false);
+      // Self-skip should make this return in under 50ms, not 5s+.
+      expect(elapsed).toBeLessThan(500);
 
       tree.stop();
     }, 10_000);

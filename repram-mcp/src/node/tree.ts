@@ -554,7 +554,9 @@ export class TreeManager {
 
       // Skip self — seed-list layer uses synthetic IDs so the ID filter
       // in welcome-topology population doesn't catch it. Address+port is
-      // the reliable self-check across all layers (#120).
+      // the reliable self-check across all layers (#120). Literal match
+      // only — loopback aliases (0.0.0.0 vs 127.0.0.1) are not normalized;
+      // config.address is always the routable IP in practice.
       if (alt.address === this.localNode.address && alt.http_port === this.localNode.httpPort) {
         continue;
       }
