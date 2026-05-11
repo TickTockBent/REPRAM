@@ -46,9 +46,8 @@ REPRAM node.
    node source on the online build machine:
 
    - `internal/trust/omega.go` — `OmegaPubkey` constant.
-   - `repram-mcp/src/node/trust/omega.ts` — `OMEGA_PUBKEY` constant.
 
-   Both must match. Build, tag, release.
+   Build, tag, release.
 
 ## Publishing a signed root list
 
@@ -138,9 +137,7 @@ Correct sequence:
    keygen --out-private omega-v2.key --out-public omega-v2.pub`.
 2. **Ship a binary release** with the new pubkey baked in:
    - `OmegaVersion = "omega-v2"`, new `OmegaPubkey` in `internal/trust/omega.go`.
-   - `OMEGA_VERSION = "omega-v2"`, new `OMEGA_PUBKEY` in
-     `repram-mcp/src/node/trust/omega.ts`.
-   Both constants must match exactly. Tag and release.
+   Tag and release.
 3. **Wait for deployment to propagate** across operators and
    self-hosters. The previous signed-list `exp` is your deadline — past
    that, un-upgraded nodes can no longer refresh their root list.

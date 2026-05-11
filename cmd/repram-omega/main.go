@@ -92,8 +92,7 @@ func runKeygen(args []string) error {
 	fmt.Printf("Public key written to %s\n", *outPub)
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Println("  1. Bake the public key into internal/trust/omega.go (OmegaPubkey)")
-	fmt.Println("     and repram-mcp/src/node/trust/omega.ts (OMEGA_PUBKEY).")
+	fmt.Println("  1. Bake the public key into internal/trust/omega.go (OmegaPubkey).")
 	fmt.Printf("  2. Store %s on your offline signing machine.\n", *outPriv)
 	fmt.Println("  3. Never transmit the private key over any network.")
 	return nil

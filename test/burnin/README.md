@@ -9,8 +9,7 @@ Operator runbook for the 72-hour burn-in test described in
 | --- | --- |
 | `setup-keypair.sh` | Generate a single-use omega keypair. |
 | `Dockerfile.go-node` | Burn-in image for the Go node, with baked test pubkey. |
-| `Dockerfile.ts-node` | Burn-in image for the TS node, with baked test pubkey. |
-| `build-images.sh` | Build both images from a pubkey file. |
+| `build-images.sh` | Build the burn-in image from a pubkey file. (The TS node image — `Dockerfile.ts-node` — was removed in #123; archived references to it remain elsewhere in this README.) |
 | `sign-loop.sh` | Re-sign + republish the omega TXT record every 25 min. |
 | `workload.js` | k6 workload generator (50 ops/sec, 72h). |
 | `prometheus-scrape.yml` | Drop-in scrape job for the existing Prometheus stack. |

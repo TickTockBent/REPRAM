@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/TickTockBent/REPRAM/actions/workflows/test.yml/badge.svg)](https://github.com/TickTockBent/REPRAM/actions/workflows/test.yml)
 [![Docker](https://github.com/TickTockBent/REPRAM/actions/workflows/docker-build.yml/badge.svg)](https://github.com/TickTockBent/REPRAM/actions/workflows/docker-build.yml)
-[![npm](https://img.shields.io/npm/v/repram-mcp)](https://www.npmjs.com/package/repram-mcp)
 [![Docker Image](https://img.shields.io/docker/v/ticktockbent/repram-node?label=docker)](https://hub.docker.com/r/ticktockbent/repram-node)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -28,16 +27,16 @@ Give an agent access (MCP config for Claude Code, Cursor, etc.):
 {
   "mcpServers": {
     "repram": {
-      "command": "npx",
-      "args": ["repram-mcp"]
+      "command": "repram",
+      "args": ["--mcp"]
     }
   }
 }
 ```
 
-That's it — `repram-mcp` v2.0 includes an embedded REPRAM node. No separate server needed. The agent gets `repram_store`, `repram_retrieve`, `repram_exists`, and `repram_list_keys` tools immediately.
+That's it — `repram --mcp` runs the Go binary as an MCP stdio server with an embedded REPRAM node (private, in-memory, 50MB cap). No npm, no Node.js, ~13MB static binary. The agent gets `repram_store`, `repram_retrieve`, `repram_exists`, and `repram_list_keys` tools immediately.
 
-To connect to an existing node instead (e.g. the Docker node above), add `"env": { "REPRAM_URL": "http://localhost:8080" }` to the config.
+To join an existing cluster, set `"env": { "REPRAM_PEERS": "host:8080" }` in the MCP config — the embedded node will gossip with that cluster while still serving tools over stdio.
 
 Store data manually:
 
@@ -71,7 +70,7 @@ The included `docker-compose.yml` configures three nodes with gossip replication
 
 ## How It Works
 
-REPRAM is a network of identical nodes that store key-value pairs in memory and replicate them via gossip protocol. Two implementations exist — a Go binary (`cmd/repram/`) and a TypeScript node (`repram-mcp/`) — with identical wire format so they can coexist in the same cluster.
+REPRAM is a network of identical nodes that store key-value pairs in memory and replicate them via gossip protocol. The reference implementation is a single Go binary (`cmd/repram/`) that runs either as a long-lived HTTP node or, with `--mcp`, as an embedded MCP stdio server for agent use.
 
 - **Mandatory TTL**: Every piece of data has a time-to-live. When it expires, it's gone — no recovery, no traces.
 - **Gossip replication**: Writes propagate to enclave peers via gossip protocol with quorum confirmation. Small enclaves use full broadcast; larger enclaves switch to probabilistic √N fanout with epidemic forwarding.
@@ -197,22 +196,18 @@ REPRAM accepts requests from any origin. This is intentional — REPRAM is permi
 | `REPRAM_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` and `X-Real-IP` headers for client IP detection. Set to `true` when running behind a reverse proxy (nginx, Cloudflare, etc.). |
 | `REPRAM_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `REPRAM_MAX_STORAGE_MB` | `0` | Max data storage in MB (0 = unlimited). Rejects writes with 507 when full. Tracks payload bytes only — actual memory usage is higher due to per-entry overhead (~80 bytes + key length per entry). For workloads with many small values, set conservatively. |
-| `REPRAM_PPROF_ENABLED` | `false` | Enable pprof/profiling diagnostic endpoints. Go: separate listener on `REPRAM_PPROF_ADDR`. TS: heap snapshot and stats endpoints. Do not expose in untrusted environments. |
+| `REPRAM_PPROF_ENABLED` | `false` | Enable pprof/profiling diagnostic endpoints on a separate listener (`REPRAM_PPROF_ADDR`). Do not expose in untrusted environments. |
 | `REPRAM_PPROF_ADDR` | `127.0.0.1:6060` | Address for the pprof listener (only used when `REPRAM_PPROF_ENABLED=true`). Loopback-only by default — set to `0.0.0.0:6060` to allow external access. |
 
 ## Building from Source
 
 ```bash
-# Go node
 make build          # Build Go binary to bin/repram
-make test           # Run Go tests (155 tests)
+make test           # Run Go tests
 make docker-build   # Build Docker image (ticktockbent/repram-node:latest)
 
-# TypeScript node / MCP server
-cd repram-mcp
-npm install
-npm run build       # Compile TypeScript
-npm test            # Run tests (381 tests)
+# Run as an MCP stdio server (embedded node, no HTTP exposure required):
+./bin/repram --mcp
 ```
 
 ## Documentation
