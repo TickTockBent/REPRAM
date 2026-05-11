@@ -58,17 +58,25 @@ func (s *Server) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
-	lines := make(chan []byte)
+	// Buffered + ctx-aware send so a Run() exit via ctx cancellation
+	// doesn't strand the reader goroutine forever blocked on `lines <-`.
+	// ReadBytes still pins the goroutine until stdin closes, but that's
+	// always finite — the parent closes our stdin when it tears us down.
+	lines := make(chan []byte, 1)
 	readErr := make(chan error, 1)
 	go func() {
 		defer close(lines)
 		for {
 			line, err := s.in.ReadBytes('\n')
 			if len(line) > 0 {
-				// Strip trailing newline(s) but keep the rest of the JSON intact.
 				line = bytesTrimRight(line, "\r\n")
 				if len(line) > 0 {
-					lines <- line
+					select {
+					case lines <- line:
+					case <-ctx.Done():
+						readErr <- ctx.Err()
+						return
+					}
 				}
 			}
 			if err != nil {
@@ -239,7 +247,7 @@ func tools() []toolDef {
 			Name: "repram_store",
 			Description: "Store ephemeral data in the REPRAM network. Data is replicated across nodes and automatically expires after the specified TTL. " +
 				"Use this for temporary coordination data, handoff payloads, scratchpad state, or any data that should not persist.\n\n" +
-				"A unique key is generated automatically (UUID v4 hex). You will receive the key in the response — save it or share it with other agents who need to retrieve this data.\n\n" +
+				"A unique key is generated automatically (UUID v4 hex). You will receive the key in the response — save it or share it with other agents who need to retrieve this data. The response also includes a quorum_status field: \"confirmed\" means the write was acknowledged by enough peers, \"pending\" means the data is on this node and replication is still in flight (it will gossip out shortly).\n\n" +
 				"All data on REPRAM is ephemeral. There is no way to extend a TTL or recover expired data. If you need the data to last longer, store it again with a new TTL before expiration.",
 			InputSchema: map[string]any{
 				"type": "object",
@@ -394,27 +402,26 @@ func (s *Server) toolStore(ctx context.Context, args map[string]interface{}) (an
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	// Always include quorum_status so callers can deserialize into a fixed
+	// shape. "confirmed" = local write + quorum acks landed within
+	// REPRAM_WRITE_TIMEOUT; "pending" = local write succeeded, replication
+	// still in flight (the data is on this node and will gossip out).
+	quorumStatus := "confirmed"
 	if err := s.cluster.Put(callCtx, key, []byte(data), time.Duration(ttl)*time.Second); err != nil {
-		// ErrQuorumTimeout is expected behaviour: local write succeeded,
-		// replication is in flight. Surface that to the caller, don't error.
 		if errors.Is(err, cluster.ErrQuorumTimeout) {
-			return map[string]any{
-				"key":          key,
-				"ttl_seconds":  ttl,
-				"expires_at":   time.Now().Add(time.Duration(ttl) * time.Second).UTC().Format(time.RFC3339),
-				"quorum_status": "pending",
-			}, nil
-		}
-		if errors.Is(err, storage.ErrStoreFull) {
+			quorumStatus = "pending"
+		} else if errors.Is(err, storage.ErrStoreFull) {
 			return nil, fmt.Errorf("storage capacity exceeded")
+		} else {
+			return nil, fmt.Errorf("store failed: %w", err)
 		}
-		return nil, fmt.Errorf("store failed: %w", err)
 	}
 
 	return map[string]any{
-		"key":         key,
-		"ttl_seconds": ttl,
-		"expires_at":  time.Now().Add(time.Duration(ttl) * time.Second).UTC().Format(time.RFC3339),
+		"key":           key,
+		"ttl_seconds":   ttl,
+		"expires_at":    time.Now().Add(time.Duration(ttl) * time.Second).UTC().Format(time.RFC3339),
+		"quorum_status": quorumStatus,
 	}, nil
 }
 

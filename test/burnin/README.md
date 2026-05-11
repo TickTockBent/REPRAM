@@ -3,6 +3,14 @@
 Operator runbook for the 72-hour burn-in test described in
 `docs/internal/REPRAM-2.1-Minimal-BurnIn.md`.
 
+> **Historical note (#123):** This runbook documents the burn-in that
+> validated REPRAM 2.1, which used 2 Go nodes + 1 TypeScript node. The TS
+> node has been removed; any step below that references `Dockerfile.ts-node`,
+> `repram-burnin/ts-node:latest`, `ticktockbent/repram-node:experimental-ts`,
+> or the `node-c (TS, …)` host is preserved for historical accuracy and
+> **will not work** as written today. New burn-ins should run all three
+> nodes as Go nodes from `Dockerfile.go-node`.
+
 ## What's here
 
 | File | Purpose |

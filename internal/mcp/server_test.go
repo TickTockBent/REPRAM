@@ -220,6 +220,12 @@ func TestStoreRetrieveRoundtrip(t *testing.T) {
 	if stored["ttl_seconds"].(float64) != 600 {
 		t.Errorf("ttl_seconds = %v, want 600", stored["ttl_seconds"])
 	}
+	// Single-node test cluster reaches quorum (1) locally, so the write
+	// is confirmed synchronously. "pending" would indicate a regression
+	// in the local-quorum fast path.
+	if stored["quorum_status"] != "confirmed" {
+		t.Errorf("quorum_status = %v, want confirmed", stored["quorum_status"])
+	}
 
 	resp = s.call("tools/call", `{"name":"repram_retrieve","arguments":{"key":"greeting"}}`)
 	got := toolContent(t, resp)
