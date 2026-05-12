@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -69,7 +70,7 @@ func (s *Server) Run(ctx context.Context) error {
 		for {
 			line, err := s.in.ReadBytes('\n')
 			if len(line) > 0 {
-				line = bytesTrimRight(line, "\r\n")
+				line = bytes.TrimRight(line, "\r\n")
 				if len(line) > 0 {
 					select {
 					case lines <- line:
@@ -491,9 +492,6 @@ func toInt(v any) (int, error) {
 		return n, nil
 	case int64:
 		return int(n), nil
-	case json.Number:
-		i, err := n.Int64()
-		return int(i), err
 	default:
 		return 0, fmt.Errorf("expected number, got %T", v)
 	}
@@ -518,9 +516,3 @@ func newKey() string {
 	)
 }
 
-func bytesTrimRight(b []byte, cutset string) []byte {
-	for len(b) > 0 && strings.IndexByte(cutset, b[len(b)-1]) >= 0 {
-		b = b[:len(b)-1]
-	}
-	return b
-}
