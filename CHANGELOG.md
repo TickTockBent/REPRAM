@@ -4,6 +4,15 @@ All notable changes to REPRAM are documented here.
 
 ## [Unreleased]
 
+### Changed — Go-native MCP server ([#123](https://github.com/TickTockBent/repram/issues/123))
+The Go binary now serves MCP directly via `repram --mcp`: an embedded node, in-process tool handlers, and JSON-RPC 2.0 on stdin/stdout. The TypeScript node (`repram-mcp/`) has been removed.
+
+- New `internal/mcp` package implements MCP stdio transport, `initialize`, `tools/list`, `tools/call`, and the four REPRAM tools (`repram_store`, `repram_retrieve`, `repram_exists`, `repram_list_keys`).
+- MCP mode defaults: private network, `REPRAM_HTTP_PORT=0` (OS-assigned), 50MB storage cap, `warn` log level, logs routed to stderr only so stdout stays clean for JSON-RPC frames.
+- The agent footprint drops from ~191MB RSS (Node.js + V8) to roughly 37MB per process, removing the V8 tax that made parallel-agent fleets untenable.
+- Removed: `repram-mcp/` directory, the npm publishing workflow, `test/live-wire-compat/` (Go ↔ TS interop tests with one implementation only), and the burn-in TS Dockerfile.
+- MCP client config simplifies to `{ "command": "repram", "args": ["--mcp"] }` — no Node.js, no npm install, single static binary.
+
 ### Added — Unified TypeScript Node ([#45](https://github.com/TickTockBent/repram/issues/45))
 Complete TypeScript reimplementation of the REPRAM node, merged into `repram-mcp` so a single `npx repram-mcp` provides both a full node and MCP agent tools.
 - **Storage layer** — MemoryStore with TTL expiration, background cleanup, capacity limits ([#46](https://github.com/TickTockBent/repram/issues/46))

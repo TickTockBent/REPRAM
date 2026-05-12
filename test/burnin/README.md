@@ -3,14 +3,21 @@
 Operator runbook for the 72-hour burn-in test described in
 `docs/internal/REPRAM-2.1-Minimal-BurnIn.md`.
 
+> **Historical note (#123):** This runbook documents the burn-in that
+> validated REPRAM 2.1, which used 2 Go nodes + 1 TypeScript node. The TS
+> node has been removed; any step below that references `Dockerfile.ts-node`,
+> `repram-burnin/ts-node:latest`, `ticktockbent/repram-node:experimental-ts`,
+> or the `node-c (TS, …)` host is preserved for historical accuracy and
+> **will not work** as written today. New burn-ins should run all three
+> nodes as Go nodes from `Dockerfile.go-node`.
+
 ## What's here
 
 | File | Purpose |
 | --- | --- |
 | `setup-keypair.sh` | Generate a single-use omega keypair. |
 | `Dockerfile.go-node` | Burn-in image for the Go node, with baked test pubkey. |
-| `Dockerfile.ts-node` | Burn-in image for the TS node, with baked test pubkey. |
-| `build-images.sh` | Build both images from a pubkey file. |
+| `build-images.sh` | Build the burn-in image from a pubkey file. (The TS node image — `Dockerfile.ts-node` — was removed in #123; archived references to it remain elsewhere in this README.) |
 | `sign-loop.sh` | Re-sign + republish the omega TXT record every 25 min. |
 | `workload.js` | k6 workload generator (50 ops/sec, 72h). |
 | `prometheus-scrape.yml` | Drop-in scrape job for the existing Prometheus stack. |

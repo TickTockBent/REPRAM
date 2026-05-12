@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Build the two burn-in node images with a baked-in test omega pubkey.
+# Build the burn-in Go node image with a baked-in test omega pubkey.
 #
 # Usage: build-images.sh [<pubkey-file>]
 #   pubkey-file: defaults to ~/.repram-burnin/omega.pub
 #                (produced by setup-keypair.sh)
 #
-# Output: docker images repram-burnin/go-node:latest and
-#         repram-burnin/ts-node:latest, ready to run on any Docker host.
+# Output: docker image repram-burnin/go-node:latest, ready to run on any
+# Docker host. The companion TS node image was removed when the TS
+# implementation was retired (issue #123).
 #
 # Distribute via:
 #   docker save repram-burnin/go-node:latest | gzip > go-node.tar.gz
@@ -41,14 +42,6 @@ docker build \
     -f "$repo_root/test/burnin/Dockerfile.go-node" \
     -t repram-burnin/go-node:latest \
     "$repo_root"
-
-echo
-echo "==> repram-burnin/ts-node:latest"
-docker build \
-    --build-arg "TEST_OMEGA_PUBKEY=$pubkey" \
-    -f "$repo_root/test/burnin/Dockerfile.ts-node" \
-    -t repram-burnin/ts-node:latest \
-    "$repo_root/repram-mcp"
 
 echo
 echo "Done. To verify the bake:"

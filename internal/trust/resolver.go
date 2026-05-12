@@ -63,8 +63,7 @@ var (
 // multiple 255-byte "character-strings" on the wire. Go's net.Resolver
 // already concatenates those into one string per record before returning,
 // so each element of the []string LookupTXT returns is already a complete
-// record. The TS parallel in repram-mcp does need to join because Node's
-// dns.resolveTxt returns string[][] (records × segments).
+// record.
 func FetchSigned(ctx context.Context, cfg DNSConfig, pubkey ed25519.PublicKey, now time.Time) (*SignedList, error) {
 	r := cfg.resolver()
 	bootstrapName := cfg.bootstrapName()

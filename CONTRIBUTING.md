@@ -42,18 +42,10 @@ By participating in this project, you agree to maintain a respectful and collabo
 
 #### Code Standards
 
-**Go** (node binary):
+**Go** (the only implementation; HTTP node and MCP server share this binary):
 - Follow [Effective Go](https://golang.org/doc/effective_go.html) guidelines
 - Use `gofmt` for code formatting
 - Add comments for exported functions and types
-
-**TypeScript** (MCP server / unified node):
-- Strict TypeScript (`strict: true` in tsconfig)
-- Use descriptive variable names
-- Prefer interfaces over type aliases for public contracts
-- No `any` unless interfacing with untyped external APIs
-
-Both languages:
 - Keep functions focused and small
 - Test new functionality with unit tests
 
@@ -61,8 +53,7 @@ Both languages:
 - Write tests for new functionality
 - Ensure all tests pass:
   ```bash
-  make test                             # Go (155 tests)
-  cd repram-mcp && npm test             # TypeScript (381 tests)
+  make test
   ```
 - Include both unit and integration tests where appropriate
 
@@ -107,7 +98,6 @@ Both languages:
 
 ### Prerequisites
 - Go 1.22 or higher
-- Node.js 18+ (for MCP server development)
 - Make
 - Git
 - Docker (optional, for containerized testing)
@@ -118,18 +108,15 @@ Both languages:
 git clone https://github.com/YOUR_USERNAME/REPRAM.git
 cd REPRAM
 
-# Build and test the Go node
+# Build and test
 make build
 make test
 
-# Build and test the TypeScript node / MCP server
-cd repram-mcp && npm install && npm run build && npm test
-
-# Start a Go node
+# Start an HTTP node
 make run
 
-# Or start a TypeScript node (standalone HTTP server)
-cd repram-mcp && npx repram-mcp --standalone
+# Or start an MCP stdio server (embedded node)
+./bin/repram --mcp
 ```
 
 ## Architecture Principles

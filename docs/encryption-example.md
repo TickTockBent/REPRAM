@@ -105,7 +105,7 @@ An observer watching the network sees a SHA-256 hash as the key and base64 noise
 
 ## Combining with MCP
 
-If you're using the `repram-mcp` tools from an AI agent, encrypt the data string before passing it to `repram_store` and decrypt after `repram_retrieve`:
+If you're using the `repram --mcp` tools from an AI agent, encrypt the data string before passing it to `repram_store` and decrypt after `repram_retrieve`:
 
 ```
 1. Agent encrypts payload → base64 ciphertext

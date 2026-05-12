@@ -28,10 +28,10 @@ If you need confidentiality during the TTL window, encrypt data before storing i
 
 ## Architecture
 
-Two implementations of the REPRAM node exist with identical wire format, so Go and TypeScript nodes can coexist in the same cluster:
+The reference implementation is a single Go binary (`cmd/repram/`) that runs in either of two modes:
 
-* **Go Node** (`cmd/repram/`): Standalone Go binary. Stores key-value pairs in memory with TTL expiration, replicates via gossip protocol, and exposes a REST API (`PUT/GET/HEAD /v1/data/{key}`, `/v1/keys`, `/v1/health`, `/v1/topology`, `/v1/metrics`).
-* **TypeScript Node** (`repram-mcp/`): Unified MCP server + REPRAM node. In default mode, `npx repram-mcp` starts an embedded node with MCP stdio transport — agents get `repram_store`, `repram_retrieve`, `repram_exists`, `repram_list_keys` tools with no separate server. In standalone mode (`--standalone`), it runs as a pure HTTP server equivalent to the Go binary. Can also connect to an external node via `REPRAM_URL` for backwards compatibility.
+* **HTTP node** (default): stores key-value pairs in memory with TTL expiration, replicates via gossip protocol, and exposes a REST API (`PUT/GET/HEAD /v1/data/{key}`, `/v1/keys`, `/v1/health`, `/v1/topology`, `/v1/metrics`).
+* **MCP stdio server** (`repram --mcp`): runs the same node embedded in-process with MCP JSON-RPC on stdin/stdout. Agents get `repram_store`, `repram_retrieve`, `repram_exists`, `repram_list_keys` tools with no separate server. Defaults to a private, 50MB-capped, OS-assigned-port node; set `REPRAM_PEERS` (or `REPRAM_NETWORK=public`) to gossip with a real cluster.
 * **Bootstrap Layer**: Ed25519-signed root-list discovery for the public network (TXT records at `_bootstrap.repram.io` → `_omega.repram.io`, verified against a baked-in "omega" pubkey — see [`docs/omega-operations.md`](omega-operations.md)), or manual `REPRAM_PEERS` for private clusters.
 * **Gossip Network**: HTTP-based peer-to-peer message propagation with quorum acknowledgement. Small enclaves use full broadcast; larger enclaves (>10 peers) use probabilistic √N fanout with epidemic forwarding and message deduplication.
 * **Enclaves**: `REPRAM_ENCLAVE` scopes data replication — nodes in the same enclave replicate data, all nodes share topology. Dynamic quorum adapts to enclave size.
@@ -68,13 +68,12 @@ REPRAM is `pipe`, not `grep`. It doesn't know or care what flows through it — 
 
 ## Technology Stack
 
-* **Languages**: Go (standalone node binary), TypeScript (unified MCP + node)
-* **Runtime**: Docker containers, `npx`, or single binary deployment
+* **Language**: Go (single binary covers HTTP node and MCP server)
+* **Runtime**: Docker container or static binary deployment
 * **Transport**: HTTP REST API, gossip over HTTP (JSON wire format, HMAC-SHA256 auth)
 * **Storage**: In-memory with TTL-based expiration and configurable capacity limits
-* **Discovery**: DNS SRV/A records for public network, static peer list for private
-* **Agent Interface**: Model Context Protocol (MCP) over stdio, with in-process calls for embedded mode
-* **Testing**: 155 Go tests + 381 TypeScript tests (536 total)
+* **Discovery**: DNS-based signed root list for public network, static peer list for private
+* **Agent Interface**: Model Context Protocol (MCP) over stdio with in-process calls to the embedded node
 
 ## Resilience Through Ephemerality
 

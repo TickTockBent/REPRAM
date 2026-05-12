@@ -66,7 +66,7 @@ REPRAM is `pipe`, not `grep`. It stores bytes, replicates them, and destroys the
 * Single Go binary, single Docker image
 * DNS-based bootstrap for public network discovery
 * `REPRAM_NETWORK=private` with `REPRAM_PEERS` for isolated clusters
-* MCP server (`repram-mcp`) via npx or Docker for agent integration
+* MCP stdio server via `repram --mcp` for agent integration — embedded REPRAM node in the same process, no external dependencies
 
 ## Design Decisions
 

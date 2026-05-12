@@ -25,9 +25,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"net"
+
 	"repram/internal/cluster"
 	"repram/internal/gossip"
 	"repram/internal/logging"
+	mcprpc "repram/internal/mcp"
 	"repram/internal/node"
 	"repram/internal/storage"
 	"repram/internal/trust"
@@ -47,6 +50,26 @@ func init() {
 }
 
 func main() {
+	// Detect --mcp before logging.Init so embedded-defaults override env-derived ones.
+	mcpMode := false
+	for _, arg := range os.Args[1:] {
+		if arg == "--mcp" {
+			mcpMode = true
+			break
+		}
+	}
+
+	if mcpMode {
+		// In MCP mode the stdout channel carries JSON-RPC frames; logs must
+		// not be interleaved with them. The default logger already writes to
+		// stderr, but pin it explicitly so any future change can't regress.
+		log.SetOutput(os.Stderr)
+		// Quieter default — the host agent is the only audience for stderr.
+		if os.Getenv("REPRAM_LOG_LEVEL") == "" {
+			os.Setenv("REPRAM_LOG_LEVEL", "warn")
+		}
+	}
+
 	logging.Init()
 
 	// Generate a unique node ID
@@ -60,21 +83,37 @@ func main() {
 		address = "localhost"
 	}
 
+	// Defaults differ for embedded MCP: HTTP and gossip listeners pick
+	// random free ports, storage is capped at 50MB so an agent fleet
+	// doesn't blow out the host's memory, and the network is private —
+	// agents that want to join the public mesh set REPRAM_NETWORK=public
+	// explicitly and accept the omega bootstrap dependency.
+	defaultHTTPPort := 8080
+	defaultGossipPort := 9090
+	defaultStorageMB := 0 // unlimited
+	defaultNetwork := "public"
+	if mcpMode {
+		defaultHTTPPort = 0
+		defaultGossipPort = 0
+		defaultStorageMB = 50
+		defaultNetwork = "private"
+	}
+
 	// Configuration: one name per setting, no aliases
-	httpPort := envInt("REPRAM_HTTP_PORT", 8080)
-	gossipPort := envInt("REPRAM_GOSSIP_PORT", 9090)
+	httpPort := envInt("REPRAM_HTTP_PORT", defaultHTTPPort)
+	gossipPort := envInt("REPRAM_GOSSIP_PORT", defaultGossipPort)
 	replicationFactor := envInt("REPRAM_REPLICATION", 3)
 	minTTL := envInt("REPRAM_MIN_TTL", 300)
 	maxTTL := envInt("REPRAM_MAX_TTL", 86400)
 	rateLimit := envInt("REPRAM_RATE_LIMIT", 100)
-	maxStorageMB := envInt("REPRAM_MAX_STORAGE_MB", 0)    // 0 = unlimited
+	maxStorageMB := envInt("REPRAM_MAX_STORAGE_MB", defaultStorageMB)
 	writeTimeout := envInt("REPRAM_WRITE_TIMEOUT", 5)      // seconds
 	clusterSecret := os.Getenv("REPRAM_CLUSTER_SECRET")
 	trustProxy := strings.EqualFold(os.Getenv("REPRAM_TRUST_PROXY"), "true")
 	enclave := os.Getenv("REPRAM_ENCLAVE") // default: "default"
 	network := os.Getenv("REPRAM_NETWORK")
 	if network == "" {
-		network = "public"
+		network = defaultNetwork
 	}
 	pprofEnabled := strings.EqualFold(os.Getenv("REPRAM_PPROF_ENABLED"), "true")
 	pprofAddr := os.Getenv("REPRAM_PPROF_ADDR")
@@ -223,11 +262,19 @@ func main() {
 		logging.Info("  pprof: enabled on %s (do not expose in untrusted environments)", pprofAddr)
 	}
 
-	// Create HTTP server for graceful shutdown support
-	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", httpPort),
-		Handler: server.Router(),
+	// Create HTTP server for graceful shutdown support. When httpPort is 0
+	// (default in MCP mode) we bind first and read the chosen port back so
+	// the log line and any potential gossip-self-discovery code see the
+	// real listener.
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", httpPort))
+	if err != nil {
+		log.Fatalf("HTTP listen failed: %v", err)
 	}
+	if tcpAddr, ok := listener.Addr().(*net.TCPAddr); ok {
+		httpPort = tcpAddr.Port
+		logging.Info("  HTTP listener bound to :%d", httpPort)
+	}
+	httpServer := &http.Server{Handler: server.Router()}
 
 	// Optional pprof server on a separate listener (diagnostic plane).
 	// Uses http.DefaultServeMux which has pprof handlers auto-registered
@@ -246,12 +293,7 @@ func main() {
 		}()
 	}
 
-	// Graceful shutdown: drain in-flight requests before exiting
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		<-sigChan
+	shutdown := func() {
 		logging.Info("Shutting down — draining in-flight requests...")
 
 		// Shut down pprof first with a short deadline. pprof has no
@@ -277,9 +319,44 @@ func main() {
 		securityMW.Close()
 		clusterNode.Stop()
 		cancel()
+	}
+
+	if mcpMode {
+		// MCP drives lifecycle: when the host closes stdin, we shut down.
+		// SIGINT/SIGTERM are still honoured as a belt-and-braces fallback.
+		go func() {
+			if err := httpServer.Serve(listener); err != http.ErrServerClosed {
+				logging.Warn("HTTP server error: %v", err)
+			}
+		}()
+
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		mcpCtx, mcpCancel := context.WithCancel(context.Background())
+		defer mcpCancel()
+		go func() {
+			<-sigChan
+			mcpCancel()
+		}()
+
+		srv := mcprpc.NewServer(clusterNode, os.Stdin, os.Stdout, minTTL, maxTTL)
+		if err := srv.Run(mcpCtx); err != nil && !errors.Is(err, context.Canceled) {
+			logging.Warn("MCP server exited: %v", err)
+		}
+		shutdown()
+		logging.Info("Shutdown complete.")
+		return
+	}
+
+	// Graceful shutdown: drain in-flight requests before exiting
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		shutdown()
 	}()
 
-	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
+	if err := httpServer.Serve(listener); err != http.ErrServerClosed {
 		log.Fatalf("HTTP server error: %v", err)
 	}
 	logging.Info("Shutdown complete.")
