@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REPRAM // network</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="scanlines"></div>
+    <main>
+        <header>
+            <div class="logo">REPRAM<span class="cursor">_</span></div>
+            <div class="subtitle">PUBLIC NETWORK // <span id="last-update">initializing…</span></div>
+            <div id="banners"></div>
+        </header>
+
+        <section id="stats" class="panel">
+            <div class="stat"><span class="label">NODES</span><span class="value" id="stat-nodes">—</span></div>
+            <div class="stat"><span class="label">ENCLAVES</span><span class="value" id="stat-enclaves">—</span></div>
+            <div class="stat"><span class="label">ROOTS REACHABLE</span><span class="value" id="stat-roots">—</span></div>
+            <div class="stat"><span class="label">OLDEST UPTIME</span><span class="value" id="stat-uptime">—</span></div>
+            <div class="stat"><span class="label">OMEGA REFRESH</span><span class="value" id="stat-omega-refresh">—</span></div>
+            <div class="stat"><span class="label">OMEGA EXPIRES</span><span class="value" id="stat-omega-expires">—</span></div>
+        </section>
+
+        <section class="grid">
+            <div class="panel" id="graph-panel">
+                <h2>// TOPOLOGY</h2>
+                <div id="graph"></div>
+            </div>
+
+            <aside class="panel" id="detail-panel">
+                <h2>// NODE</h2>
+                <div id="node-detail">
+                    <em>Click a node to inspect.</em>
+                </div>
+            </aside>
+        </section>
+
+        <section class="panel">
+            <h2>// NODES</h2>
+            <table id="node-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>ENCLAVE</th>
+                        <th>REGION</th>
+                        <th>UPTIME</th>
+                        <th>HEAP</th>
+                        <th>ROOT</th>
+                        <th>STATUS</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <footer>
+            <span>// REPRAM is `pipe` not `grep` — structure visible, contents never.</span>
+            <span class="attribution">Country data: GeoLite2 by MaxMind — <a href="https://www.maxmind.com">maxmind.com</a></span>
+        </footer>
+    </main>
+
+    <script src="/app.js"></script>
+</body>
+</html>
