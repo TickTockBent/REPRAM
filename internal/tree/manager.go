@@ -590,6 +590,26 @@ func (m *Manager) LookupAckRoute(messageID string) *ws.Connection {
 	return m.ackRoutes[messageID]
 }
 
+// RouteAck satisfies cluster.AckRouter. If ack.MessageID is in the routing
+// table, the ack is written to that child's WS pipe and the route is cleared
+// (an originator gets at most one ACK from this substrate per write). Returns
+// true if the ACK was routed.
+func (m *Manager) RouteAck(ack *gossip.Message) bool {
+	conn := m.LookupAckRoute(ack.MessageID)
+	if conn == nil || conn.IsClosed() {
+		return false
+	}
+	if err := conn.SendGossip(ack); err != nil {
+		logging.Debug("RouteAck: send to %s failed: %v", conn.RemoteNodeID(), err)
+		return false
+	}
+	// Don't ClearAckRoute on success — the substrate's own ACK is the first
+	// of potentially several, and the originating transient may still need
+	// later ACKs routed (e.g., for quorum > 1). The route auto-evicts after
+	// RecordAckRoute's TTL.
+	return true
+}
+
 // ClearAckRoute removes the ACK route for messageID and stops its eviction
 // timer. Called by the cluster layer when the originator has accumulated
 // enough ACKs for quorum, or when the message times out from the write side.
