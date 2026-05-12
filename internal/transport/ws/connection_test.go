@@ -296,7 +296,7 @@ func TestHelloRoundTrip(t *testing.T) {
 	defer cleanup()
 
 	got := make(chan *AttachmentMessage, 1)
-	server.OnAttachment(func(m *AttachmentMessage) { got <- m })
+	server.AddAttachmentHandler(func(m *AttachmentMessage) { got <- m })
 
 	hello := HelloPayload{
 		NodeID:       "mcp-node-1",
@@ -332,7 +332,7 @@ func TestGoodbyeRoundTrip(t *testing.T) {
 	defer cleanup()
 
 	got := make(chan *AttachmentMessage, 1)
-	client.OnAttachment(func(m *AttachmentMessage) { got <- m })
+	client.AddAttachmentHandler(func(m *AttachmentMessage) { got <- m })
 
 	bye := GoodbyePayload{
 		Reason: "shutdown",
@@ -368,7 +368,7 @@ func TestWelcomeRoundTrip(t *testing.T) {
 	defer cleanup()
 
 	got := make(chan *AttachmentMessage, 1)
-	client.OnAttachment(func(m *AttachmentMessage) { got <- m })
+	client.AddAttachmentHandler(func(m *AttachmentMessage) { got <- m })
 
 	welcome := WelcomePayload{
 		Topology: []gossip.SimpleMessage{
@@ -405,7 +405,7 @@ func TestHelloDoesNotFireOnMessage(t *testing.T) {
 	server.OnMessage(func(*gossip.Message) { msgCalls.Add(1) })
 
 	attachCh := make(chan struct{}, 1)
-	server.OnAttachment(func(*AttachmentMessage) { attachCh <- struct{}{} })
+	server.AddAttachmentHandler(func(*AttachmentMessage) { attachCh <- struct{}{} })
 
 	hello := HelloPayload{
 		NodeID: "n1", Enclave: "default", Address: "127.0.0.1",
@@ -432,7 +432,7 @@ func TestReportsClosedStateAfterClose(t *testing.T) {
 	}
 
 	srvClosed := make(chan struct{}, 1)
-	server.OnClose(func(int, string) { srvClosed <- struct{}{} })
+	server.AddCloseHandler(func(int, string) { srvClosed <- struct{}{} })
 
 	client.Close(websocket.CloseNormalClosure, "")
 
@@ -471,7 +471,7 @@ func TestIgnoresInvalidJSON(t *testing.T) {
 	defer cleanup()
 
 	var calls atomic.Int32
-	server.OnAttachment(func(*AttachmentMessage) { calls.Add(1) })
+	server.AddAttachmentHandler(func(*AttachmentMessage) { calls.Add(1) })
 
 	client.writeRaw(t, []byte("not json {{{"))
 	time.Sleep(100 * time.Millisecond)
@@ -485,7 +485,7 @@ func TestIgnoresMessagesMissingTypeOrPayload(t *testing.T) {
 	defer cleanup()
 
 	var calls atomic.Int32
-	server.OnAttachment(func(*AttachmentMessage) { calls.Add(1) })
+	server.AddAttachmentHandler(func(*AttachmentMessage) { calls.Add(1) })
 
 	client.writeRaw(t, []byte(`{"type":"put"}`))    // missing payload
 	client.writeRaw(t, []byte(`{"payload":{}}`))   // missing type
@@ -563,7 +563,7 @@ func TestNoSigningWithoutSecret(t *testing.T) {
 	defer cleanup()
 
 	got := make(chan *AttachmentMessage, 1)
-	server.OnAttachment(func(m *AttachmentMessage) { got <- m })
+	server.AddAttachmentHandler(func(m *AttachmentMessage) { got <- m })
 
 	if err := client.SendGossip(sampleMessage(nil)); err != nil {
 		t.Fatalf("send: %v", err)
@@ -630,7 +630,7 @@ func TestHeartbeatTerminatesAfterMaxMissed(t *testing.T) {
 	server.ws.SetPingHandler(func(string) error { return nil })
 
 	closed := make(chan struct{}, 1)
-	client.OnClose(func(int, string) { closed <- struct{}{} })
+	client.AddCloseHandler(func(int, string) { closed <- struct{}{} })
 
 	client.StartHeartbeat()
 	defer client.StopHeartbeat()
@@ -656,7 +656,7 @@ func TestHeartbeatResetsCounterOnPong(t *testing.T) {
 	installPingHook(t, server)
 
 	closed := make(chan struct{}, 1)
-	client.OnClose(func(int, string) { closed <- struct{}{} })
+	client.AddCloseHandler(func(int, string) { closed <- struct{}{} })
 
 	client.StartHeartbeat()
 	defer client.StopHeartbeat()

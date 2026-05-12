@@ -48,11 +48,12 @@ type Connection struct {
 	heartbeatStarted atomic.Bool
 	heartbeatPeriod  time.Duration
 
-	handlersMu   sync.RWMutex
-	onMessage    func(*gossip.Message)
-	onAttachment func(*AttachmentMessage)
-	onClose      func(code int, reason string)
-	onError      func(error)
+	handlersMu         sync.RWMutex
+	onMessage          func(*gossip.Message)
+	onError            func(error)
+	attachmentHandlers []handlerEntry[func(*AttachmentMessage)]
+	closeHandlers      []handlerEntry[func(int, string)]
+	handlerSeq         atomic.Uint64
 
 	remoteMu      sync.RWMutex
 	remoteNodeID  string
@@ -78,37 +79,74 @@ func NewConnection(ws *websocket.Conn, clusterSecret string) *Connection {
 	return c
 }
 
-// OnMessage registers a handler for gossip-typed AttachmentMessages, decoded
-// back into the internal Message form.
+// handlerEntry wraps a multi-subscriber lifecycle callback with a stable ID
+// so a registration can be removed later (matches the EventEmitter
+// addListener/removeListener pattern in the TS reference).
+type handlerEntry[T any] struct {
+	id uint64
+	fn T
+}
+
+// OnMessage installs the single application-level gossip-message handler.
+// Subsequent calls replace the previous handler. Lifecycle events use the
+// multi-subscriber AddOn* methods instead.
 func (c *Connection) OnMessage(fn func(*gossip.Message)) {
 	c.handlersMu.Lock()
 	c.onMessage = fn
 	c.handlersMu.Unlock()
 }
 
-// OnAttachment registers a handler that fires for every parsed AttachmentMessage
-// (gossip + hello/welcome/goodbye). Gossip frames fire both OnAttachment and
-// OnMessage; lifecycle frames fire only OnAttachment.
-func (c *Connection) OnAttachment(fn func(*AttachmentMessage)) {
-	c.handlersMu.Lock()
-	c.onAttachment = fn
-	c.handlersMu.Unlock()
-}
-
-// OnClose fires once when the underlying connection closes for any reason
-// (graceful close, peer hangup, RST, or local Terminate).
-func (c *Connection) OnClose(fn func(code int, reason string)) {
-	c.handlersMu.Lock()
-	c.onClose = fn
-	c.handlersMu.Unlock()
-}
-
-// OnError fires for non-fatal read-loop errors that did not terminate the
-// connection. Fatal errors surface through OnClose instead.
+// OnError registers the read-loop error handler. Subsequent calls replace.
+// Fatal errors surface through close handlers instead.
 func (c *Connection) OnError(fn func(error)) {
 	c.handlersMu.Lock()
 	c.onError = fn
 	c.handlersMu.Unlock()
+}
+
+// AddAttachmentHandler subscribes fn to every parsed AttachmentMessage
+// (gossip + hello/welcome/goodbye). The returned function removes this
+// subscription; multiple subscribers fire in registration order.
+//
+// The tree-manager attach handshake uses this to register a temporary
+// welcome/goodbye-waiting handler that it removes once welcome arrives, then
+// registers a long-lived goodbye-handling subscription.
+func (c *Connection) AddAttachmentHandler(fn func(*AttachmentMessage)) (remove func()) {
+	id := c.handlerSeq.Add(1)
+	c.handlersMu.Lock()
+	c.attachmentHandlers = append(c.attachmentHandlers, handlerEntry[func(*AttachmentMessage)]{id: id, fn: fn})
+	c.handlersMu.Unlock()
+	return func() {
+		c.handlersMu.Lock()
+		defer c.handlersMu.Unlock()
+		for i, h := range c.attachmentHandlers {
+			if h.id == id {
+				c.attachmentHandlers = append(c.attachmentHandlers[:i], c.attachmentHandlers[i+1:]...)
+				return
+			}
+		}
+	}
+}
+
+// AddCloseHandler subscribes fn to the one-shot close event. Multiple
+// subscribers fire in registration order. The returned function removes
+// the subscription (e.g., when a temporary handler should not run if
+// close happens later).
+func (c *Connection) AddCloseHandler(fn func(code int, reason string)) (remove func()) {
+	id := c.handlerSeq.Add(1)
+	c.handlersMu.Lock()
+	c.closeHandlers = append(c.closeHandlers, handlerEntry[func(int, string)]{id: id, fn: fn})
+	c.handlersMu.Unlock()
+	return func() {
+		c.handlersMu.Lock()
+		defer c.handlersMu.Unlock()
+		for i, h := range c.closeHandlers {
+			if h.id == id {
+				c.closeHandlers = append(c.closeHandlers[:i], c.closeHandlers[i+1:]...)
+				return
+			}
+		}
+	}
 }
 
 // RemoteNodeID returns the peer's node ID once the hello/welcome handshake
@@ -337,19 +375,19 @@ func (c *Connection) fireMessage(msg *gossip.Message) {
 
 func (c *Connection) fireAttachment(msg *AttachmentMessage) {
 	c.handlersMu.RLock()
-	fn := c.onAttachment
+	handlers := append([]handlerEntry[func(*AttachmentMessage)](nil), c.attachmentHandlers...)
 	c.handlersMu.RUnlock()
-	if fn != nil {
-		fn(msg)
+	for _, h := range handlers {
+		h.fn(msg)
 	}
 }
 
 func (c *Connection) fireClose(code int, reason string) {
 	c.handlersMu.RLock()
-	fn := c.onClose
+	handlers := append([]handlerEntry[func(int, string)](nil), c.closeHandlers...)
 	c.handlersMu.RUnlock()
-	if fn != nil {
-		fn(code, reason)
+	for _, h := range handlers {
+		h.fn(code, reason)
 	}
 }
 
