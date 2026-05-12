@@ -11,6 +11,7 @@ bin/
 !test/burnin/archive-*/*.log
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 *~
