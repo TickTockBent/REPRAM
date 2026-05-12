@@ -742,6 +742,135 @@ func TestStopUnblocksSleep(t *testing.T) {
 	}
 }
 
+// ---- ACK routing (phase-4 prep) --------------------------------------
+
+func TestRecordAndLookupAckRoute(t *testing.T) {
+	p := newPair(t)
+	defer p.cleanupFn()
+	srv := p.serverConn(t)
+
+	m := NewManager(makeNode("substrate-1"), &fakePeerer{}, Options{Inbound: InboundTrue, MaxChildren: DefaultMaxChildren})
+	defer m.Stop()
+
+	m.RecordAckRoute("msg-1", srv, 5*time.Second)
+	if got := m.LookupAckRoute("msg-1"); got != srv {
+		t.Errorf("LookupAckRoute: got %v want %v", got, srv)
+	}
+	if got := m.LookupAckRoute("msg-unknown"); got != nil {
+		t.Errorf("LookupAckRoute(unknown): got %v want nil", got)
+	}
+}
+
+func TestAckRouteAutoEvicts(t *testing.T) {
+	p := newPair(t)
+	defer p.cleanupFn()
+	srv := p.serverConn(t)
+
+	m := NewManager(makeNode("substrate-1"), &fakePeerer{}, Options{Inbound: InboundTrue, MaxChildren: DefaultMaxChildren})
+	defer m.Stop()
+
+	m.RecordAckRoute("msg-1", srv, 80*time.Millisecond)
+	if got := m.LookupAckRoute("msg-1"); got != srv {
+		t.Fatalf("LookupAckRoute before TTL: got %v want %v", got, srv)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if got := m.LookupAckRoute("msg-1"); got != nil {
+		t.Errorf("LookupAckRoute after TTL: got %v want nil", got)
+	}
+}
+
+func TestClearAckRoute(t *testing.T) {
+	p := newPair(t)
+	defer p.cleanupFn()
+	srv := p.serverConn(t)
+
+	m := NewManager(makeNode("substrate-1"), &fakePeerer{}, Options{Inbound: InboundTrue, MaxChildren: DefaultMaxChildren})
+	defer m.Stop()
+
+	m.RecordAckRoute("msg-1", srv, 5*time.Second)
+	if m.LookupAckRoute("msg-1") == nil {
+		t.Fatal("setup: route missing")
+	}
+	m.ClearAckRoute("msg-1")
+	if got := m.LookupAckRoute("msg-1"); got != nil {
+		t.Errorf("LookupAckRoute after Clear: got %v want nil", got)
+	}
+}
+
+// ---- child broadcast (phase-5 prep) ----------------------------------
+
+func TestBroadcastToChildren(t *testing.T) {
+	p1 := newPair(t)
+	defer p1.cleanupFn()
+	srv1 := p1.serverConn(t)
+	p2 := newPair(t)
+	defer p2.cleanupFn()
+	srv2 := p2.serverConn(t)
+
+	m := NewManager(makeNode("substrate-1"), &fakePeerer{}, Options{Inbound: InboundTrue, MaxChildren: DefaultMaxChildren})
+	defer m.Stop()
+
+	m.HandleHello(srv1, &ws.HelloPayload{NodeID: "t1", Enclave: "default"})
+	m.HandleHello(srv2, &ws.HelloPayload{NodeID: "t2", Enclave: "default"})
+
+	got1 := make(chan *gossip.Message, 1)
+	got2 := make(chan *gossip.Message, 1)
+	p1.clientWS.OnMessage(func(msg *gossip.Message) { got1 <- msg })
+	p2.clientWS.OnMessage(func(msg *gossip.Message) { got2 <- msg })
+
+	msg := &gossip.Message{
+		Type:      gossip.MessageTypePut,
+		From:      "peer-x",
+		Key:       "k",
+		Data:      []byte("v"),
+		TTL:       60,
+		Timestamp: time.Now(),
+		MessageID: "broadcast-test",
+	}
+	m.BroadcastToChildren(msg)
+
+	for i, ch := range []<-chan *gossip.Message{got1, got2} {
+		select {
+		case r := <-ch:
+			if r.MessageID != "broadcast-test" {
+				t.Errorf("child %d: id=%q want broadcast-test", i+1, r.MessageID)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("child %d never received broadcast", i+1)
+		}
+	}
+}
+
+func TestBroadcastToChildrenSkipsOtherEnclave(t *testing.T) {
+	p := newPair(t)
+	defer p.cleanupFn()
+	srv := p.serverConn(t)
+
+	m := NewManager(makeNode("substrate-1"), &fakePeerer{}, Options{Inbound: InboundTrue, MaxChildren: DefaultMaxChildren})
+	defer m.Stop()
+
+	m.HandleHello(srv, &ws.HelloPayload{NodeID: "t1", Enclave: "other-enclave"})
+
+	var calls atomic.Int32
+	p.clientWS.OnMessage(func(*gossip.Message) { calls.Add(1) })
+
+	msg := &gossip.Message{
+		Type:      gossip.MessageTypePut,
+		From:      "peer-x",
+		Key:       "k",
+		Data:      []byte("v"),
+		TTL:       60,
+		Timestamp: time.Now(),
+		MessageID: "cross-enclave",
+	}
+	m.BroadcastToChildren(msg)
+
+	time.Sleep(100 * time.Millisecond)
+	if n := calls.Load(); n != 0 {
+		t.Errorf("child in other enclave received broadcast: %d times", n)
+	}
+}
+
 // ---- helpers ----------------------------------------------------------
 
 func sortStrings(s []string) {

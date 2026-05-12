@@ -118,9 +118,20 @@ type Manager struct {
 	onReattach       func(*ws.Connection)
 	seedProvider     func() []string
 
-	stopOnce sync.Once
-	stopping atomic.Bool
-	stopCh   chan struct{}
+	// ackRoutes tracks (messageId → child connection) for PUTs relayed
+	// through this substrate. When an enclave peer ACKs a relayed PUT, the
+	// substrate forwards the ACK back through ackRoutes[messageId] so the
+	// originating transient observes quorum confirmation. Entries are
+	// evicted by ackRouteTimers or explicit ClearAckRoute.
+	ackRoutes      map[string]*ws.Connection
+	ackRouteTimers map[string]*time.Timer
+
+	stopOnce   sync.Once
+	stopping   atomic.Bool
+	stopCh     chan struct{}
+	stopCtx    context.Context
+	stopCancel context.CancelFunc
+	wg         sync.WaitGroup
 }
 
 // NewManager constructs a Manager. The Inbound option resolves the role
@@ -129,13 +140,18 @@ func NewManager(local *gossip.Node, peers Peerer, opts Options) *Manager {
 	if opts.Dialer == nil {
 		opts.Dialer = ws.ConnectToSubstrate
 	}
+	stopCtx, stopCancel := context.WithCancel(context.Background())
 	m := &Manager{
-		local:    local,
-		gossip:   peers,
-		opts:     opts,
-		dialer:   opts.Dialer,
-		children: make(map[string]*ws.Connection),
-		stopCh:   make(chan struct{}),
+		local:          local,
+		gossip:         peers,
+		opts:           opts,
+		dialer:         opts.Dialer,
+		children:       make(map[string]*ws.Connection),
+		ackRoutes:      make(map[string]*ws.Connection),
+		ackRouteTimers: make(map[string]*time.Timer),
+		stopCh:         make(chan struct{}),
+		stopCtx:        stopCtx,
+		stopCancel:     stopCancel,
 	}
 	if opts.Inbound == InboundTrue {
 		m.role = RoleSubstrate
@@ -289,13 +305,9 @@ func (m *Manager) attach(ctx context.Context, conn *ws.Connection, timeout time.
 		HTTPPort:     m.local.HTTPPort,
 		Capabilities: ws.Capabilities{Inbound: string(m.opts.Inbound)},
 	}
-	if err := conn.SendAttachment(ws.AttachmentTypeHello, hello); err != nil {
-		return nil, err
-	}
-
-	// Race a temporary attachment handler against the close event and the
-	// timeout. The handler is removed in every exit path so it can't fire
-	// after the long-lived handlers below take over.
+	// Install the temporary handlers BEFORE sending hello — a fast substrate
+	// can answer with welcome before SendAttachment returns, and missing the
+	// event causes the select below to wait the full timeout.
 	welcomeCh := make(chan *ws.WelcomePayload, 1)
 	rejectedCh := make(chan struct{}, 1)
 	removeAttach := conn.AddAttachmentHandler(func(msg *ws.AttachmentMessage) {
@@ -304,17 +316,35 @@ func (m *Manager) attach(ctx context.Context, conn *ws.Connection, timeout time.
 			var w ws.WelcomePayload
 			if err := json.Unmarshal(msg.Payload, &w); err != nil {
 				logging.Warn("Welcome payload decode failed: %v", err)
-				rejectedCh <- struct{}{}
+				select {
+				case rejectedCh <- struct{}{}:
+				default:
+				}
 				return
 			}
-			welcomeCh <- &w
+			select {
+			case welcomeCh <- &w:
+			default:
+			}
 		case ws.AttachmentTypeGoodbye:
-			rejectedCh <- struct{}{}
+			select {
+			case rejectedCh <- struct{}{}:
+			default:
+			}
 		}
 	})
 	removeClose := conn.AddCloseHandler(func(int, string) {
-		rejectedCh <- struct{}{}
+		select {
+		case rejectedCh <- struct{}{}:
+		default:
+		}
 	})
+
+	if err := conn.SendAttachment(ws.AttachmentTypeHello, hello); err != nil {
+		removeAttach()
+		removeClose()
+		return nil, err
+	}
 
 	var welcome *ws.WelcomePayload
 	select {
@@ -363,7 +393,7 @@ func (m *Manager) attach(ctx context.Context, conn *ws.Connection, timeout time.
 			m.mu.Lock()
 			m.parent = nil
 			m.mu.Unlock()
-			go m.triggerReattach(p.AlternativeParents)
+			m.triggerReattach(p.AlternativeParents)
 		}
 	})
 	conn.AddCloseHandler(func(int, string) {
@@ -377,7 +407,7 @@ func (m *Manager) attach(ctx context.Context, conn *ws.Connection, timeout time.
 		m.mu.Lock()
 		m.parent = nil
 		m.mu.Unlock()
-		go m.triggerReattach(nil)
+		m.triggerReattach(nil)
 	})
 
 	logging.Info("Attached to substrate %s (depth %d, topology %d nodes)",
@@ -387,7 +417,8 @@ func (m *Manager) attach(ctx context.Context, conn *ws.Connection, timeout time.
 
 // triggerReattach is the single-flight entry point for the reattach loop.
 // Concurrent invocations (goodbye and close firing back-to-back) collapse
-// to one running loop.
+// to one running loop. The loop runs in its own goroutine tracked by m.wg
+// so Stop() can wait for clean exit before returning.
 func (m *Manager) triggerReattach(supplied []ws.AlternativeParent) {
 	if m.stopping.Load() {
 		return
@@ -398,15 +429,18 @@ func (m *Manager) triggerReattach(supplied []ws.AlternativeParent) {
 		return
 	}
 	m.reattachInFlight = true
+	m.wg.Add(1)
 	m.mu.Unlock()
 
-	defer func() {
-		m.mu.Lock()
-		m.reattachInFlight = false
-		m.mu.Unlock()
+	go func() {
+		defer m.wg.Done()
+		defer func() {
+			m.mu.Lock()
+			m.reattachInFlight = false
+			m.mu.Unlock()
+		}()
+		m.reattachLoop(supplied)
 	}()
-
-	m.reattachLoop(supplied)
 }
 
 func (m *Manager) reattachLoop(supplied []ws.AlternativeParent) {
@@ -479,14 +513,14 @@ func (m *Manager) tryAlternatives(alts []ws.AlternativeParent, perAttemptTimeout
 			continue
 		}
 		logging.Info("Attempting reattach to %s (%s:%d)", alt.ID, alt.Address, alt.HTTPPort)
-		ctx, cancel := context.WithTimeout(context.Background(), perAttemptTimeout)
+		ctx, cancel := context.WithTimeout(m.stopCtx, perAttemptTimeout)
 		conn, err := m.dialer(ctx, alt.Address, alt.HTTPPort, m.opts.ClusterSecret, perAttemptTimeout)
 		cancel()
 		if err != nil {
 			logging.Warn("Reattach to %s failed: %v", alt.ID, err)
 			continue
 		}
-		welcome, err := m.attach(context.Background(), conn, perAttemptTimeout)
+		welcome, err := m.attach(m.stopCtx, conn, perAttemptTimeout)
 		if err != nil {
 			logging.Warn("Reattach to %s handshake failed: %v", alt.ID, err)
 			if !conn.IsClosed() {
@@ -527,6 +561,75 @@ func (m *Manager) sleep(d time.Duration) bool {
 		return !m.stopping.Load()
 	case <-m.stopCh:
 		return false
+	}
+}
+
+// RecordAckRoute remembers that messageID's ACK should be forwarded back to
+// conn when it arrives. The mapping is auto-evicted after ttl; call
+// ClearAckRoute on quorum success to free the entry sooner.
+func (m *Manager) RecordAckRoute(messageID string, conn *ws.Connection, ttl time.Duration) {
+	m.mu.Lock()
+	if existing, ok := m.ackRouteTimers[messageID]; ok {
+		existing.Stop()
+	}
+	m.ackRoutes[messageID] = conn
+	m.ackRouteTimers[messageID] = time.AfterFunc(ttl, func() {
+		m.mu.Lock()
+		delete(m.ackRoutes, messageID)
+		delete(m.ackRouteTimers, messageID)
+		m.mu.Unlock()
+	})
+	m.mu.Unlock()
+}
+
+// LookupAckRoute returns the child connection that should receive an ACK for
+// messageID, or nil if no route exists (PUT was not relayed through here).
+func (m *Manager) LookupAckRoute(messageID string) *ws.Connection {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ackRoutes[messageID]
+}
+
+// ClearAckRoute removes the ACK route for messageID and stops its eviction
+// timer. Called by the cluster layer when the originator has accumulated
+// enough ACKs for quorum, or when the message times out from the write side.
+func (m *Manager) ClearAckRoute(messageID string) {
+	m.mu.Lock()
+	if t, ok := m.ackRouteTimers[messageID]; ok {
+		t.Stop()
+		delete(m.ackRouteTimers, messageID)
+	}
+	delete(m.ackRoutes, messageID)
+	m.mu.Unlock()
+}
+
+// BroadcastToChildren fans msg out to every attached child whose enclave
+// matches. Substrate uses this to deliver PUT replicas received from the
+// HTTP gossip mesh down to its attached transients, so transients see
+// other agents' writes in their local store. Errors from a single child do
+// not abort the broadcast — best-effort like HTTP gossip.
+func (m *Manager) BroadcastToChildren(msg *gossip.Message) {
+	m.mu.Lock()
+	if len(m.children) == 0 {
+		m.mu.Unlock()
+		return
+	}
+	conns := make([]*ws.Connection, 0, len(m.children))
+	for _, c := range m.children {
+		conns = append(conns, c)
+	}
+	m.mu.Unlock()
+
+	for _, c := range conns {
+		// Enclave gating: substrate must not leak cross-enclave writes to
+		// transients. The child's enclave is recorded on the Connection by
+		// SetRemote during HandleHello.
+		if c.RemoteEnclave() != "" && c.RemoteEnclave() != m.local.Enclave {
+			continue
+		}
+		if err := c.SendGossip(msg); err != nil {
+			logging.Debug("BroadcastToChildren: send to %s failed: %v", c.RemoteNodeID(), err)
+		}
 	}
 }
 
@@ -605,15 +708,22 @@ func (m *Manager) Stop() {
 	m.stopOnce.Do(func() {
 		m.stopping.Store(true)
 		close(m.stopCh)
+		m.stopCancel()
 		m.SendGoodbyeToChildren("shutdown")
 		m.mu.Lock()
 		parent := m.parent
 		m.parent = nil
 		m.children = make(map[string]*ws.Connection)
+		for _, t := range m.ackRouteTimers {
+			t.Stop()
+		}
+		m.ackRoutes = make(map[string]*ws.Connection)
+		m.ackRouteTimers = make(map[string]*time.Timer)
 		m.mu.Unlock()
 		if parent != nil && !parent.IsClosed() {
 			parent.Close(1000, "shutting down")
 		}
+		m.wg.Wait()
 	})
 }
 
