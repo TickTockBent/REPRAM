@@ -74,12 +74,25 @@ type ChildBroadcaster interface {
 const IsolationRecoveryInterval = 30 * time.Second
 
 type WriteOperation struct {
-	Key         string
-	Data        []byte
-	TTL         time.Duration
+	Key           string
+	Data          []byte
+	TTL           time.Duration
 	Confirmations int
+	// signalComplete is guarded by signalOnce so the local-quorum path,
+	// the gossip-ACK path, and any racing late ACK can all signal once
+	// without panicking on close-of-closed-channel. Pendant of the
+	// MessageID dedup that keys pendingWrites: there can still be more
+	// than one goroutine that observes "quorum reached" within a single
+	// write's lifetime.
 	Complete    chan bool
+	signalOnce  sync.Once
 	Error       error
+}
+
+// markComplete signals the write as quorum-reached at most once. Safe
+// to call from any goroutine that observes the quorum threshold.
+func (w *WriteOperation) markComplete() {
+	w.signalOnce.Do(func() { close(w.Complete) })
 }
 
 type Store interface {
@@ -272,7 +285,7 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		cn.writesMutex.Lock()
 		delete(cn.pendingWrites, msg.MessageID)
 		cn.writesMutex.Unlock()
-		close(writeOp.Complete)
+		writeOp.markComplete()
 		logging.Debug("Write completed locally (quorum=%d, confirmations=%d)", quorum, writeOp.Confirmations)
 		return nil
 	}
@@ -407,10 +420,7 @@ func (cn *ClusterNode) handleAckMessage(msg *gossip.Message) error {
 		reached := writeOp.Confirmations >= cn.quorumSize()
 		cn.writesMutex.Unlock()
 		if reached {
-			select {
-			case writeOp.Complete <- true:
-			default:
-			}
+			writeOp.markComplete()
 		}
 		return nil
 	}

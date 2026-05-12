@@ -118,6 +118,13 @@ type Manager struct {
 	onReattach       func(*ws.Connection)
 	seedProvider     func() []string
 
+	// parentDispatch is the application-level gossip handler installed on
+	// every parent connection (initial Attach and every successful reattach)
+	// before Attach returns. Setting this up-front closes the window where
+	// the substrate could push a PUT between welcome arrival and the caller
+	// wiring its own OnMessage.
+	parentDispatch func(*gossip.Message)
+
 	// ackRoutes tracks (messageId → child connection) for PUTs relayed
 	// through this substrate. When an enclave peer ACKs a relayed PUT, the
 	// substrate forwards the ACK back through ackRoutes[messageId] so the
@@ -213,11 +220,24 @@ func (m *Manager) SetSeedProvider(fn func() []string) {
 }
 
 // SetReattachCallback registers a hook fired after a successful reattach.
-// The application uses this to rewire its parent-message router to the new
-// connection.
+// The application uses this to rewire any per-connection state that isn't
+// already handled by SetParentDispatch (e.g., metrics labels, logging
+// scopes). Parent message dispatch itself is wired by SetParentDispatch.
 func (m *Manager) SetReattachCallback(fn func(*ws.Connection)) {
 	m.mu.Lock()
 	m.onReattach = fn
+	m.mu.Unlock()
+}
+
+// SetParentDispatch registers the gossip-message handler that Attach and
+// every successful reattach install on the parent connection — wired
+// inside attach() before the function returns, so the substrate's first
+// post-welcome PUT can't be silently dropped by a not-yet-wired OnMessage.
+// Pass nil to disable parent-side dispatch (transient still receives via
+// HTTP gossip; only WS-tree fan-out is muted).
+func (m *Manager) SetParentDispatch(fn func(*gossip.Message)) {
+	m.mu.Lock()
+	m.parentDispatch = fn
 	m.mu.Unlock()
 }
 
@@ -227,6 +247,14 @@ func (m *Manager) SetReattachCallback(fn func(*ws.Connection)) {
 // (capacity, attachments disabled) it sends a goodbye-with-alternatives and
 // closes the connection shortly afterward.
 func (m *Manager) HandleHello(conn *ws.Connection, hello *ws.HelloPayload) bool {
+	// Normalize empty enclave to "default" so the BroadcastToChildren
+	// enclave filter cannot be bypassed by a hello that omits the field
+	// (the filter skips children whose RemoteEnclave doesn't match the
+	// local one; "" used to slip through as "any"). Matches the same
+	// normalization the gossip layer applies to peer enclaves.
+	if hello.Enclave == "" {
+		hello.Enclave = "default"
+	}
 	m.mu.Lock()
 	if m.opts.MaxChildren == 0 {
 		m.mu.Unlock()
@@ -340,6 +368,18 @@ func (m *Manager) attach(ctx context.Context, conn *ws.Connection, timeout time.
 		}
 	})
 
+	// Install the parent-dispatch handler before sending hello. The WS
+	// readLoop is single-threaded and processes frames in order, so once
+	// welcome is delivered every subsequent gossip frame is guaranteed
+	// to find OnMessage already wired. Without this, a fast substrate can
+	// push a PUT into a not-yet-wired handler and the frame is dropped.
+	m.mu.Lock()
+	dispatch := m.parentDispatch
+	m.mu.Unlock()
+	if dispatch != nil {
+		conn.OnMessage(dispatch)
+	}
+
 	if err := conn.SendAttachment(ws.AttachmentTypeHello, hello); err != nil {
 		removeAttach()
 		removeClose()
@@ -365,8 +405,8 @@ func (m *Manager) attach(ctx context.Context, conn *ws.Connection, timeout time.
 	removeAttach()
 	removeClose()
 
-	// Promote to active parent. The role is "transient" by definition when
-	// we reach here — inbound-capable nodes never call Attach.
+	// parentDispatch was installed before SendAttachment to close the
+	// post-welcome dispatch race; nothing to wire here.
 	m.mu.Lock()
 	m.parent = conn
 	m.role = RoleTransient
@@ -643,8 +683,10 @@ func (m *Manager) BroadcastToChildren(msg *gossip.Message) {
 	for _, c := range conns {
 		// Enclave gating: substrate must not leak cross-enclave writes to
 		// transients. The child's enclave is recorded on the Connection by
-		// SetRemote during HandleHello.
-		if c.RemoteEnclave() != "" && c.RemoteEnclave() != m.local.Enclave {
+		// SetRemote during HandleHello, where empty hello.Enclave is
+		// normalized to "default" — so strict inequality is safe (no
+		// "" → bypass) and any child whose enclave differs is dropped.
+		if c.RemoteEnclave() != m.local.Enclave {
 			continue
 		}
 		if err := c.SendGossip(msg); err != nil {

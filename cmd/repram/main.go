@@ -257,17 +257,15 @@ func main() {
 	clusterNode.SetAckRouter(treeMgr)
 	clusterNode.SetChildBroadcaster(treeMgr)
 
-	// Wire reattach: when the parent connection rolls over to a new
-	// substrate, re-bind the gossip-message dispatch so incoming PUTs
-	// and ACKs from the new parent flow into the cluster handler.
-	bindParentDispatch := func(conn *ws.Connection) {
-		conn.OnMessage(func(m *gossip.Message) {
-			if err := clusterNode.HandleGossipMessage(m); err != nil {
-				logging.Debug("Parent WS dispatch: %v", err)
-			}
-		})
-	}
-	treeMgr.SetReattachCallback(bindParentDispatch)
+	// Wire the parent-side gossip dispatch on the tree manager. Attach()
+	// and every successful reattach install this handler on the new
+	// connection BEFORE the function returns — closes the post-welcome
+	// dispatch race the SetReattachCallback hook used to leave open.
+	treeMgr.SetParentDispatch(func(m *gossip.Message) {
+		if err := clusterNode.HandleGossipMessage(m); err != nil {
+			logging.Debug("Parent WS dispatch: %v", err)
+		}
+	})
 
 	// Transient bootstrap: if this node accepts no inbound, kick off a
 	// best-effort outbound WS attach to one of the seed substrates after
@@ -303,7 +301,8 @@ func main() {
 					conn.Close(1000, "")
 					continue
 				}
-				bindParentDispatch(conn)
+				// parent dispatch was installed by treeMgr.Attach via
+				// SetParentDispatch; nothing extra to wire here.
 				conn.StartHeartbeat()
 				logging.Info("Transient mode: attached to substrate at %s", seed)
 				return

@@ -841,6 +841,55 @@ func TestBroadcastToChildren(t *testing.T) {
 	}
 }
 
+// TestEmptyEnclaveNormalizedOnHello — review finding #4: a hello with an
+// empty Enclave field used to slip past the BroadcastToChildren filter
+// (which only skipped when enclave was non-empty AND mismatched). After
+// normalization the substrate runs in "default" and the child registers
+// as "default", so the filter still admits in-enclave traffic but a
+// substrate in a NON-default enclave will correctly skip the empty-enclave
+// child.
+func TestEmptyEnclaveNormalizedOnHello(t *testing.T) {
+	p := newPair(t)
+	defer p.cleanupFn()
+	srv := p.serverConn(t)
+
+	// Substrate in a non-default enclave.
+	m := NewManager(
+		makeNode("substrate-1", func(n *gossip.Node) { n.Enclave = "alpha" }),
+		&fakePeerer{},
+		Options{Inbound: InboundTrue, MaxChildren: DefaultMaxChildren},
+	)
+	defer m.Stop()
+
+	// Hello with empty enclave (the bypass case).
+	if !m.HandleHello(srv, &ws.HelloPayload{NodeID: "t1", Enclave: ""}) {
+		t.Fatal("HandleHello rejected hello with empty enclave")
+	}
+	if got := srv.RemoteEnclave(); got != "default" {
+		t.Errorf("RemoteEnclave: got %q want default (normalization)", got)
+	}
+
+	// Substrate enclave is "alpha"; the child normalized to "default" —
+	// the filter must drop the broadcast.
+	var calls atomic.Int32
+	p.clientWS.OnMessage(func(*gossip.Message) { calls.Add(1) })
+
+	msg := &gossip.Message{
+		Type:      gossip.MessageTypePut,
+		From:      "alpha-peer",
+		Key:       "k",
+		Data:      []byte("v"),
+		TTL:       60,
+		Timestamp: time.Now(),
+		MessageID: "empty-enclave",
+	}
+	m.BroadcastToChildren(msg)
+	time.Sleep(100 * time.Millisecond)
+	if n := calls.Load(); n != 0 {
+		t.Errorf("empty-enclave child received broadcast in non-default substrate: %d times", n)
+	}
+}
+
 func TestBroadcastToChildrenSkipsOtherEnclave(t *testing.T) {
 	p := newPair(t)
 	defer p.cleanupFn()
