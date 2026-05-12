@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -33,6 +34,8 @@ import (
 	mcprpc "repram/internal/mcp"
 	"repram/internal/node"
 	"repram/internal/storage"
+	"repram/internal/transport/ws"
+	"repram/internal/tree"
 	"repram/internal/trust"
 )
 
@@ -230,8 +233,89 @@ func main() {
 		clusterNode.SetSeedProvider(func() []string { return seeds })
 	}
 
+	// Tree manager owns substrate-transient attachment state. Substrate
+	// nodes (REPRAM_INBOUND=true) accept inbound WS attachments and act as
+	// AckRouter + ChildBroadcaster for the cluster node. Transients
+	// (default, REPRAM_INBOUND=false) attach outbound after bootstrap.
+	inbound := tree.InboundFalse
+	if strings.EqualFold(os.Getenv("REPRAM_INBOUND"), "true") {
+		inbound = tree.InboundTrue
+	}
+	maxChildren := envInt("REPRAM_MAX_CHILDREN", tree.DefaultMaxChildren)
+	treeMgr := tree.NewManager(
+		&gossip.Node{
+			ID: gossip.NodeID(nodeID), Address: address,
+			Port: gossipPort, HTTPPort: httpPort, Enclave: enclave,
+		},
+		clusterPeerer{cn: clusterNode},
+		tree.Options{
+			Inbound:       inbound,
+			MaxChildren:   maxChildren,
+			ClusterSecret: clusterSecret,
+		},
+	)
+	clusterNode.SetAckRouter(treeMgr)
+	clusterNode.SetChildBroadcaster(treeMgr)
+
+	// Wire the parent-side gossip dispatch on the tree manager. Attach()
+	// and every successful reattach install this handler on the new
+	// connection BEFORE the function returns — closes the post-welcome
+	// dispatch race the SetReattachCallback hook used to leave open.
+	treeMgr.SetParentDispatch(func(m *gossip.Message) {
+		if err := clusterNode.HandleGossipMessage(m); err != nil {
+			logging.Debug("Parent WS dispatch: %v", err)
+		}
+	})
+
+	// Transient bootstrap: if this node accepts no inbound, kick off a
+	// best-effort outbound WS attach to one of the seed substrates after
+	// HTTP bootstrap is done. Failure falls back to HTTP-only operation
+	// (writes still propagate via HTTP gossip; reads of other agents'
+	// writes don't reach this node until reattach succeeds).
+	if inbound == tree.InboundFalse && len(bootstrapNodes) > 0 {
+		go func(seeds []string) {
+			// Give the gossip bootstrap a moment to settle so the peer
+			// list reflects the actual cluster before we pick an attach
+			// target. 500ms is enough for the bootstrap response round-trip.
+			time.Sleep(500 * time.Millisecond)
+			for _, seed := range seeds {
+				idx := strings.LastIndex(seed, ":")
+				if idx <= 0 {
+					continue
+				}
+				host := seed[:idx]
+				port, err := strconv.Atoi(seed[idx+1:])
+				if err != nil || port <= 0 {
+					continue
+				}
+				if host == address && port == httpPort {
+					continue
+				}
+				conn, err := ws.ConnectToSubstrate(ctx, host, port, clusterSecret, 10*time.Second)
+				if err != nil {
+					logging.Warn("WS attach to %s failed: %v — trying next seed", seed, err)
+					continue
+				}
+				if _, err := treeMgr.Attach(ctx, conn); err != nil {
+					logging.Warn("WS attach handshake to %s failed: %v", seed, err)
+					conn.Close(1000, "")
+					continue
+				}
+				// parent dispatch was installed by treeMgr.Attach via
+				// SetParentDispatch; nothing extra to wire here.
+				conn.StartHeartbeat()
+				logging.Info("Transient mode: attached to substrate at %s", seed)
+				return
+			}
+			logging.Warn("Transient mode: no seed accepted WS attach (degraded — HTTP gossip only)")
+		}(bootstrapNodes)
+	}
+	// Seed provider for tree-side reattach mirrors the cluster's recovery seeds.
+	treeMgr.SetSeedProvider(func() []string { return bootstrapNodes })
+
 	server := &HTTPServer{
 		clusterNode: clusterNode,
+		treeManager: treeMgr,
 		nodeID:      nodeID,
 		network:     network,
 		minTTL:      minTTL,
@@ -274,7 +358,13 @@ func main() {
 		httpPort = tcpAddr.Port
 		logging.Info("  HTTP listener bound to :%d", httpPort)
 	}
-	httpServer := &http.Server{Handler: server.Router()}
+	// Outer mux routes /v1/ws directly (bypassing data-plane middleware)
+	// and delegates everything else to the gorilla router. http.NewServeMux
+	// longest-prefix match means /v1/ws is consumed here, "/" catches the rest.
+	outerMux := http.NewServeMux()
+	outerMux.HandleFunc("/v1/ws", server.wsHandler)
+	outerMux.Handle("/", server.Router())
+	httpServer := &http.Server{Handler: outerMux}
 
 	// Optional pprof server on a separate listener (diagnostic plane).
 	// Uses http.DefaultServeMux which has pprof handlers auto-registered
@@ -317,6 +407,7 @@ func main() {
 		}
 
 		securityMW.Close()
+		treeMgr.Stop()
 		clusterNode.Stop()
 		cancel()
 	}
@@ -442,6 +533,10 @@ type HTTPServer struct {
 	maxTTL      int
 	startTime   time.Time
 	securityMW  *node.SecurityMiddleware
+	// treeManager owns substrate-transient attachment state. Always non-nil
+	// — the constructor wires one up regardless of inbound capability so
+	// transients can also call Attach when they have a substrate peer.
+	treeManager *tree.Manager
 }
 
 func (s *HTTPServer) Router() *mux.Router {
@@ -475,6 +570,10 @@ func (s *HTTPServer) Router() *mux.Router {
 	// Internal gossip endpoints
 	r.HandleFunc("/v1/gossip/message", s.gossipHandler).Methods("POST", "OPTIONS")
 	r.HandleFunc("/v1/bootstrap", s.bootstrapHandler).Methods("POST", "OPTIONS")
+	// /v1/ws is intentionally NOT registered here. The WebSocket upgrade
+	// needs Hijack() and a long-lived connection, both of which fight the
+	// http.TimeoutHandler + MaxRequestSize wrappers above. It's wired
+	// directly on the outer mux below.
 
 	r.NotFoundHandler = http.HandlerFunc(s.notFoundHandler)
 
@@ -547,12 +646,34 @@ func (s *HTTPServer) topologyHandler(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	// Attached children (transients) — visible only on substrate nodes
+	// that have accepted WS attachments.
+	type childInfo struct {
+		ID      string `json:"id"`
+		Enclave string `json:"enclave"`
+	}
+	var children []childInfo
+	if s.treeManager != nil {
+		for id, conn := range s.treeManager.Children() {
+			children = append(children, childInfo{ID: id, Enclave: conn.RemoteEnclave()})
+		}
+	}
+
+	resp := map[string]interface{}{
 		"node_id": s.nodeID,
 		"enclave": s.clusterNode.Enclave(),
 		"peers":   peerList,
-	})
+	}
+	if s.treeManager != nil {
+		resp["role"] = string(s.treeManager.Role())
+		resp["children"] = children
+		if parent := s.treeManager.Parent(); parent != nil {
+			resp["parent_id"] = parent.RemoteNodeID()
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {
@@ -785,4 +906,87 @@ func (s *HTTPServer) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// clusterPeerer adapts *cluster.ClusterNode to the tree.Peerer interface.
+// ClusterNode.Topology already returns the full peer list with enclave
+// metadata; this just renames the method to match what tree wants.
+type clusterPeerer struct{ cn *cluster.ClusterNode }
+
+func (c clusterPeerer) GetPeers() []*gossip.Node { return c.cn.Topology() }
+
+// wsHandler accepts an incoming substrate-transient WebSocket attachment.
+// The first non-control frame must be a hello; subsequent gossip-typed
+// frames are dispatched to clusterNode.HandleGossipMessage, with PUTs
+// recording an ACK route so the substrate can forward the enclave-peer
+// ACKs back through the WS pipe to the originating child.
+//
+// All routing decisions are driven by treeManager.HandleHello — if the
+// substrate is at capacity or attachments are disabled, the manager sends
+// a goodbye-with-alternatives and closes the connection itself.
+func (s *HTTPServer) wsHandler(w http.ResponseWriter, r *http.Request) {
+	if s.treeManager == nil || !s.treeManager.IsInboundCapable() {
+		// Transient nodes don't accept inbound; refuse with 404 to
+		// avoid leaking the role to scanners.
+		http.NotFound(w, r)
+		return
+	}
+	wsHandler := ws.Handler(s.clusterNode.ClusterSecret(), nil, func(conn *ws.Connection) {
+		s.bindWSConnection(conn)
+	})
+	wsHandler.ServeHTTP(w, r)
+}
+
+// bindWSConnection sets up the gossip dispatch + ACK-route recording on a
+// freshly accepted child connection. Called from ws.Handler's onAccept.
+func (s *HTTPServer) bindWSConnection(conn *ws.Connection) {
+	// One-shot hello handler: install the gossip dispatch only after a
+	// valid hello arrives. Until then ignore everything (matches the TS
+	// reference's gate at handleUpgrade attachment handler).
+	helloDone := make(chan struct{})
+	var helloOnce sync.Once
+
+	removeHello := conn.AddAttachmentHandler(func(msg *ws.AttachmentMessage) {
+		if msg.Type != ws.AttachmentTypeHello {
+			return
+		}
+		var h ws.HelloPayload
+		if err := json.Unmarshal(msg.Payload, &h); err != nil {
+			logging.Warn("WS attach: hello decode failed: %v", err)
+			conn.Close(1003, "bad hello")
+			return
+		}
+		helloOnce.Do(func() { close(helloDone) })
+		if !s.treeManager.HandleHello(conn, &h) {
+			// HandleHello already sent goodbye-with-alternatives and is
+			// scheduling close. Bail.
+			return
+		}
+		// Dispatch any subsequent gossip frame into the cluster handler.
+		// Recording the ACK route happens for PUTs so the substrate can
+		// reverse-route ACKs back through this pipe.
+		conn.OnMessage(func(gmsg *gossip.Message) {
+			if gmsg.Type == gossip.MessageTypePut {
+				s.treeManager.RecordAckRoute(gmsg.MessageID, conn, s.clusterNode.WriteTimeout())
+			}
+			if err := s.clusterNode.HandleGossipMessage(gmsg); err != nil {
+				logging.Debug("WS gossip handler: %v", err)
+			}
+		})
+	})
+
+	// If hello never arrives within 30s, close. Mirrors the TS reference's
+	// silent-attachment ceiling.
+	go func() {
+		select {
+		case <-helloDone:
+			removeHello()
+		case <-time.After(30 * time.Second):
+			if !conn.IsClosed() {
+				logging.Warn("WS attach: no hello within 30s, closing")
+				conn.Close(1002, "no hello")
+			}
+			removeHello()
+		}
+	}()
 }

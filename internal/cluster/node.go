@@ -41,6 +41,31 @@ type ClusterNode struct {
 	// list. Nil disables recovery (used for tests and for cases where
 	// re-bootstrap doesn't make sense).
 	seedProvider func() []string
+
+	// ackRouter, when set, receives ACKs whose To= field doesn't match a
+	// known HTTP peer. Substrate nodes use this to forward ACKs back to
+	// transient children that originated a relayed PUT (#135).
+	ackRouter AckRouter
+
+	// childBroadcaster, when set, receives every successfully-stored PUT
+	// so it can fan the replica out to attached transients (#135). Nil
+	// outside substrate mode.
+	childBroadcaster ChildBroadcaster
+}
+
+// AckRouter forwards an ACK to a non-peer originator. The substrate's
+// tree manager satisfies this interface — its routing table maps each
+// relayed messageId to the originating child connection. Returns true if
+// the ACK was routed (caller skips other dispatch paths).
+type AckRouter interface {
+	RouteAck(ack *gossip.Message) bool
+}
+
+// ChildBroadcaster fans a gossip message out to attached transient
+// children whose enclave matches the local node. The substrate's tree
+// manager satisfies this — see tree.Manager.BroadcastToChildren.
+type ChildBroadcaster interface {
+	BroadcastToChildren(msg *gossip.Message)
 }
 
 // IsolationRecoveryInterval is how often the recovery loop checks for
@@ -49,12 +74,25 @@ type ClusterNode struct {
 const IsolationRecoveryInterval = 30 * time.Second
 
 type WriteOperation struct {
-	Key         string
-	Data        []byte
-	TTL         time.Duration
+	Key           string
+	Data          []byte
+	TTL           time.Duration
 	Confirmations int
+	// signalComplete is guarded by signalOnce so the local-quorum path,
+	// the gossip-ACK path, and any racing late ACK can all signal once
+	// without panicking on close-of-closed-channel. Pendant of the
+	// MessageID dedup that keys pendingWrites: there can still be more
+	// than one goroutine that observes "quorum reached" within a single
+	// write's lifetime.
 	Complete    chan bool
+	signalOnce  sync.Once
 	Error       error
+}
+
+// markComplete signals the write as quorum-reached at most once. Safe
+// to call from any goroutine that observes the quorum threshold.
+func (w *WriteOperation) markComplete() {
+	w.signalOnce.Do(func() { close(w.Complete) })
 }
 
 type Store interface {
@@ -121,6 +159,22 @@ func (cn *ClusterNode) Start(ctx context.Context, bootstrapAddresses []string) e
 // drops to 0 to attempt re-bootstrap. Nil disables recovery (#85, F5).
 func (cn *ClusterNode) SetSeedProvider(p func() []string) {
 	cn.seedProvider = p
+}
+
+// SetAckRouter installs the AckRouter used to deliver ACKs back to
+// non-peer originators (i.e., transient children attached via WebSocket).
+// Substrate nodes wire their tree.Manager here; transient nodes leave it
+// nil since their originator is themselves and ACKs come through the
+// pendingWrites path.
+func (cn *ClusterNode) SetAckRouter(r AckRouter) {
+	cn.ackRouter = r
+}
+
+// SetChildBroadcaster installs the ChildBroadcaster used to fan stored
+// PUTs out to attached transient children. Nil disables WS receive-path
+// fan-out (#135 phase 5).
+func (cn *ClusterNode) SetChildBroadcaster(b ChildBroadcaster) {
+	cn.childBroadcaster = b
 }
 
 // runIsolationRecovery polls peer count on IsolationRecoveryInterval
@@ -231,7 +285,7 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		cn.writesMutex.Lock()
 		delete(cn.pendingWrites, msg.MessageID)
 		cn.writesMutex.Unlock()
-		close(writeOp.Complete)
+		writeOp.markComplete()
 		logging.Debug("Write completed locally (quorum=%d, confirmations=%d)", quorum, writeOp.Confirmations)
 		return nil
 	}
@@ -324,36 +378,59 @@ func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
 	peers := cn.protocol.GetPeers()
 	cn.writesMutex.RUnlock()
 
+	delivered := false
 	for _, peer := range peers {
 		if peer.ID == msg.From {
 			logging.Debug("[%s] Sending ACK for key %s to %s", cn.localNode.ID, msg.Key, peer.ID)
 			cn.protocol.Send(context.Background(), peer, ack)
+			delivered = true
 			break
+		}
+	}
+	// If the originator isn't in the HTTP peer list, it may be a transient
+	// child attached via WS. The substrate's AckRouter looks up the
+	// originating connection by messageId and writes the ACK to that pipe.
+	if !delivered && cn.ackRouter != nil {
+		if cn.ackRouter.RouteAck(ack) {
+			logging.Debug("[%s] Routed ACK for key %s back through WS attachment", cn.localNode.ID, msg.Key)
 		}
 	}
 
 	// Continue epidemic forwarding to other enclave peers
 	cn.protocol.ForwardToEnclave(context.Background(), msg)
 
+	// Fan the stored replica out to attached transient children so they
+	// see other agents' writes in their local store. The broadcaster
+	// gates on enclave; cross-enclave traffic is dropped.
+	if cn.childBroadcaster != nil {
+		cn.childBroadcaster.BroadcastToChildren(msg)
+	}
+
 	return nil
 }
 
 func (cn *ClusterNode) handleAckMessage(msg *gossip.Message) error {
 	cn.writesMutex.Lock()
-	defer cn.writesMutex.Unlock()
-
 	writeOp, exists := cn.pendingWrites[msg.MessageID]
-	if !exists {
+	cn.writesMutex.Unlock()
+
+	if exists {
+		cn.writesMutex.Lock()
+		writeOp.Confirmations++
+		reached := writeOp.Confirmations >= cn.quorumSize()
+		cn.writesMutex.Unlock()
+		if reached {
+			writeOp.markComplete()
+		}
 		return nil
 	}
 
-	writeOp.Confirmations++
-
-	if writeOp.Confirmations >= cn.quorumSize() {
-		select {
-		case writeOp.Complete <- true:
-		default:
-		}
+	// Not our pending write — possibly an ACK for a PUT we relayed on
+	// behalf of a transient child. The substrate's AckRouter table maps
+	// messageId → originating WS pipe; if we relayed this message, forward
+	// the ACK upstream so the transient's quorum tally advances.
+	if cn.ackRouter != nil {
+		cn.ackRouter.RouteAck(msg)
 	}
 
 	return nil
@@ -391,6 +468,13 @@ func (cn *ClusterNode) ClusterSecret() string {
 // Enclave returns this node's enclave name.
 func (cn *ClusterNode) Enclave() string {
 	return cn.localNode.Enclave
+}
+
+// WriteTimeout returns the configured quorum write timeout. Used by
+// WS-attached substrates to size the ACK-route eviction window so the
+// route is preserved at least as long as the originator waits for ACKs.
+func (cn *ClusterNode) WriteTimeout() time.Duration {
+	return cn.writeTimeout
 }
 
 // Topology returns the full peer list with enclave membership.

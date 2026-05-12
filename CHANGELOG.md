@@ -4,6 +4,18 @@ All notable changes to REPRAM are documented here.
 
 ## [Unreleased]
 
+### Restored — Substrate/transient WS tree in Go ([#135](https://github.com/TickTockBent/repram/issues/135), recovers the gap from [#133](https://github.com/TickTockBent/repram/issues/133))
+The substrate/transient tree topology that #125 inadvertently removed when it deleted the TypeScript node is now ported into the Go binary. `repram --mcp` (and any node with `REPRAM_INBOUND=false`) is once again a real cluster participant: it attaches to a substrate via persistent outbound WebSocket, sees other agents' writes in its local store, and survives substrate failure via cached alternatives.
+
+- New `internal/transport/ws` package — WS `Connection` with heartbeat, optional HMAC, multi-subscriber lifecycle handlers; outbound `ConnectToSubstrate` dialer; inbound `Handler` upgrader. Wire format on WS payloads is identical to HTTP gossip — same JSON shape, same handlers process both transports.
+- New `internal/tree` package — `Manager` owns substrate (`HandleHello` + child registration + welcome-with-topology) and transient (`Attach` + cached-topology / seed-list reattach loop) lifecycle. Self-skip is enforced literally on address+http\_port to prevent the [#120](https://github.com/TickTockBent/repram/issues/120) regression. Stop-aware context threading and a goroutine WaitGroup ensure clean shutdown.
+- `cluster.ClusterNode` gets `AckRouter` and `ChildBroadcaster` interfaces (satisfied by the tree manager). `handlePutMessage` routes the substrate's own ACK back through the WS pipe to the originating transient and broadcasts replicas out to enclave-matched children; `handleAckMessage` forwards enclave-peer ACKs upstream when they're for a relayed write. Quorum-complete signaling is guarded by `sync.Once` so concurrent ACK paths can't panic on close-of-closed-channel.
+- `cmd/repram/main.go` mounts `/v1/ws` on an outer `http.ServeMux` that bypasses the data-plane TimeoutHandler + MaxRequestSize wrappers. Substrates accept attachments; transients 404 the endpoint to avoid leaking role to scanners. `--mcp` mode auto-attaches outbound after HTTP bootstrap and falls back to HTTP-only on attach failure. Parent-side gossip dispatch is installed inside `Attach` before the function returns so a fast substrate's first PUT after welcome cannot be silently dropped. `/v1/topology` now exposes `role`, attached `children`, and `parent_id`.
+- Enclave isolation hardening: `HandleHello` normalizes empty hello-enclave to `"default"` so the `BroadcastToChildren` filter cannot be bypassed by an underspecified hello.
+- 50+ new tests: 25 WS transport, 22 tree manager (including the [#120](https://github.com/TickTockBent/repram/issues/120) self-skip timing assertion and an empty-enclave isolation regression), 4 HTTP-server-level WS integration tests. Full repo passes `go test -race ./...` with no regressions in existing 118+ tests.
+
+Phase 7 of #135 — a 24h+ burn-in 2.2 on a real multi-substrate + multi-transient cluster — is tracked as a follow-up; it does not gate this PR.
+
 ### Changed — Go-native MCP server ([#123](https://github.com/TickTockBent/repram/issues/123))
 The Go binary now serves MCP directly via `repram --mcp`: an embedded node, in-process tool handlers, and JSON-RPC 2.0 on stdin/stdout. The TypeScript node (`repram-mcp/`) has been removed.
 
