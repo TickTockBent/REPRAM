@@ -1,0 +1,249 @@
+/*
+ * Dashboard styles — vendored hackerpunk aesthetic.
+ * If web/styles.css (the marketing site) is updated, mirror the change here
+ * deliberately. The two files are intentionally not shared at runtime so
+ * the dashboard binary stays self-contained.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Share Tech Mono', monospace;
+    background-color: #000;
+    background-image: repeating-linear-gradient(
+        0deg,
+        rgba(0, 255, 0, 0.03) 0px,
+        transparent 1px,
+        transparent 2px,
+        rgba(0, 255, 0, 0.03) 3px
+    );
+    color: #00ff00;
+    line-height: 1.6;
+    min-height: 100vh;
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+}
+
+.scanlines {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.2) 50%);
+    background-size: 100% 2px;
+    animation: scanline 8s linear infinite;
+}
+
+@keyframes scanline {
+    0%   { background-position: 0 0; }
+    100% { background-position: 0 100vh; }
+}
+
+main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+    position: relative;
+    z-index: 1;
+}
+
+header {
+    border-bottom: 1px solid #00ff00;
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+}
+
+.logo {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 48px;
+    letter-spacing: 4px;
+}
+
+.cursor {
+    animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+.subtitle {
+    font-size: 14px;
+    color: #00aa00;
+    margin-top: 4px;
+}
+
+#banners .banner {
+    display: inline-block;
+    margin-top: 8px;
+    margin-right: 8px;
+    padding: 4px 12px;
+    border: 1px solid #ffaa00;
+    color: #ffaa00;
+    font-size: 12px;
+    text-shadow: 0 0 5px rgba(255, 170, 0, 0.5);
+}
+
+#banners .banner.warn {
+    border-color: #ff4444;
+    color: #ff4444;
+    text-shadow: 0 0 5px rgba(255, 68, 68, 0.5);
+}
+
+.panel {
+    border: 1px solid #00ff00;
+    padding: 16px;
+    margin-bottom: 16px;
+    background: rgba(0, 20, 0, 0.2);
+    box-shadow: 0 0 12px rgba(0, 255, 0, 0.1) inset;
+}
+
+.panel h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    color: #88ff88;
+}
+
+#stats {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+}
+
+.stat {
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    border: 1px dashed rgba(0, 255, 0, 0.3);
+}
+
+.stat .label {
+    font-size: 11px;
+    color: #00aa00;
+}
+
+.stat .value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 24px;
+    color: #00ff00;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+}
+
+#graph {
+    height: 480px;
+    border: 1px dashed rgba(0, 255, 0, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+#graph svg {
+    width: 100%;
+    height: 100%;
+}
+
+#graph svg .node circle {
+    fill: rgba(0, 40, 0, 0.7);
+    stroke: #00ff00;
+    stroke-width: 2;
+    cursor: pointer;
+    filter: drop-shadow(0 0 6px rgba(0, 255, 0, 0.6));
+}
+
+#graph svg .node.unreachable circle {
+    stroke: #ff4444;
+    filter: drop-shadow(0 0 6px rgba(255, 68, 68, 0.6));
+}
+
+#graph svg .node.root circle {
+    stroke-width: 3;
+    fill: rgba(255, 170, 0, 0.15);
+    stroke: #ffaa00;
+    filter: drop-shadow(0 0 8px rgba(255, 170, 0, 0.8));
+}
+
+#graph svg .node text {
+    fill: #00ff00;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+#graph svg .edge {
+    stroke: rgba(0, 255, 0, 0.6);
+    stroke-width: 1;
+}
+
+#graph svg .edge.asymmetric {
+    stroke-dasharray: 4 3;
+    stroke: rgba(255, 170, 0, 0.7);
+}
+
+#node-detail {
+    font-size: 13px;
+    line-height: 1.8;
+}
+
+#node-detail .row {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px dotted rgba(0, 255, 0, 0.2);
+    padding: 4px 0;
+}
+
+#node-detail .row .k { color: #00aa00; }
+#node-detail .row .v { color: #00ff00; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+th, td {
+    border: 1px solid rgba(0, 255, 0, 0.3);
+    padding: 6px 10px;
+    text-align: left;
+}
+
+th {
+    background: rgba(0, 40, 0, 0.5);
+    color: #88ff88;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+
+tr.unreachable td { color: #ff4444; }
+tr.root td:first-child::before { content: "⌬ "; color: #ffaa00; }
+
+footer {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(0, 255, 0, 0.3);
+    font-size: 11px;
+    color: #00aa00;
+    display: flex;
+    justify-content: space-between;
+}
+
+footer a {
+    color: #00aa00;
+    text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+    #stats { grid-template-columns: repeat(2, 1fr); }
+    .grid { grid-template-columns: 1fr; }
+}
