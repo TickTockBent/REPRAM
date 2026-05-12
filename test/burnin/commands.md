@@ -566,13 +566,11 @@ DNSMASQ_HOSTS_FILE=/etc/dnsmasq.d/repram-burnin.conf \
 /home/ticktockbent/projects/infrastructure/repram/test/burnin/sign-loop.sh \
   | tee -a $HOME/.repram-burnin/sign-loop.log
 
-# Pane 2: k6 — full 48h with Prometheus remote-write enabled
-docker run --rm -i --network host \
-  -v /home/ticktockbent/projects/infrastructure/repram/test/burnin:/work \
-  -e REPRAM_NODES=http://10.0.20.72:18080,http://10.0.10.81:18080,http://10.0.10.104:18080 \
-  -e BURNIN_DURATION=72h \
-  -e K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write \
-  grafana/k6 run --out experimental-prometheus-rw /work/workload.js \
+# Pane 2: k6 — 6 × 12h segments with Prometheus remote-write
+# Each segment writes its summary to ~/.repram-burnin/k6-segment-N.txt
+# and exits, freeing k6's accumulated metric memory. Segment 1 runs
+# full setup; segments 2+ skip it (SKIP_SETUP=true).
+/home/ticktockbent/projects/infrastructure/repram/test/burnin/run-segments.sh \
   | tee -a $HOME/.repram-burnin/k6.log
 
 # Pane 3: dashboard watcher — keep eyes on it during initial 30 min
