@@ -53,10 +53,10 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Boot order: cache → DNS → seeds → exit. The orchestrator owns the
-	// inversion (seeds take precedence when present); a Boot failure
-	// without a fallback means none of the three landed and the
-	// operator's intervention is required.
+	// Boot order: cache → DNS → seeds → exit. --seeds is the operator's
+	// last-resort break-glass: it is used only when both the verified
+	// cache and the omega DNS chain are unavailable. A Boot failure
+	// means none of the three landed and the operator must intervene.
 	if err := orch.Boot(ctx); err != nil {
 		logger.Fatalf("dashboard: boot failed: %v (provide --seeds or fix DNS/cache and retry)", err)
 	}

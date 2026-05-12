@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"crypto/ed25519"
 	"log"
 	"os"
 	"strconv"
@@ -105,6 +106,17 @@ type Config struct {
 	// Logger is the destination for orchestrator chatter. nil selects
 	// the stdlib default logger.
 	Logger *log.Logger
+
+	// OmegaPubkey overrides the baked-in omega public key. Production
+	// callers leave this nil; tests inject their own keypair so they
+	// can sign synthetic root lists for the cache and DNS paths.
+	OmegaPubkey ed25519.PublicKey
+
+	// OmegaDNS overrides the DNS configuration used by trust.FetchSigned
+	// and the refresher. Production callers leave this zero-valued
+	// (real net.Resolver against _bootstrap.repram.io). Tests inject a
+	// stub TXTResolver so Boot() doesn't make live DNS calls.
+	OmegaDNS trust.DNSConfig
 }
 
 // NewOrchestrator wires up the orchestrator without starting any goroutines.
@@ -151,9 +163,13 @@ func (o *Orchestrator) Boot(ctx context.Context) error {
 		o.cfg.Logger.Printf("dashboard: load snapshot: %v (continuing without)", err)
 	}
 
-	pubkey, err := trust.DecodedOmegaPubkey()
-	if err != nil {
-		return err
+	pubkey := o.cfg.OmegaPubkey
+	if pubkey == nil {
+		baked, err := trust.DecodedOmegaPubkey()
+		if err != nil {
+			return err
+		}
+		pubkey = baked
 	}
 
 	// 1. Verified cache — preferred. A still-valid cache lets the
@@ -175,7 +191,7 @@ func (o *Orchestrator) Boot(ctx context.Context) error {
 	// 2. DNS resolution against the omega trust chain.
 	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	list, dnsErr := trust.FetchSigned(fetchCtx, trust.DNSConfig{}, pubkey, time.Now())
+	list, dnsErr := trust.FetchSigned(fetchCtx, o.cfg.OmegaDNS, pubkey, time.Now())
 	if dnsErr == nil {
 		if err := trust.SaveCache(o.cfg.StateDir, list); err != nil {
 			o.cfg.Logger.Printf("dashboard: save omega cache: %v (continuing)", err)
@@ -192,6 +208,11 @@ func (o *Orchestrator) Boot(ctx context.Context) error {
 	//    UI banner makes that visible.
 	if len(o.cfg.SeedAddresses) > 0 {
 		o.applyRoots(normalizeAddrs(o.cfg.SeedAddresses), RootSourceSeeds, nil, time.Time{})
+		// Clear omega_refresh_failed: in seeds mode the refresher
+		// never runs, so this flag would otherwise stay true forever
+		// and double up with the SeedOverride banner. The
+		// seed_override flag is the single meaningful signal here.
+		o.markRefreshFailed(false)
 		o.cfg.Logger.Printf("dashboard: cache and DNS unavailable; booting from %d operator-supplied seeds, trust chain bypassed",
 			len(o.cfg.SeedAddresses))
 		return nil
@@ -218,13 +239,26 @@ func cacheFileMtime(dir string) time.Time {
 // SIGHUP handler. Returns when ctx is cancelled.
 func (o *Orchestrator) Run(ctx context.Context) {
 	// Stand up the trust.Refresher only when we're operating under the
-	// real trust chain. Seed-override skips it by design.
+	// real trust chain. Seed-override skips it by design. Pubkey-decode
+	// failure is non-fatal: we skip the refresher and let the
+	// poll loop continue serving whatever the cache provided. A real
+	// failure here means the binary's baked-in pubkey is malformed,
+	// which is a build-time problem, not a runtime one.
 	if o.source == RootSourceOmega && o.currentList != nil {
-		pubkey, err := trust.DecodedOmegaPubkey()
-		if err == nil {
+		pubkey := o.cfg.OmegaPubkey
+		if pubkey == nil {
+			baked, err := trust.DecodedOmegaPubkey()
+			if err != nil {
+				o.cfg.Logger.Printf("dashboard: decode omega pubkey: %v (running without refresher)", err)
+			} else {
+				pubkey = baked
+			}
+		}
+		if pubkey != nil {
 			o.refresher = trust.NewRefresher(trust.RefresherConfig{
 				Pubkey:   pubkey,
 				CacheDir: o.cfg.StateDir,
+				DNS:      o.cfg.OmegaDNS,
 				OnUpdate: o.onOmegaUpdate,
 				OnError: func(err error) {
 					o.cfg.Logger.Printf("dashboard: omega refresh: %v", err)

@@ -59,8 +59,11 @@ func (s *Server) Run(ctx context.Context) error {
 	internalMux.HandleFunc("/healthz", s.handleHealthz)
 
 	publicSrv := &http.Server{
-		Addr:              s.publicAddr,
-		Handler:           publicMux,
+		Addr: s.publicAddr,
+		// Wrap the public mux in the security-headers middleware. The
+		// internal listener intentionally does not get these — it's
+		// expected to be scraped by Prometheus, not browsed.
+		Handler:           securityHeaders(publicMux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	internalSrv := &http.Server{
@@ -115,4 +118,36 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok\n"))
+}
+
+// securityHeaders applies defense-in-depth response headers to every
+// public response. The CSP is restrictive on purpose: the dashboard
+// serves only its own embedded assets plus the Google Fonts stylesheet
+// referenced by the vendored hackerpunk styles. No remote scripts, no
+// inline scripts, no eval, no remote XHR — the dashboard never speaks
+// to anything other than itself from the browser.
+//
+// The primary XSS defense remains the textContent discipline in app.js;
+// this is a fallback in case a future change reintroduces an unsafe
+// interpolation. The cost is one map allocation per response, which is
+// negligible against the JSON encode that's about to happen anyway.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; "+
+				"script-src 'self'; "+
+				"style-src 'self' https://fonts.googleapis.com; "+
+				"font-src 'self' https://fonts.gstatic.com; "+
+				"img-src 'self' data:; "+
+				"connect-src 'self'; "+
+				"frame-ancestors 'none'; "+
+				"base-uri 'self'")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		// The dashboard has no concept of session or login, so we
+		// don't need the click-jacking-via-iframe family; the
+		// frame-ancestors directive above is the canonical answer.
+		next.ServeHTTP(w, r)
+	})
 }

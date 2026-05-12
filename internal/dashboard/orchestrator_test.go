@@ -2,6 +2,9 @@ package dashboard
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,35 +13,162 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"repram/internal/trust"
 )
 
-// TestBootSeedsAreLastResort verifies the v3 boot order: cache → DNS →
-// seeds → exit. A still-valid cache must take precedence over --seeds, so
-// the dashboard's steady-state behavior tracks the network's signed root
-// list rather than a stale operator break-glass.
-//
-// This test asserts the *order* indirectly: with both an unreachable DNS
-// path and a fresh --seeds set, an empty state dir must NOT short-circuit
-// to seeds before attempting DNS. We confirm via the seed_override flag
-// on the snapshot — it should only be true when DNS also failed.
-func TestBootDoesNotShortCircuitToSeeds(t *testing.T) {
-	// With seeds provided but DNS resolvable (cached), the source must
-	// resolve to RootSourceOmega — never seeds — when a cache is present.
-	// We can't run the full Boot path here without DNS infrastructure;
-	// the smoke test in the repository verifies the live cluster path.
-	// What we DO assert: applyRoots preserves the source it was given,
-	// so the boot-order code in Boot() is the single point of decision.
+// stubTXTResolver is an in-memory dns.TXTResolver. Each entry is either a
+// canned response or an error; absence is treated as NXDOMAIN.
+type stubTXTResolver struct {
+	records map[string][]string
+	err     map[string]error
+}
+
+func (s *stubTXTResolver) LookupTXT(_ context.Context, name string) ([]string, error) {
+	if err, ok := s.err[name]; ok {
+		return nil, err
+	}
+	if recs, ok := s.records[name]; ok {
+		return recs, nil
+	}
+	return nil, errors.New("nxdomain")
+}
+
+func newSignedList(t *testing.T, priv ed25519.PrivateKey, nodes []string, expires time.Time) *trust.SignedList {
+	t.Helper()
+	list := &trust.SignedList{
+		Version: trust.OmegaVersion,
+		Expires: expires.Unix(),
+		Nodes:   nodes,
+	}
+	list.Sign(priv)
+	return list
+}
+
+// TestApplyRootsPreservesSource verifies the small invariant that
+// applyRoots stores the source it was given. The boot-order logic in
+// Boot() relies on this — Boot is the single point of decision for which
+// source the orchestrator runs under.
+func TestApplyRootsPreservesSource(t *testing.T) {
 	o := NewOrchestrator(Config{StateDir: t.TempDir()})
 	o.applyRoots(map[string]bool{"10.0.0.1:18080": true}, RootSourceOmega, nil, time.Now())
 	if o.source != RootSourceOmega {
 		t.Fatalf("applyRoots should set source=omega, got %v", o.source)
 	}
-
-	// applyRoots with seeds must mark the source accordingly. This is
-	// the only path that produces seed_override:true in the snapshot.
 	o.applyRoots(map[string]bool{"10.0.0.2:18080": true}, RootSourceSeeds, nil, time.Time{})
 	if o.source != RootSourceSeeds {
 		t.Fatalf("applyRoots should set source=seeds, got %v", o.source)
+	}
+}
+
+// TestBootValidCacheBeatsSeeds verifies the v3 boot-order invariant: a
+// still-valid cache is preferred over --seeds even when both are present.
+// Without this guarantee, an operator who left --seeds in their service
+// file would silently bypass the trust chain even after cache resolution
+// succeeded — exactly the regression v1's first review caught.
+func TestBootValidCacheBeatsSeeds(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	dir := t.TempDir()
+
+	// Plant a fresh, signed cache that the orchestrator can verify.
+	cached := newSignedList(t, priv, []string{"cache-root.example:9090"}, time.Now().Add(1*time.Hour))
+	if err := trust.SaveCache(dir, cached); err != nil {
+		t.Fatalf("save cache: %v", err)
+	}
+
+	o := NewOrchestrator(Config{
+		StateDir:      dir,
+		OmegaPubkey:   pub,
+		SeedAddresses: []string{"10.0.0.99:18080"}, // would-be seeds
+		// OmegaDNS left zero — Boot must not reach DNS at all because
+		// the cache short-circuits. If the boot order were ever
+		// re-inverted, the test would either flake on DNS or fall
+		// through to seeds and fail the source check below.
+	})
+	if err := o.Boot(context.Background()); err != nil {
+		t.Fatalf("boot: %v", err)
+	}
+	if o.source != RootSourceOmega {
+		t.Errorf("expected source=omega from valid cache, got %v", o.source)
+	}
+	if _, ok := o.roots["cache-root.example:9090"]; !ok {
+		t.Errorf("cache root not adopted: %+v", o.roots)
+	}
+}
+
+// TestBootDNSBeatsSeedsWhenCacheAbsent verifies the second step of the
+// boot order: with no cache, DNS resolution is attempted before falling
+// through to --seeds.
+func TestBootDNSBeatsSeedsWhenCacheAbsent(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	list := newSignedList(t, priv, []string{"dns-root.example:9090"}, time.Now().Add(1*time.Hour))
+
+	resolver := &stubTXTResolver{
+		records: map[string][]string{
+			"_bootstrap.repram.io": {"omega=_omega.repram.io"},
+			"_omega.repram.io":     {list.Encode()},
+		},
+	}
+
+	o := NewOrchestrator(Config{
+		StateDir:      t.TempDir(),
+		OmegaPubkey:   pub,
+		OmegaDNS:      trust.DNSConfig{Resolver: resolver},
+		SeedAddresses: []string{"10.0.0.99:18080"},
+	})
+	if err := o.Boot(context.Background()); err != nil {
+		t.Fatalf("boot: %v", err)
+	}
+	if o.source != RootSourceOmega {
+		t.Errorf("expected source=omega from DNS resolution, got %v", o.source)
+	}
+	if _, ok := o.roots["dns-root.example:9090"]; !ok {
+		t.Errorf("DNS-resolved root not adopted: %+v", o.roots)
+	}
+}
+
+// TestBootSeedsAreLastResort verifies the third step: with no cache and
+// DNS failing, --seeds is consulted as the operator's break-glass and the
+// snapshot carries SeedOverride. Also verifies omega_refresh_failed is
+// cleared on the seeds path so the UI doesn't double-banner.
+func TestBootSeedsAreLastResort(t *testing.T) {
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	resolver := &stubTXTResolver{
+		err: map[string]error{"_bootstrap.repram.io": errors.New("dns down")},
+	}
+
+	o := NewOrchestrator(Config{
+		StateDir:      t.TempDir(),
+		OmegaPubkey:   pub,
+		OmegaDNS:      trust.DNSConfig{Resolver: resolver},
+		SeedAddresses: []string{"10.0.0.99:18080"},
+	})
+	if err := o.Boot(context.Background()); err != nil {
+		t.Fatalf("boot: %v", err)
+	}
+	if o.source != RootSourceSeeds {
+		t.Errorf("expected source=seeds after cache+DNS fail, got %v", o.source)
+	}
+	if o.refreshFailed() {
+		t.Errorf("omega_refresh_failed should be cleared on the seeds success path; UI would otherwise double-banner alongside seed_override")
+	}
+}
+
+// TestBootExitsWhenNothingAvailable verifies the fourth step: no cache,
+// no DNS, no seeds → return non-zero so the operator's start-script
+// surfaces the failure rather than the dashboard quietly serving nothing.
+func TestBootExitsWhenNothingAvailable(t *testing.T) {
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	resolver := &stubTXTResolver{
+		err: map[string]error{"_bootstrap.repram.io": errors.New("dns down")},
+	}
+	o := NewOrchestrator(Config{
+		StateDir:    t.TempDir(),
+		OmegaPubkey: pub,
+		OmegaDNS:    trust.DNSConfig{Resolver: resolver},
+	})
+	if err := o.Boot(context.Background()); err == nil {
+		t.Error("expected Boot to return error when cache, DNS, and seeds are all unavailable")
 	}
 }
 
@@ -71,7 +201,9 @@ func TestConcurrentCyclesAreSerialized(t *testing.T) {
 }
 
 // TestBootLoadsPriorSnapshotAsStale verifies snapshot persistence is
-// loaded with stale=true and loaded_from_disk=true on cold start.
+// loaded with stale=true and loaded_from_disk=true on cold start. The DNS
+// path is stubbed so the test is hermetic — a live DNS lookup would add
+// 10s wall-clock in environments without external resolution.
 func TestBootLoadsPriorSnapshotAsStale(t *testing.T) {
 	dir := t.TempDir()
 	prior := &Snapshot{
@@ -82,15 +214,22 @@ func TestBootLoadsPriorSnapshotAsStale(t *testing.T) {
 	if err := SaveSnapshot(dir, prior); err != nil {
 		t.Fatal(err)
 	}
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	resolver := &stubTXTResolver{
+		err: map[string]error{"_bootstrap.repram.io": errors.New("stubbed: no dns")},
+	}
 	o := NewOrchestrator(Config{
 		StateDir:      dir,
-		SeedAddresses: []string{"127.0.0.1:1"}, // seeds-only path, no DNS needed
+		OmegaPubkey:   pub,
+		OmegaDNS:      trust.DNSConfig{Resolver: resolver},
+		SeedAddresses: []string{"127.0.0.1:1"},
 	})
-	// Boot will try cache (none) → DNS (will fail with a real lookup
-	// here, but that's fine — it'll fall through to seeds). For this
-	// test we only care about the snapshot-load behavior, which
-	// happens before any of that.
-	_ = o.Boot(context.Background())
+	// Boot will try cache (none) → DNS (stub fails fast) → seeds (succeed).
+	// We only care about the prior-snapshot-load behavior, which runs
+	// before any of that.
+	if err := o.Boot(context.Background()); err != nil {
+		t.Fatalf("boot: %v", err)
+	}
 
 	loaded := o.Snapshot()
 	if loaded == nil || loaded.Nodes[0].ID != "node-old" {
