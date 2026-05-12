@@ -25,6 +25,19 @@ const DefaultPollWorkers = 8
 // timeout, so anything slower than that is in degraded territory anyway.
 const DefaultPollTimeout = 5 * time.Second
 
+// MaxResponseBytes caps any single HTTP response body the poller will
+// read. A malicious node could otherwise serve gigabytes at /v1/metrics
+// or /v1/topology and exhaust the dashboard heap. 1 MiB matches REPRAM's
+// own server-side request-body limit (MaxRequestSize) — anything beyond
+// is degenerate.
+const MaxResponseBytes int64 = 1 << 20
+
+// MaxVisitedNodes caps how many distinct addresses one BFS cycle will
+// pursue. A malicious node returning thousands of fabricated peers would
+// otherwise drive an unbounded number of outbound dials. The cap is
+// generous (the public mesh is small), but bounded.
+const MaxVisitedNodes = 1024
+
 // nodeAddr is the dashboard's internal pairing of identity + endpoint. The
 // public snapshot strips the address (see Builder.Build); this lives only in
 // the poller's working set.
@@ -142,6 +155,14 @@ func (p *Poller) Walk(ctx context.Context, seeds []string) map[string]pollResult
 			mu.Unlock()
 			return
 		}
+		if len(visited) >= MaxVisitedNodes {
+			// Cap is generous (the public mesh is small). Hitting it
+			// usually means a node served fabricated peer entries.
+			// Silently dropping is the right move — the orchestrator
+			// publishes the partial graph and the cycle continues.
+			mu.Unlock()
+			return
+		}
 		visited[key] = true
 		pending++
 		mu.Unlock()
@@ -175,7 +196,11 @@ func (p *Poller) Walk(ctx context.Context, seeds []string) map[string]pollResult
 						return
 					}
 					res := p.pollOne(ctx, addr)
-					results <- res
+					select {
+					case results <- res:
+					case <-ctx.Done():
+						return
+					}
 					for _, peer := range res.peers {
 						if peer.Address == "" || peer.HTTPPort == 0 {
 							continue
@@ -272,8 +297,11 @@ func fetchJSON[T any](ctx context.Context, client *http.Client, url string) (T, 
 	if resp.StatusCode != 200 {
 		return zero, fmt.Errorf("http %d", resp.StatusCode)
 	}
+	// Same cap as fetchText — bound the JSON parser against a malicious
+	// or runaway node. Honest topology/status responses are kilobytes;
+	// 1 MiB is two orders of magnitude past that.
 	var out T
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, MaxResponseBytes)).Decode(&out); err != nil {
 		return zero, err
 	}
 	return out, nil
@@ -292,7 +320,10 @@ func fetchText(ctx context.Context, client *http.Client, url string) (string, er
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("http %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(resp.Body)
+	// Cap the read to MaxResponseBytes — a malicious node could otherwise
+	// serve gigabytes here and exhaust the dashboard heap. The cap is
+	// well above any honest /v1/metrics or /v1/topology response.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes))
 	if err != nil {
 		return "", err
 	}

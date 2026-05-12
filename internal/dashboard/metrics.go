@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -8,19 +10,26 @@ import (
 // a separate localhost-bound listener at /internal/metrics by default so a
 // public Internet visitor never sees these — they exist for the operator
 // running the dashboard, not for casual consumers of the public graph.
+//
+// dashboard_snapshot_age_seconds is intentionally a GaugeFunc: a gauge
+// that "ages" between cycles cannot be poked once per success — it must
+// be computed at scrape time from the most recent successful-poll
+// timestamp. A 4-minute-old snapshot must report ~240, not 0.
 type internalMetrics struct {
-	registry              *prometheus.Registry
-	pollsTotal            prometheus.Counter
-	pollsFailedTotal      prometheus.Counter
-	nodesUnreachable      prometheus.Gauge
-	snapshotAgeSeconds    prometheus.Gauge
-	omegaRefreshUnix      prometheus.Gauge
-	omegaExpiresUnix      prometheus.Gauge
-	omegaRefreshFailures  prometheus.Counter
-	geoLookupMissesTotal  prometheus.Counter
+	registry             *prometheus.Registry
+	pollsTotal           prometheus.Counter
+	pollsFailedTotal     prometheus.Counter
+	nodesUnreachable     prometheus.Gauge
+	omegaRefreshUnix     prometheus.Gauge
+	omegaExpiresUnix     prometheus.Gauge
+	omegaRefreshFailures prometheus.Counter
+	geoLookupMissesTotal prometheus.Counter
 }
 
-func newInternalMetrics() *internalMetrics {
+// newInternalMetrics constructs the dashboard's metric set. lastPollUnix
+// is a callback that returns the Unix timestamp of the most recent
+// successful poll cycle; it backs the snapshot_age_seconds GaugeFunc.
+func newInternalMetrics(lastPollUnix func() int64) *internalMetrics {
 	reg := prometheus.NewRegistry()
 	m := &internalMetrics{
 		registry: reg,
@@ -35,10 +44,6 @@ func newInternalMetrics() *internalMetrics {
 		nodesUnreachable: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "dashboard_nodes_unreachable",
 			Help: "Nodes flagged unreachable in the current snapshot.",
-		}),
-		snapshotAgeSeconds: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "dashboard_snapshot_age_seconds",
-			Help: "Seconds since the last successful poll cycle completed.",
 		}),
 		omegaRefreshUnix: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "dashboard_omega_refresh_unix_seconds",
@@ -57,11 +62,23 @@ func newInternalMetrics() *internalMetrics {
 			Help: "IPs that did not resolve to a country during snapshot build.",
 		}),
 	}
+
+	snapshotAge := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "dashboard_snapshot_age_seconds",
+		Help: "Seconds since the last successful poll cycle completed (computed at scrape time).",
+	}, func() float64 {
+		last := lastPollUnix()
+		if last == 0 {
+			return 0
+		}
+		return float64(time.Now().Unix() - last)
+	})
+
 	reg.MustRegister(
 		m.pollsTotal,
 		m.pollsFailedTotal,
 		m.nodesUnreachable,
-		m.snapshotAgeSeconds,
+		snapshotAge,
 		m.omegaRefreshUnix,
 		m.omegaExpiresUnix,
 		m.omegaRefreshFailures,

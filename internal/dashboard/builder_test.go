@@ -37,7 +37,7 @@ func sampleResults() map[string]pollResult {
 }
 
 func TestBuilderStripsAddressesAndDerivesIsRoot(t *testing.T) {
-	b := NewBuilder(nil)
+	b := NewBuilder(nil, nil)
 	roots := map[string]bool{"10.0.0.1:18080": true}
 	snap := b.Build(BuildInput{
 		Results: sampleResults(),
@@ -70,7 +70,7 @@ func TestBuilderEdgesAreDirectionalAndPreserveAsymmetry(t *testing.T) {
 	r.peers = nil
 	results["node-b"] = r
 
-	b := NewBuilder(nil)
+	b := NewBuilder(nil, nil)
 	snap := b.Build(BuildInput{
 		Results: results,
 		Roots:   map[string]bool{},
@@ -92,7 +92,7 @@ func TestBuilderEdgesAreDirectionalAndPreserveAsymmetry(t *testing.T) {
 }
 
 func TestBuilderGoroutinesAreRoundedToNearestTen(t *testing.T) {
-	b := NewBuilder(nil)
+	b := NewBuilder(nil, nil)
 	results := sampleResults()
 	r := results["node-a"]
 	r.status.Goroutines = 47 // expected to round to 50
@@ -106,7 +106,7 @@ func TestBuilderGoroutinesAreRoundedToNearestTen(t *testing.T) {
 }
 
 func TestBuilderSeedOverridePropagates(t *testing.T) {
-	b := NewBuilder(nil)
+	b := NewBuilder(nil, nil)
 	snap := b.Build(BuildInput{
 		Results:      sampleResults(),
 		Roots:        map[string]bool{"10.0.0.1:18080": true},

@@ -6,9 +6,20 @@
 //
 // The force-directed graph is a small from-scratch SVG implementation
 // rather than vis-network. Trade-off: 60 lines here vs 200KB of vendored
-// JS. The richer library can come back when the graph outgrows this.
+// JS. If/when we vendor a graph library, add cmd/dashboard/web/UPSTREAM.md
+// (origin URL, license, sha256) per the design's supply-chain note.
+//
+// Security note: all text that originates from a polled node — id, region,
+// enclave — flows through textContent/appendChild, NEVER through innerHTML
+// or template strings interpolating untrusted values. A compromised node
+// could otherwise return a script payload as its ID and execute it in the
+// browser of anyone viewing the dashboard (stored XSS).
 
 const POLL_INTERVAL_MS = 10_000;
+
+function setText(el, value) {
+    el.textContent = value == null || value === '' ? '—' : String(value);
+}
 
 const fmtDuration = (sec) => {
     if (!sec) return '—';
@@ -95,20 +106,25 @@ function renderStats(s) {
 
 function renderTable(nodes) {
     const tbody = document.querySelector('#node-table tbody');
-    tbody.innerHTML = '';
+    tbody.replaceChildren();
     for (const n of nodes) {
         const tr = document.createElement('tr');
         if (n.unreachable) tr.classList.add('unreachable');
         if (n.is_root) tr.classList.add('root');
-        tr.innerHTML = `
-            <td>${n.id}</td>
-            <td>${n.enclave || '—'}</td>
-            <td>${n.region || '?'}</td>
-            <td>${fmtDuration(n.uptime_seconds)}</td>
-            <td>${(n.heap_mb || 0).toFixed(1)} MB</td>
-            <td>${n.is_root ? 'yes' : ''}</td>
-            <td>${n.unreachable ? 'unreachable' : 'ok'}</td>
-        `;
+        const cells = [
+            n.id,
+            n.enclave,
+            n.region,
+            fmtDuration(n.uptime_seconds),
+            `${(n.heap_mb || 0).toFixed(1)} MB`,
+            n.is_root ? 'yes' : '',
+            n.unreachable ? 'unreachable' : 'ok',
+        ];
+        for (const value of cells) {
+            const td = document.createElement('td');
+            setText(td, value);
+            tr.appendChild(td);
+        }
         tr.style.cursor = 'pointer';
         tr.addEventListener('click', () => {
             selectedNodeID = n.id;
@@ -123,20 +139,31 @@ function renderNodeDetail(n) {
     const el = document.getElementById('node-detail');
     const rows = [
         ['ID', n.id],
-        ['Enclave', n.enclave || '—'],
-        ['Region', n.region || '?'],
+        ['Enclave', n.enclave],
+        ['Region', n.region],
         ['Uptime', fmtDuration(n.uptime_seconds)],
         ['Heap', `${(n.heap_mb || 0).toFixed(2)} MB`],
-        ['Goroutines (approx)', n.goroutines_approx ?? '—'],
+        ['Goroutines (approx)', n.goroutines_approx],
         ['Is root', n.is_root ? 'yes' : 'no'],
         ['Status', n.unreachable ? 'unreachable' : 'ok'],
         ['peer_joins_total', n.metrics?.peer_joins_total ?? 0],
         ['peer_evictions_total', n.metrics?.peer_evictions_total ?? 0],
         ['ping_failures_total', n.metrics?.ping_failures_total ?? 0],
     ];
-    el.innerHTML = rows.map(([k, v]) =>
-        `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`
-    ).join('');
+    el.replaceChildren();
+    for (const [k, v] of rows) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const kEl = document.createElement('span');
+        kEl.className = 'k';
+        kEl.textContent = k;
+        const vEl = document.createElement('span');
+        vEl.className = 'v';
+        setText(vEl, v);
+        row.appendChild(kEl);
+        row.appendChild(vEl);
+        el.appendChild(row);
+    }
 }
 
 // --- minimal force-directed graph ---

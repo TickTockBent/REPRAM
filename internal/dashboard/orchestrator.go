@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,6 +44,7 @@ type Orchestrator struct {
 
 	poller  *Poller
 	builder *Builder
+	geo     *Geo
 	metrics *internalMetrics
 
 	// snapshot holds the current snapshot as a *Snapshot. Atomic so HTTP
@@ -51,13 +53,26 @@ type Orchestrator struct {
 
 	// rootsMu guards roots and rootsConsecutiveMisses. The set rotates
 	// when the omega cache is refreshed or a seed override is applied.
-	rootsMu                 sync.RWMutex
-	roots                   map[string]bool
-	rootsConsecutiveMisses  int
-	source                  RootSource
-	currentList             *trust.SignedList
-	omegaRefreshFailedFlag  bool
-	omegaRefreshFailedMu    sync.Mutex
+	rootsMu                sync.RWMutex
+	roots                  map[string]bool
+	rootsConsecutiveMisses int
+	source                 RootSource
+	currentList            *trust.SignedList
+	currentListFetchedAt   time.Time
+	omegaRefreshFailedFlag bool
+	omegaRefreshFailedMu   sync.Mutex
+
+	// cycleMu serializes poll cycles so a slow walk can't overlap with
+	// the next ticker fire and race on rootsConsecutiveMisses. TryLock
+	// would let us count skipped cycles, but Go's sync.Mutex doesn't
+	// expose that — we just record an atomic skip count instead.
+	cycleMu      sync.Mutex
+	cyclesSkipped atomic.Uint64
+
+	// lastSuccessfulPoll backs the dashboard_snapshot_age_seconds
+	// GaugeFunc — gauges that age between cycles must be computed at
+	// scrape time, not poked once per cycle.
+	lastSuccessfulPoll atomic.Int64
 
 	refresher *trust.Refresher
 	hupCh     chan struct{}
@@ -105,18 +120,24 @@ func NewOrchestrator(cfg Config) *Orchestrator {
 	if err != nil {
 		cfg.Logger.Printf("dashboard: geo init: %v (continuing without)", err)
 	}
-	return &Orchestrator{
-		cfg:     cfg,
-		poller:  NewPoller(cfg.PollWorkers, cfg.PollTimeout),
-		builder: NewBuilder(geo),
-		metrics: newInternalMetrics(),
-		hupCh:   make(chan struct{}, 1),
+	o := &Orchestrator{
+		cfg:    cfg,
+		poller: NewPoller(cfg.PollWorkers, cfg.PollTimeout),
+		geo:    geo,
+		hupCh:  make(chan struct{}, 1),
 	}
+	o.metrics = newInternalMetrics(o.lastSuccessfulPoll.Load)
+	o.builder = NewBuilder(geo, o.metrics.geoLookupMissesTotal)
+	return o
 }
 
-// Boot resolves the initial root set following the design's documented
+// Boot resolves the initial root set following the design v3 documented
 // order: cached omega list, then DNS, then --seeds, else exit-worthy error.
-// Also loads any persisted snapshot so readers see something immediately.
+// `--seeds` is the last-resort break-glass — when a still-valid cache
+// exists, it takes precedence even if the operator also supplied seeds, so
+// the dashboard's steady-state behavior matches a node that booted from
+// the same cache. Boot also loads any persisted snapshot so readers see
+// something immediately.
 func (o *Orchestrator) Boot(ctx context.Context) error {
 	// Load a prior snapshot if one exists. Failures here are non-fatal —
 	// a fresh deploy has no snapshot and that's fine.
@@ -130,27 +151,19 @@ func (o *Orchestrator) Boot(ctx context.Context) error {
 		o.cfg.Logger.Printf("dashboard: load snapshot: %v (continuing without)", err)
 	}
 
-	// Operator break-glass takes precedence. The flag is "I know what
-	// I'm doing, bypass the trust chain" — no DNS attempt is made.
-	if len(o.cfg.SeedAddresses) > 0 {
-		o.applyRoots(normalizeAddrs(o.cfg.SeedAddresses), RootSourceSeeds, nil)
-		o.cfg.Logger.Printf("dashboard: booted with %d operator-supplied seeds, trust chain bypassed",
-			len(o.cfg.SeedAddresses))
-		return nil
-	}
-
 	pubkey, err := trust.DecodedOmegaPubkey()
 	if err != nil {
 		return err
 	}
 
-	// Try the cache first. A still-valid cache lets the dashboard come
-	// up without any DNS at all — the design intent.
+	// 1. Verified cache — preferred. A still-valid cache lets the
+	//    dashboard come up without any DNS at all.
 	if cached, err := trust.LoadCache(o.cfg.StateDir); err != nil {
 		o.cfg.Logger.Printf("dashboard: load omega cache: %v (will try DNS)", err)
 	} else if cached != nil {
 		if verr := cached.Verify(pubkey, time.Now()); verr == nil {
-			o.applyRoots(normalizeAddrs(cached.Nodes), RootSourceOmega, cached)
+			fetchedAt := cacheFileMtime(o.cfg.StateDir)
+			o.applyRoots(normalizeAddrs(cached.Nodes), RootSourceOmega, cached, fetchedAt)
 			o.cfg.Logger.Printf("dashboard: booted from cached omega list (%d roots, expires %s)",
 				len(cached.Nodes), time.Unix(cached.Expires, 0).Format(time.RFC3339))
 			return nil
@@ -159,21 +172,46 @@ func (o *Orchestrator) Boot(ctx context.Context) error {
 		}
 	}
 
-	// Cache miss or invalid; fall to DNS.
+	// 2. DNS resolution against the omega trust chain.
 	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	list, err := trust.FetchSigned(fetchCtx, trust.DNSConfig{}, pubkey, time.Now())
+	list, dnsErr := trust.FetchSigned(fetchCtx, trust.DNSConfig{}, pubkey, time.Now())
+	if dnsErr == nil {
+		if err := trust.SaveCache(o.cfg.StateDir, list); err != nil {
+			o.cfg.Logger.Printf("dashboard: save omega cache: %v (continuing)", err)
+		}
+		o.applyRoots(normalizeAddrs(list.Nodes), RootSourceOmega, list, time.Now())
+		o.cfg.Logger.Printf("dashboard: booted from DNS-fetched omega list (%d roots)", len(list.Nodes))
+		return nil
+	}
+	o.cfg.Logger.Printf("dashboard: omega DNS resolution failed: %v", dnsErr)
+	o.markRefreshFailed(true)
+
+	// 3. --seeds operator break-glass — last resort. Trust chain is
+	//    bypassed and the snapshot will carry seed_override:true so the
+	//    UI banner makes that visible.
+	if len(o.cfg.SeedAddresses) > 0 {
+		o.applyRoots(normalizeAddrs(o.cfg.SeedAddresses), RootSourceSeeds, nil, time.Time{})
+		o.cfg.Logger.Printf("dashboard: cache and DNS unavailable; booting from %d operator-supplied seeds, trust chain bypassed",
+			len(o.cfg.SeedAddresses))
+		return nil
+	}
+
+	// 4. Exit-worthy: no cache, no DNS, no seeds. Operator must provide
+	//    one of the three.
+	return dnsErr
+}
+
+// cacheFileMtime reads the modification time of the omega cache file so
+// the dashboard reports an honest "last refreshed" timestamp across
+// restarts. Falls back to zero time on stat failure — the snapshot then
+// omits OmegaRefreshedAt, which is more truthful than reporting "now".
+func cacheFileMtime(dir string) time.Time {
+	info, err := os.Stat(dir + "/" + trust.CacheFileName)
 	if err != nil {
-		o.cfg.Logger.Printf("dashboard: omega DNS resolution failed: %v", err)
-		o.markRefreshFailed(true)
-		return err
+		return time.Time{}
 	}
-	if err := trust.SaveCache(o.cfg.StateDir, list); err != nil {
-		o.cfg.Logger.Printf("dashboard: save omega cache: %v (continuing)", err)
-	}
-	o.applyRoots(normalizeAddrs(list.Nodes), RootSourceOmega, list)
-	o.cfg.Logger.Printf("dashboard: booted from DNS-fetched omega list (%d roots)", len(list.Nodes))
-	return nil
+	return info.ModTime()
 }
 
 // Run blocks driving the poll loop, the optional omega refresher, and the
@@ -212,9 +250,16 @@ func (o *Orchestrator) Run(ctx context.Context) {
 		case <-ticker.C:
 			o.cycle(ctx)
 		case <-o.hupCh:
-			o.cfg.Logger.Println("dashboard: SIGHUP — triggering omega refresh")
+			o.cfg.Logger.Println("dashboard: SIGHUP — refreshing omega + reloading geo DB")
 			if o.refresher != nil {
 				o.refresher.Trigger()
+			}
+			if o.geo != nil && o.cfg.GeoDBPath != "" {
+				if err := o.geo.Reload(o.cfg.GeoDBPath); err != nil {
+					o.cfg.Logger.Printf("dashboard: geo reload: %v (keeping previous DB)", err)
+				} else {
+					o.cfg.Logger.Println("dashboard: geo DB reloaded")
+				}
 			}
 			// Also kick a poll so the operator's manual intervention
 			// produces an immediate snapshot update.
@@ -245,6 +290,18 @@ func (o *Orchestrator) MetricsRegistry() *prometheus.Registry {
 }
 
 func (o *Orchestrator) cycle(ctx context.Context) {
+	// Serialize cycles. A walk that runs longer than PollInterval would
+	// otherwise overlap with the next ticker fire and race on
+	// rootsConsecutiveMisses. Skipping (not queueing) keeps the
+	// dashboard from falling further behind under load.
+	if !o.cycleMu.TryLock() {
+		o.cyclesSkipped.Add(1)
+		o.cfg.Logger.Printf("dashboard: skipping cycle — previous cycle still in flight (%d total skips)",
+			o.cyclesSkipped.Load())
+		return
+	}
+	defer o.cycleMu.Unlock()
+
 	o.metrics.pollsTotal.Inc()
 
 	o.rootsMu.RLock()
@@ -258,9 +315,18 @@ func (o *Orchestrator) cycle(ctx context.Context) {
 	}
 	source := o.source
 	currentList := o.currentList
+	currentListFetchedAt := o.currentListFetchedAt
 	o.rootsMu.RUnlock()
 
-	pollCtx, cancel := context.WithTimeout(ctx, o.cfg.PollInterval)
+	// Leave 5s headroom against the ticker so the next cycle never has
+	// to fight this one for cycleMu — a 60s interval becomes a 55s walk
+	// budget. The bounded worker pool plus per-request timeout normally
+	// keeps cycles well under this.
+	walkBudget := o.cfg.PollInterval - 5*time.Second
+	if walkBudget <= 0 {
+		walkBudget = o.cfg.PollInterval
+	}
+	pollCtx, cancel := context.WithTimeout(ctx, walkBudget)
 	defer cancel()
 
 	results := o.poller.Walk(pollCtx, seeds)
@@ -301,12 +367,14 @@ func (o *Orchestrator) cycle(ctx context.Context) {
 		Now:                time.Now(),
 	}
 	if currentList != nil {
-		refreshed := time.Now()
 		expires := time.Unix(currentList.Expires, 0)
-		in.OmegaRefreshedAt = &refreshed
 		in.OmegaExpiresAt = &expires
-		o.metrics.omegaRefreshUnix.Set(float64(refreshed.Unix()))
 		o.metrics.omegaExpiresUnix.Set(float64(expires.Unix()))
+		if !currentListFetchedAt.IsZero() {
+			refreshed := currentListFetchedAt
+			in.OmegaRefreshedAt = &refreshed
+			o.metrics.omegaRefreshUnix.Set(float64(refreshed.Unix()))
+		}
 	}
 
 	snap := o.builder.Build(in)
@@ -324,7 +392,7 @@ func (o *Orchestrator) cycle(ctx context.Context) {
 	}
 
 	o.metrics.nodesUnreachable.Set(float64(unreachableNodes))
-	o.metrics.snapshotAgeSeconds.Set(0)
+	o.lastSuccessfulPoll.Store(time.Now().Unix())
 	o.snapshot.Store(snap)
 
 	if err := SaveSnapshot(o.cfg.StateDir, snap); err != nil {
@@ -333,18 +401,19 @@ func (o *Orchestrator) cycle(ctx context.Context) {
 }
 
 func (o *Orchestrator) onOmegaUpdate(list *trust.SignedList) {
-	o.applyRoots(normalizeAddrs(list.Nodes), RootSourceOmega, list)
+	o.applyRoots(normalizeAddrs(list.Nodes), RootSourceOmega, list, time.Now())
 	o.markRefreshFailed(false)
 	o.cfg.Logger.Printf("dashboard: omega list refreshed (%d roots, expires %s)",
 		len(list.Nodes), time.Unix(list.Expires, 0).Format(time.RFC3339))
 }
 
-func (o *Orchestrator) applyRoots(addrs map[string]bool, source RootSource, list *trust.SignedList) {
+func (o *Orchestrator) applyRoots(addrs map[string]bool, source RootSource, list *trust.SignedList, fetchedAt time.Time) {
 	o.rootsMu.Lock()
 	defer o.rootsMu.Unlock()
 	o.roots = addrs
 	o.source = source
 	o.currentList = list
+	o.currentListFetchedAt = fetchedAt
 	o.rootsConsecutiveMisses = 0
 }
 

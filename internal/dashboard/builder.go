@@ -5,6 +5,8 @@ import (
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Builder converts poll results into a Snapshot. The roots set comes from
@@ -16,13 +18,15 @@ import (
 // as arguments. State that survives cycles (e.g. consecutive-miss counters
 // for the unreachable-then-drop policy) lives in the orchestrator above.
 type Builder struct {
-	Geo *Geo
+	Geo            *Geo
+	GeoMissCounter prometheus.Counter
 }
 
 // NewBuilder constructs a builder. geo may be nil; in that case every node
-// gets Region="?".
-func NewBuilder(geo *Geo) *Builder {
-	return &Builder{Geo: geo}
+// gets Region="?". missCounter may be nil for tests; when non-nil it's
+// incremented every time the builder gives up on resolving a real IP.
+func NewBuilder(geo *Geo, missCounter prometheus.Counter) *Builder {
+	return &Builder{Geo: geo, GeoMissCounter: missCounter}
 }
 
 // BuildInput bundles everything Build needs that varies per cycle. Kept as
@@ -119,6 +123,9 @@ func (b *Builder) Build(in BuildInput) *Snapshot {
 		if b.Geo != nil && r.addr.Host != "" {
 			if ip := net.ParseIP(r.addr.Host); ip != nil {
 				node.Region = b.Geo.Region(ip)
+				if node.Region == "?" && b.GeoMissCounter != nil {
+					b.GeoMissCounter.Inc()
+				}
 			}
 		}
 
