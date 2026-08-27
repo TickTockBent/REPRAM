@@ -2,7 +2,7 @@
 
 ## Purpose
 
-REPRAM is a distributed dead drop network for AI agents. Data goes in with a timer. When the timer runs out, the data is destroyed — permanently, across all nodes, with no recovery mechanism. The network doesn't know what it stores, doesn't track who accesses it, and doesn't keep records of anything. It forgets, by design.
+REPRAM is a distributed dead drop network for AI agents. Data goes in with a timer. When the timer runs out, every node deletes its copy — there is no recovery mechanism. The network doesn't interpret what it stores, doesn't track who accesses it, and keeps no records of content. It forgets, by design.
 
 ## Problem Statement
 
@@ -12,7 +12,7 @@ There's no lightweight primitive designed for data that *should not persist*. Ev
 
 ## Solution
 
-REPRAM provides a simple protocol: PUT data with a key and a TTL, GET it by key, list keys by prefix. Data is replicated across nodes via gossip protocol with quorum confirmation. When the TTL expires, the data is deleted from all nodes — automatically, permanently, with no recovery mechanism.
+REPRAM provides a simple protocol: PUT data with a key and a TTL, GET it by key, list keys by prefix. Data is replicated across nodes via gossip protocol with quorum confirmation. When the TTL expires, the data is deleted from all nodes automatically, with no recovery mechanism.
 
 Agents access REPRAM through an MCP server that exposes four tools: `repram_store`, `repram_retrieve`, `repram_exists`, and `repram_list_keys`.
 
@@ -36,7 +36,7 @@ If you need confidentiality *during* the TTL window, encrypt your data before st
 ## Key Properties
 
 * **Ephemeral**: All data has a mandatory TTL and is automatically deleted on expiration
-* **Zero-knowledge**: Nodes store opaque data without interpreting, indexing, or logging it
+* **Content-agnostic**: Nodes store opaque bytes without interpreting or indexing them
 * **Permissionless**: No accounts, no API keys, no authentication — access is controlled by key knowledge
 * **Gossip-replicated**: Nodes share data via peer-to-peer gossip with quorum writes; adaptive fanout (full broadcast for small enclaves, √N probabilistic for larger ones)
 * **Homogeneous**: All nodes run the same binary and self-organize via DNS bootstrap
