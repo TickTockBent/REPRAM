@@ -13,7 +13,7 @@ REPRAM is not a database (data is guaranteed to disappear), not a message queue 
 ## Key Properties
 
 * Mandatory TTL on all data — nothing persists, by design
-* Zero-knowledge nodes — they store opaque bytes without interpreting them
+* Content-agnostic nodes — they store opaque bytes without interpreting them
 * No accounts, no authentication — access is controlled by knowing the key
 * Gossip-based replication with quorum confirmation
 * MCP server for direct AI agent integration (store, retrieve, list tools)
@@ -22,7 +22,7 @@ REPRAM is not a database (data is guaranteed to disappear), not a message queue 
 
 ## The Security Model
 
-REPRAM has no access control, no encryption, and no authentication. It is secure because it forgets. Nodes can't inspect stored data (no schema, no indexes, no query language). Data exists only in memory for the TTL duration, then it's destroyed across all nodes. There's nothing to breach because nothing accumulates.
+REPRAM has no access control, no encryption, and no authentication. Its security model is transience plus client-side layering: encrypt values that need confidentiality before storing them. Nodes don't interpret stored data (no schema, no indexes, no query language) — though, as with any storage, the node holding your bytes can read them. Data exists in memory for the TTL duration, then every node deletes its copy. Nothing accumulates.
 
 If you need confidentiality during the TTL window, encrypt data before storing it. REPRAM is agnostic to whether bytes are plaintext or ciphertext.
 
@@ -86,7 +86,7 @@ This is a resilience property that falls naturally out of the ephemeral design. 
 See [Core Principles](core-principles.md) for the full set of inviolable design rules. Key constraints:
 
 * Every key must have a TTL — no permanent storage
-* Nodes never interpret stored data — zero knowledge
+* Nodes never interpret stored data — content-agnostic
 * No authentication at the node level — access through key knowledge
 * All nodes are equal — no coordinators, no hierarchy
 * TTL cannot be extended — must re-write with a new TTL

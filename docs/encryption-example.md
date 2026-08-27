@@ -1,6 +1,6 @@
 # Client-Side Encryption Example
 
-REPRAM stores opaque bytes. It doesn't encrypt, decrypt, or inspect your data. If you need confidentiality, encrypt before storing and decrypt after retrieving. This is a feature, not a gap — the node literally cannot leak what it cannot read.
+REPRAM stores opaque bytes. It doesn't encrypt, decrypt, or inspect your data. If you need confidentiality, encrypt before storing and decrypt after retrieving. This is a feature, not a gap — the node can't leak plaintext it never had.
 
 This example uses Node.js (TypeScript) with the built-in `crypto` module. No dependencies beyond what ships with Node 18+.
 

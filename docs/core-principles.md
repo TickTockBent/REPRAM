@@ -9,9 +9,9 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 - **No metadata at node level**: Nodes never interpret or store metadata about the data
 - **Opaque values**: Nodes treat all stored data as opaque blobs
 
-### 1.2 Zero-Knowledge Nodes
-- **Nodes store opaque data**: They cannot interpret, index, or inspect stored values
-- **No content awareness**: Nodes have no knowledge of what they store
+### 1.2 Content-Agnostic Nodes
+- **Nodes store opaque data**: They do not interpret or index stored values. (A node necessarily holds the bytes and can read them; it attaches no meaning to them. Confidentiality is the client's layer — encrypt values that must stay secret.)
+- **No content awareness**: Nodes attach no meaning to what they store
 - **No logging of values**: Stored data is never written to logs or metrics
 
 ## 2. Data Access Principles
@@ -35,8 +35,8 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 - **Minimum TTL enforced**: 300 seconds (5 minutes) minimum to ensure network-wide propagation
 
 ### 3.2 TTL Enforcement
-- **Background cleanup**: Regular sweeps delete expired data
-- **On-access cleanup**: Expired data is deleted when accessed
+- **Background cleanup**: A periodic sweep (every 30s) reclaims the memory of expired entries
+- **On-access enforcement**: Expired entries are invisible to reads and listings from the instant of expiry — every access checks the TTL; the sweep only frees memory
 - **No TTL extension**: Once set, TTL cannot be extended (must re-write with new TTL)
 
 ## 4. Network Distribution Principles
@@ -61,10 +61,10 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 ## 5. Security Principles
 
 ### 5.1 Privacy Through Transience
-- **Nothing accumulates**: There's nothing to breach because nothing persists beyond TTL
-- **Nodes hold nothing of lasting value**: Even a compromised node reveals only data that's about to expire
-- **No secrets on nodes**: Nodes never hold encryption keys or sensitive data
-- **Hostile infrastructure is irrelevant**: The network assumes hostile environments by default, but this isn't a security posture bolted on — it's a natural consequence of storing only self-destructing data
+- **Nothing accumulates**: Nothing persists beyond its TTL, so a node's exposure is bounded to what is currently live
+- **Nodes hold nothing of lasting value**: A compromised node reveals only what it currently stores — a window bounded by the maximum TTL, not an archive
+- **No secrets on nodes**: Nodes hold no encryption keys or credentials of their own. Whether stored *values* are sensitive is the client's choice — see 5.2
+- **Untrusted infrastructure is assumed**: Nodes are expected to run in environments nobody fully controls. The network's promise is narrow: it forgets what it holds. It cannot make observers forget what they saw, prevent anyone from re-storing bytes they kept, or protect plaintext from the node holding it. Everything beyond forgetting is the client's layer (5.2)
 
 ### 5.2 Client Responsibility
 - **Encryption is a client concern**: If data needs to be encrypted, clients handle it before storing
@@ -76,7 +76,7 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 When evaluating new features or modifications, ask:
 
 1. Does it maintain pure key-value storage?
-2. Are nodes still zero-knowledge about stored data?
+2. Are nodes still content-agnostic about stored data?
 3. Can anyone still read data by key without authentication?
 4. Is TTL still mandatory and enforced?
 5. Does gossip still replicate to all enclave peers?

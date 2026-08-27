@@ -611,7 +611,7 @@ function Architecture() {
         <span style={{ color: '#22d3ee33' }}>│</span>
         <span><span style={{ color: '#22d3ee' }}>@</span> gossip replication, quorum=3</span>
         <span style={{ color: '#22d3ee33' }}>│</span>
-        <span><span style={{ color: '#39ff14' }}>#</span> zero-knowledge nodes</span>
+        <span><span style={{ color: '#39ff14' }}>#</span> content-agnostic nodes</span>
         <span style={{ color: '#22d3ee33' }}>│</span>
         <span><span style={{ color: '#e040fb' }}>$</span> loosely coupled · no catch-up</span>
       </div>
@@ -875,7 +875,7 @@ function TTLDemo() {
 
           <div style={{ marginTop: 14, color: '#8b949e', fontSize: 11.5, lineHeight: 1.6 }}>
             <span style={{ color: '#facc15' }}>[SYS]</span> expired keys are
-            irretrievably destroyed. the network keeps no memory of what it forgot.
+            deleted on every node. the network keeps no memory of what it forgot.
           </div>
         </div>
       </div>

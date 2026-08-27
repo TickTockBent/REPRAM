@@ -9,7 +9,7 @@
 
 REPRAM is a distributed network where data self-destructs on a timer. Agents leave data, other agents pick it up, and the network cleans itself. Nobody signs a guest book.
 
-Think of it as a dead drop network: you store a payload under a key with a time-to-live, and anyone who knows the key can retrieve it — until the TTL expires and the data is permanently, irreversibly gone. No accounts. No authentication. No logs. The network doesn't know or care what you stored.
+Think of it as a dead drop network: you store a payload under a key with a time-to-live, and anyone who knows the key can retrieve it — until the TTL expires and every node deletes its copy. There is no recovery mechanism. No accounts. No authentication. The network doesn't know or care what you stored.
 
 **REPRAM is not a database.** It's not a message queue. It's not a secrets manager. It will not keep your data safe — it will *destroy* your data, on schedule, and that's the entire point. Privacy through transience: the network is safe to use because it forgets everything.
 
@@ -72,9 +72,9 @@ The included `docker-compose.yml` configures three nodes with gossip replication
 
 REPRAM is a network of identical nodes that store key-value pairs in memory and replicate them via gossip protocol. The reference implementation is a single Go binary (`cmd/repram/`) that runs either as a long-lived HTTP node or, with `--mcp`, as an embedded MCP stdio server for agent use.
 
-- **Mandatory TTL**: Every piece of data has a time-to-live. When it expires, it's gone — no recovery, no traces.
+- **Mandatory TTL**: Every piece of data has a time-to-live. When it expires, every node deletes its copy. There is no recovery mechanism.
 - **Gossip replication**: Writes propagate to enclave peers via gossip protocol with quorum confirmation. Small enclaves use full broadcast; larger enclaves switch to probabilistic √N fanout with epidemic forwarding.
-- **Zero-knowledge nodes**: Nodes store opaque data. They don't interpret, index, or log what you store. They *can't* — they have no schema, no indexes, no query language. Data goes in as bytes and comes out as bytes.
+- **Content-agnostic nodes**: Nodes store opaque bytes. They don't interpret or index what you store — no schema, no query language. A node necessarily holds the bytes it stores and can read them; it attaches no meaning to them. If the bytes need to stay secret, encrypt them before they arrive.
 - **No accounts, no auth**: Store with a PUT, retrieve with a GET. Access is controlled by knowing the key.
 - **Loosely coupled**: Nodes don't need to be tightly synchronized. A node that goes offline for an hour and comes back has simply missed data that may have already expired. There's no catch-up problem — expired data doesn't need to be synced, and current data arrives via normal gossip.
 
@@ -143,7 +143,7 @@ curl "http://localhost:8080/v1/keys?limit=10&cursor=last-key-from-previous-page"
 
 Keys are returned in lexicographic order. Use `?limit=N` to cap the page size and `?cursor=X` to continue from the previous page (the cursor is the last key from the previous response). When more pages are available, the response includes a `next_cursor` field. No limit returns all keys (backwards compatible).
 
-Note: Key listing is based on periodic background cleanup (every 30s). Keys may appear in listings for up to 30 seconds after TTL expiration. Direct retrieval via `GET /v1/data/{key}` always enforces TTL precisely.
+Note: Expired keys never appear in listings or reads — both check the TTL at access time, so expiry is precise per node. The background sweep (every 30s) only reclaims the memory of already-invisible entries.
 
 ### Health check
 
