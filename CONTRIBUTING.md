@@ -122,10 +122,10 @@ make run
 ## Architecture Principles
 
 When contributing, please maintain:
-1. **Zero-knowledge nodes** - Nodes never interpret data
+1. **Content-agnostic nodes** - Nodes store opaque values without interpreting them; transport and lifecycle metadata exist only to handle the data piece
 2. **Privacy through transience** - The network is safe because it forgets; encryption is the client's concern
 3. **Ephemeral by design** - Everything has a TTL, expired data is permanently gone
-4. **Permissionless reads** - No auth at node level
+4. **Permissionless client access** - No client accounts or authentication; optional gossip HMAC is a peer transport concern
 5. **Single binary** - One `cmd/repram` entry point, cluster-capable by default
 
 ## Questions?

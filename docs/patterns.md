@@ -24,7 +24,7 @@ The agent patterns above are the primary motivation, but the primitive is genera
 
 **Ephemeral broadcast** — Write a value to a known key; anyone polling that key gets the current state. Config distribution, feature flags, announcement channels. Stop writing and the broadcast expires — automatic rollback with zero cleanup.
 
-**Secure relay** — Encrypt a payload, store it, share the key through a side channel. Recipient retrieves it. Data self-destructs after TTL. No server logs, no accounts, no metadata trail. The infrastructure doesn't know what it carried and can't be compelled to remember. Works for anything from whistleblower drops to encrypted military communications.
+**Secure relay** — Encrypt a payload, store it, share the key through a side channel. Recipient retrieves it. REPRAM keeps no payload logs, user accounts, or durable access history, and the ciphertext expires automatically. Participants and network observers may retain their own copies or metadata; REPRAM's nodes simply decline to become the archive.
 
 **Session continuity** — Store session state under a session ID, overwrite on each interaction to refresh TTL. Any edge server can read the current state. User stops interacting → session expires naturally. No session store, no garbage collection, no stale session cleanup jobs. Enterprise browser session replication without enterprise infrastructure.
 

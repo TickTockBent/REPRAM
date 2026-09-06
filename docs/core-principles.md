@@ -6,7 +6,7 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 
 ### 1.1 Pure Key-Value Storage
 - **What we store**: Only key-value pairs with TTL
-- **No metadata at node level**: Nodes never interpret or store metadata about the data
+- **No application metadata at node level**: Nodes store only the transport and lifecycle metadata required to handle a data piece (key, creation time, TTL, and expiration). They do not attach application meaning, ownership, schema, tags, or content metadata
 - **Opaque values**: Nodes treat all stored data as opaque blobs
 
 ### 1.2 Content-Agnostic Nodes
@@ -24,7 +24,7 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 ### 2.2 No Accounts or Identity
 - **No user accounts**: Nodes do not track who stores or retrieves data
 - **No API keys**: Access is open by design
-- **Anonymity by default**: Nodes cannot distinguish between clients
+- **No application identity**: Nodes may temporarily distinguish network sources for local transport concerns such as rate limiting, but they assign no user identity and maintain no account or access history
 
 ## 3. Ephemeral Storage Principles
 
@@ -32,7 +32,7 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 - **Every key has a TTL**: No permanent storage, ever
 - **Automatic deletion**: Data is irretrievably deleted when TTL expires
 - **No recovery mechanism**: Deleted data cannot be recovered by design
-- **Minimum TTL enforced**: 300 seconds (5 minutes) minimum to ensure network-wide propagation
+- **Minimum TTL normalized**: An omitted TTL defaults to 1800 seconds (30 minutes). An explicit TTL below 300 seconds is accepted and normalized to 300 seconds so the data piece has time to propagate
 
 ### 3.2 TTL Enforcement
 - **Background cleanup**: A periodic sweep (every 30s) reclaims the memory of expired entries
@@ -42,21 +42,21 @@ This document defines the fundamental, inviolable principles that guide REPRAM's
 ## 4. Network Distribution Principles
 
 ### 4.1 Gossip Protocol
-- **Eventually consistent**: All nodes eventually have all key-value pairs within their enclave
+- **Epidemic convergence**: Gossip is designed to spread a write to every reachable node in its enclave. Adaptive fanout makes delivery overwhelmingly likely in a healthy network, but finite TTL, partitions, and node failure mean universal delivery is not an absolute guarantee
 - **Peer-to-peer propagation**: No central coordinator or master node
-- **Symmetric network**: All nodes are equal participants
+- **Symmetric data plane**: Every node runs the same software and participates equally in gossip replication. Bootstrap roots and substrate/transient roles describe discovery and reachability capabilities, not a hierarchy in which privileged nodes receive data first and feed lesser nodes
 - **Adaptive fanout**: Small enclaves (≤10 peers) use full broadcast; larger enclaves use probabilistic √N fanout per hop with epidemic forwarding and message deduplication
 
 ### 4.2 Replication
-- **Full replication within enclaves**: Every node stores every key-value pair from its enclave
+- **Full-replication target within enclaves**: Data is not deliberately partitioned or assigned to selected replicas; gossip targets every reachable enclave member
 - **Enclave-scoped**: `REPRAM_ENCLAVE` defines replication boundaries; nodes in the same enclave replicate data, all nodes share topology
-- **Quorum writes**: Writes must be acknowledged by multiple nodes (dynamic quorum based on enclave size)
+- **Dynamic quorum confirmation**: Every accepted write is stored locally. A write is confirmed when the local node observes the dynamic quorum for the current enclave size; otherwise the API reports it as accepted locally but unconfirmed. A single-node enclave has a quorum of one
 - **No sharding**: Data is not partitioned across nodes — every enclave member holds all enclave data
 
 ### 4.3 Resilience Through Ephemerality
 - **Loose coupling**: Nodes don't need to be tightly coupled or consistently available. The data's lifecycle is self-limiting — a node that goes offline for an hour and comes back has simply missed some data that may have already expired anyway.
 - **No catch-up problem**: Traditional distributed systems need complex reconciliation when a node rejoins. REPRAM doesn't — expired data doesn't need to be synced, and current data will arrive via normal gossip.
-- **Graceful degradation**: Partial network availability doesn't create stale state or split-brain problems. Data either exists (within TTL) or doesn't. There's no ambiguity to resolve.
+- **Graceful degradation**: Partitions can produce temporary disagreement, including different live values for the same key. REPRAM does not preserve that disagreement as durable history or require a reconciliation phase; subsequent writes or TTL expiration remove it naturally
 
 ## 5. Security Principles
 

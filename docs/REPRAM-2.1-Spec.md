@@ -2,11 +2,13 @@
 
 ## Status
 
-Proposal — targets release 2.1. Scoped to the public network only.
+Implemented in the Go reference node. Production activation is pending the
+first real omega key ceremony, public root deployment, and DNS publication.
+Scoped to the public network only.
 
 ## Scope
 
-This spec addresses a single gap: the public REPRAM network currently discovers bootstrap peers via unsigned DNS lookups, which means a compromised DNS provider, a cache poisoning attack, or a compromised registrar account can redirect every new node onto an attacker-controlled network.
+This spec addressed a single gap in the pre-2.1 design: the public REPRAM network discovered bootstrap peers via unsigned DNS lookups, which meant a compromised DNS provider, a cache poisoning attack, or a compromised registrar account could redirect every new node onto an attacker-controlled network.
 
 2.1 closes that gap by introducing a signed root list, a baked-in trust anchor (the *omega pubkey*), and self-recognition of root status at startup. It does **not** introduce per-node keypairs, signed topology messages, or trust infrastructure for private enclaves — those are deferred to 2.2 and beyond.
 
@@ -28,7 +30,7 @@ This spec addresses a single gap: the public REPRAM network currently discovers 
 
 ## Problem Statement
 
-Currently, a new REPRAM node consulting `bootstrap.repram.network` via DNS will bootstrap against whatever IPs DNS returns. There is no cryptographic verification that these IPs are authentic roots. An attacker who compromises the DNS record (registrar account takeover, resolver cache poisoning, BGP hijack of the resolver path) can serve any IP list they want, and new nodes will join an attacker-controlled shadow network indistinguishable from the real one.
+Before 2.1, a new REPRAM node consulting unsigned bootstrap DNS would bootstrap against whatever addresses DNS returned. There was no cryptographic verification that those addresses were authentic roots. An attacker who compromised the record could therefore direct new nodes to an attacker-controlled shadow network.
 
 The existing `REPRAM_CLUSTER_SECRET` mechanism doesn't help here. It authenticates gossip messages *after* a node has joined, but the shadow network has its own (attacker-chosen) cluster secret. A node that bootstraps into the shadow network will accept the shadow network's secret as authoritative.
 
@@ -139,7 +141,7 @@ Root status is a function of the signed root list, not node configuration. A nod
 This preserves the "every node runs the same binary" invariant. There is no `--root` flag, no `REPRAM_ROOT=true`, nothing in configuration that distinguishes roots. The only difference between a root and a non-root node at runtime is:
 
 - Roots answer `POST /v1/bootstrap` requests from new nodes joining the network.
-- Non-roots return `404` (or `403`, bikeshed candidate) to bootstrap requests, with a message indicating they are not a bootstrap source.
+- Non-roots return `403 Forbidden` to bootstrap requests, indicating that they are not an authorized bootstrap source.
 
 A node recomputes its root status every time it refreshes the signed root list. A node that was a root but was removed from the list stops answering bootstrap requests on the next refresh. A new node added to the list starts answering after it picks up the updated record.
 
@@ -147,7 +149,7 @@ A node recomputes its root status every time it refreshes the signed root list. 
 
 | Variable | 2.0 behavior | 2.1 behavior |
 |----------|--------------|--------------|
-| `REPRAM_NETWORK=public` (default) | Uses unsigned DNS bootstrap | Uses signed omega DNS bootstrap |
+| `REPRAM_NETWORK=public` (default) | Used unsigned DNS bootstrap | Uses signed omega DNS bootstrap |
 | `REPRAM_NETWORK=private` | Uses `REPRAM_PEERS`, skips DNS | Unchanged |
 | `REPRAM_PEERS` | Manual peer list, consulted first | Unchanged; still consulted first. If set, DNS is skipped. |
 | `REPRAM_CLUSTER_SECRET` | HMAC-signs gossip bodies | Unchanged. Orthogonal to omega trust anchor. |
@@ -209,44 +211,38 @@ This is a pure function: same inputs produce the same canonical payload and sign
 
 DNS automation (calling the registrar's API to push the new record) is deliberately out of scope for this spec. It's straightforward to script around `repram-omega sign` and whatever DNS API the operator uses, but the spec only defines the primitive.
 
-## Implementation Plan
+## Implementation Status
 
-Rough pass at the work, phased so each step is independently shippable and testable.
+The implementation was delivered in phases. Code phases are complete; public
+operator deployment remains outstanding.
 
-### Phase 1: Trust primitives
+### Phase 1: Trust primitives — complete
 
-- Add `internal/trust/` package with `OmegaVersion` and `OmegaPubkey` constants (placeholder values until first keygen).
-- Add `internal/trust/signedlist.go` with record parsing, canonicalization, and Ed25519 verification.
-- Unit tests for canonical serialization (order, separators, sorting), signature verification, version checks, expiration checks.
+- `internal/trust/` contains `OmegaVersion`, the placeholder `OmegaPubkey`, strict record parsing, canonicalization, Ed25519 verification, and tests.
 
-### Phase 2: Omega tooling
+### Phase 2: Omega tooling — complete
 
-- Add `cmd/repram-omega/` with `keygen` and `sign` subcommands.
-- Include in the build and release pipeline.
-- Document operator workflow in `docs/omega-operations.md`.
+- `cmd/repram-omega/` provides `keygen` and `sign`.
+- The operator workflow is documented in `docs/omega-operations.md`.
 
-### Phase 3: Startup integration
+### Phase 3: Startup integration — complete
 
-- Modify `cmd/repram/main.go`:
-  - Replace `resolveBootstrapDNS()` for public network with new `resolveOmegaBootstrap()` that fetches, verifies, and caches the signed root list.
-  - Retain `resolveBootstrapDNS()` under a deprecated path or remove entirely — open question below.
-  - Add self-recognition: after verification, check if local address is in `nodes`, set `isRoot` flag on the cluster node.
-- Modify bootstrap handler: non-root nodes refuse to answer bootstrap requests.
-- Add disk cache for verified signed lists at `$REPRAM_CACHE_DIR/root-list.json` (default `~/.repram/cache/`).
+- Public startup fetches, strictly parses, verifies, and caches the signed root list. There is no unsigned fallback.
+- Nodes derive root status from the verified list; non-roots return 403 from `/v1/bootstrap`.
+- Verified lists are cached at `$REPRAM_CACHE_DIR/root-list.json`, defaulting to `$HOME/.repram/cache` and then `/var/cache/repram` when no home directory is available.
 
-### Phase 4: Periodic refresh
+### Phase 4: Periodic refresh and recovery — complete
 
-- Add background goroutine that refreshes the signed list before expiration with jitter.
-- Trigger on-demand refresh when bootstrap fails or peer count drops below threshold.
-- Update root-status flag atomically on each successful refresh.
+- A background refresher rotates before expiration with jitter and atomically updates root status.
+- An isolated node re-bootstraps from the refresher's current signed seed list.
+- Failed refresh retains a still-valid cached record and reports the error.
 
-### Phase 5: Operator deployment
+### Phase 5: Operator deployment — pending
 
 - Generate the first real omega keypair.
-- Bake `omega-v1` pubkey into a 2.1 release candidate.
-- Stand up root nodes, publish first signed root list.
-- Run 2.0 and 2.1 in parallel on testnet to validate.
-- Cut 2.1 release, migrate production roots.
+- Replace the placeholder `OmegaPubkey` in the release binary.
+- Stand up independent public roots and publish the first signed root list.
+- Validate the cutover on a public testnet before making public startup the normal Quick Start path.
 
 ## Testing Strategy
 
@@ -255,16 +251,16 @@ Rough pass at the work, phased so each step is independently shippable and testa
 - **DNS simulation tests**: mock DNS responses to test cache fallback, expiration handling, refresh scheduling.
 - **Upgrade path test**: 2.0 node and 2.1 node side by side during a transition — verify they can still gossip with each other (they should, since nothing in the wire protocol between peers changes; only the bootstrap discovery path differs).
 
-## Open Questions
+## Resolved Decisions and Remaining Limits
 
-**Cache directory default location.** `~/.repram/cache/` feels right for most deployments but is wrong inside Docker containers (where `$HOME` may not be set). The spec should probably default to a configurable `REPRAM_CACHE_DIR` with a Docker-friendly fallback like `/var/cache/repram` or `/tmp/repram`. Needs a decision before implementation.
+**Cache directory.** Resolved as `REPRAM_CACHE_DIR` when set, otherwise `$HOME/.repram/cache`, with `/var/cache/repram` as the last resort. Non-root containers should set `REPRAM_CACHE_DIR` to a writable path.
 
 **Disk cache security.** The cached signed list is public data — anyone can read the published DNS record. No confidentiality concerns. But if an attacker has write access to the cache file, they could replace it with a signed list from an old (compromised) omega version. The version check catches this if the compromised key was retired, but only if the binary has been updated. Worth documenting but probably not worth mitigating beyond "don't let attackers write to your node's filesystem."
 
-**Fate of unsigned DNS bootstrap.** Should the 2.1 binary retain support for the unsigned `bootstrap.repram.network` path as a fallback, or remove it entirely? Retaining it is a security footgun (someone could configure a node to prefer unsigned bootstrap). Removing it is clean but means any operator pointing at an old unsigned-only bootstrap domain has to update config. Recommendation: remove, document as a breaking change in the 2.1 changelog. `REPRAM_NETWORK=private` remains available for anyone who wants to bypass DNS entirely.
+**Fate of unsigned DNS bootstrap.** Resolved: removed. Public mode has no unsigned fallback. `REPRAM_NETWORK=private` with `REPRAM_PEERS` remains the explicit path for operators who provide their own seeds.
 
-**Bootstrap response handling during refresh transitions.** When a node just got removed from the root list but hasn't refreshed yet, it will continue answering bootstrap requests until refresh. Worst case, a new node bootstraps from a "just-retired" root and gets a peer list that's still valid (since the retired root still has valid peers). Probably fine, but worth thinking through the edge cases.
+**Bootstrap response handling during refresh transitions.** Accepted behavior: a just-retired root may continue answering until its next refresh. It still returns live peer topology, and root status is corrected when the signed list rotates locally.
 
 **Record size limits.** DNS TXT records are typically limited to 255 bytes per string, with some resolvers allowing multiple strings concatenated up to ~4KB total. A root list with 10 nodes and signatures should fit comfortably, but if the network grows substantially, the record could need splitting or a different distribution mechanism (e.g., DNS-hosted pointer to an HTTPS endpoint serving the signed list). Not a 2.1 concern but worth noting.
 
-**Self-recognition address matching.** A node compares its own advertised address against the `nodes` list. What if the node is behind NAT and its advertised address is a public IP it can't bind to directly? The mycelial network design already deals with this for MCP nodes via persistent WebSocket connections, but roots should be nodes with stable public addresses — they're infrastructure, not ephemeral. The spec should require roots to have directly-routable public addresses matching what's in the signed list. Document as an operational requirement.
+**Self-recognition address matching.** Public roots must have stable, directly routable advertised addresses matching the signed list. NAT-constrained nodes participate as ordinary nodes through outbound attachment; they are not public roots.

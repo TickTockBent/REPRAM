@@ -73,9 +73,9 @@ The included `docker-compose.yml` configures three nodes with gossip replication
 REPRAM is a network of identical nodes that store key-value pairs in memory and replicate them via gossip protocol. The reference implementation is a single Go binary (`cmd/repram/`) that runs either as a long-lived HTTP node or, with `--mcp`, as an embedded MCP stdio server for agent use.
 
 - **Mandatory TTL**: Every piece of data has a time-to-live. When it expires, every node deletes its copy. There is no recovery mechanism.
-- **Gossip replication**: Writes propagate to enclave peers via gossip protocol with quorum confirmation. Small enclaves use full broadcast; larger enclaves switch to probabilistic √N fanout with epidemic forwarding.
+- **Gossip replication**: Writes propagate to reachable enclave peers via gossip protocol with dynamic quorum confirmation. Small enclaves use full broadcast; larger enclaves switch to probabilistic √N fanout with epidemic forwarding.
 - **Content-agnostic nodes**: Nodes store opaque bytes. They don't interpret or index what you store — no schema, no query language. A node necessarily holds the bytes it stores and can read them; it attaches no meaning to them. If the bytes need to stay secret, encrypt them before they arrive.
-- **No accounts, no auth**: Store with a PUT, retrieve with a GET. Access is controlled by knowing the key.
+- **No client accounts or auth**: Store with a PUT, retrieve with a GET. Access is controlled by knowing the key. Cluster operators may optionally authenticate peer-to-peer gossip with a shared HMAC secret; this does not add client identity or access control.
 - **Loosely coupled**: Nodes don't need to be tightly synchronized. A node that goes offline for an hour and comes back has simply missed data that may have already expired. There's no catch-up problem — expired data doesn't need to be synced, and current data arrives via normal gossip.
 
 ## What REPRAM Is Not
@@ -112,7 +112,9 @@ curl -X PUT -H "X-TTL: 300" -d "your data here" http://localhost:8080/v1/data/{k
 # Returns: 201 Created (quorum confirmed) or 202 Accepted (stored locally, replication pending)
 ```
 
-The `X-TTL` header sets expiration in seconds. TTL can also be passed as a `?ttl=300` query parameter.
+The `X-TTL` header sets expiration in seconds. TTL can also be passed as a `?ttl=300` query parameter. If TTL is omitted, it defaults to 1800 seconds (30 minutes). Explicit positive values below 300 seconds are accepted and normalized to 300 seconds.
+
+`201 Created` means the value was stored locally and the node observed its dynamic quorum within the write timeout. `202 Accepted` means the value was stored locally but quorum was not confirmed before the timeout. It does not promise that any particular remote replica has accepted the value.
 
 ### Retrieve data
 
@@ -182,20 +184,24 @@ REPRAM accepts requests from any origin. This is intentional — REPRAM is permi
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `REPRAM_HTTP_PORT` | `8080` | HTTP API port |
-| `REPRAM_GOSSIP_PORT` | `9090` | Gossip protocol port |
+| `REPRAM_GOSSIP_PORT` | `9090` | Legacy compatibility metadata. Current gossip uses the HTTP port (`/v1/gossip/message`); no separate listener binds this port. |
+| `REPRAM_NODE_ID` | generated | Optional stable node identifier; otherwise generated at startup |
 | `REPRAM_ADDRESS` | `localhost` | Advertised address for this node |
 | `REPRAM_NETWORK` | `public` | `public` for DNS bootstrap, `private` for manual peers only |
 | `REPRAM_PEERS` | _(empty)_ | Comma-separated bootstrap peers (`host:httpPort`) |
 | `REPRAM_ENCLAVE` | `default` | Enclave name. Nodes in the same enclave replicate data to each other. Nodes in different enclaves share topology but not data. |
 | `REPRAM_REPLICATION` | `3` | Quorum replication factor |
-| `REPRAM_MIN_TTL` | `300` | Minimum TTL in seconds (5 minutes) |
+| `REPRAM_MIN_TTL` | `300` | Local TTL floor in seconds. Values below the protocol minimum of 300 are treated as 300; operators may configure a stricter floor. |
 | `REPRAM_MAX_TTL` | `86400` | Maximum TTL in seconds (24 hours) |
-| `REPRAM_WRITE_TIMEOUT` | `5` | Quorum confirmation timeout in seconds. Writes stored locally always succeed; timeout only affects quorum wait (201 vs 202). |
-| `REPRAM_CLUSTER_SECRET` | _(empty)_ | Shared secret for gossip HMAC-SHA256 authentication. If set, all inter-node messages are signed and verified. If empty, gossip is open (suitable for private/firewalled clusters). |
+| `REPRAM_WRITE_TIMEOUT` | `5` | Quorum confirmation timeout in seconds. A timeout returns 202: stored locally, quorum not confirmed. |
+| `REPRAM_CLUSTER_SECRET` | _(empty)_ | Optional shared secret for peer-to-peer gossip HMAC-SHA256 authentication. It does not authenticate client reads or writes. If empty, gossip is open. |
 | `REPRAM_RATE_LIMIT` | `100` | Requests per second per IP. When behind a reverse proxy, set `REPRAM_TRUST_PROXY=true` so the rate limiter uses `X-Forwarded-For` / `X-Real-IP` headers. When exposed directly, leave it `false` to prevent header spoofing. |
 | `REPRAM_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` and `X-Real-IP` headers for client IP detection. Set to `true` when running behind a reverse proxy (nginx, Cloudflare, etc.). |
 | `REPRAM_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `REPRAM_MAX_STORAGE_MB` | `0` | Max data storage in MB (0 = unlimited). Rejects writes with 507 when full. Tracks payload bytes only — actual memory usage is higher due to per-entry overhead (~80 bytes + key length per entry). For workloads with many small values, set conservatively. |
+| `REPRAM_INBOUND` | `false` | `true` accepts inbound WebSocket attachments as a substrate; `false` operates as a transient and attaches outbound when seeds are available |
+| `REPRAM_MAX_CHILDREN` | `100` | Maximum transient WebSocket children accepted by a substrate; `0` disables attachments |
+| `REPRAM_CACHE_DIR` | platform default | Directory for the verified omega root-list cache |
 | `REPRAM_PPROF_ENABLED` | `false` | Enable pprof/profiling diagnostic endpoints on a separate listener (`REPRAM_PPROF_ADDR`). Do not expose in untrusted environments. |
 | `REPRAM_PPROF_ADDR` | `127.0.0.1:6060` | Address for the pprof listener (only used when `REPRAM_PPROF_ENABLED=true`). Loopback-only by default — set to `0.0.0.0:6060` to allow external access. |
 

@@ -14,15 +14,15 @@ REPRAM is not a database (data is guaranteed to disappear), not a message queue 
 
 * Mandatory TTL on all data — nothing persists, by design
 * Content-agnostic nodes — they store opaque bytes without interpreting them
-* No accounts, no authentication — access is controlled by knowing the key
-* Gossip-based replication with quorum confirmation
+* No client accounts or authentication — access is controlled by knowing the key
+* Gossip-based replication with dynamic quorum confirmation
 * MCP server for direct AI agent integration (store, retrieve, list tools)
 * DNS-based bootstrap for public network discovery
 * Single binary, single config surface (`REPRAM_*` env vars)
 
 ## The Security Model
 
-REPRAM has no access control, no encryption, and no authentication. Its security model is transience plus client-side layering: encrypt values that need confidentiality before storing them. Nodes don't interpret stored data (no schema, no indexes, no query language) — though, as with any storage, the node holding your bytes can read them. Data exists in memory for the TTL duration, then every node deletes its copy. Nothing accumulates.
+REPRAM has no client access control, client authentication, or built-in payload encryption. Its security model is transience plus client-side layering: encrypt values that need confidentiality before storing them. Nodes don't interpret stored data (no schema, no indexes, no query language) — though, as with any storage, the node holding your bytes can read them. Data exists in memory for its local TTL duration, then the node deletes its copy. Nothing accumulates into a payload archive. Operators may optionally authenticate peer-to-peer gossip with a shared HMAC secret; this does not change client access semantics.
 
 If you need confidentiality during the TTL window, encrypt data before storing it. REPRAM is agnostic to whether bytes are plaintext or ciphertext.
 
@@ -35,6 +35,7 @@ The reference implementation is a single Go binary (`cmd/repram/`) that runs in 
 * **Bootstrap Layer**: Ed25519-signed root-list discovery for the public network (TXT records at `_bootstrap.repram.io` → `_omega.repram.io`, verified against a baked-in "omega" pubkey — see [`docs/omega-operations.md`](omega-operations.md)), or manual `REPRAM_PEERS` for private clusters.
 * **Gossip Network**: HTTP-based peer-to-peer message propagation with quorum acknowledgement. Small enclaves use full broadcast; larger enclaves (>10 peers) use probabilistic √N fanout with epidemic forwarding and message deduplication.
 * **Enclaves**: `REPRAM_ENCLAVE` scopes data replication — nodes in the same enclave replicate data, all nodes share topology. Dynamic quorum adapts to enclave size.
+* **Reachability Tree**: Nodes run identical software but may expose different network capabilities. Substrates accept inbound WebSocket attachments; transients attach outbound. These roles route the same gossip messages and do not grant authority over data.
 
 ## Agent Usage Patterns
 
@@ -58,7 +59,7 @@ REPRAM is `pipe`, not `grep`. It doesn't know or care what flows through it — 
 
 **Ephemeral broadcast** — Write a value to a known key; anyone polling that key gets the current state. Config distribution, feature flags, announcement channels. Stop writing and the broadcast expires — automatic rollback with zero cleanup.
 
-**Secure relay** — Encrypt a payload, store it, share the key through a side channel. Recipient retrieves it. Data self-destructs after TTL. No server logs, no accounts, no metadata trail. The infrastructure doesn't know what it carried and can't be compelled to remember. Works for anything from whistleblower drops to encrypted military communications.
+**Secure relay** — Encrypt a payload, store it, share the key through a side channel. Recipient retrieves it. REPRAM keeps no payload logs, user accounts, or durable access history, and the stored ciphertext expires automatically. Network observers and participants may retain their own metadata or copies; REPRAM's promise is that its nodes do not become a permanent archive.
 
 **Session continuity** — Store session state under a session ID, overwrite on each interaction to refresh TTL. Any edge server can read the current state. User stops interacting → session expires naturally. No session store, no garbage collection, no stale session cleanup jobs. Enterprise browser session replication without enterprise infrastructure.
 
@@ -79,7 +80,7 @@ REPRAM is `pipe`, not `grep`. It doesn't know or care what flows through it — 
 
 REPRAM nodes don't need to be tightly coupled or consistently available. The data's lifecycle is self-limiting: a node that goes offline for an hour and comes back has simply missed some data that may have already expired anyway. There's no catch-up problem — traditional distributed systems need complex reconciliation when a node rejoins, but REPRAM doesn't, because expired data doesn't need to be synced and current data will arrive via normal gossip.
 
-This is a resilience property that falls naturally out of the ephemeral design. Partial network availability doesn't create stale state or split-brain problems. Data either exists (within TTL) or doesn't. There's no ambiguity to resolve.
+This is a resilience property that falls naturally out of the ephemeral design. A partition can produce temporary disagreement — including different live values for the same key — but REPRAM does not preserve competing histories or require a durable reconciliation phase. Later writes or TTL expiration remove the disagreement naturally.
 
 ## Design Constraints
 
@@ -88,7 +89,7 @@ See [Core Principles](core-principles.md) for the full set of inviolable design 
 * Every key must have a TTL — no permanent storage
 * Nodes never interpret stored data — content-agnostic
 * No authentication at the node level — access through key knowledge
-* All nodes are equal — no coordinators, no hierarchy
+* All nodes are equal gossip participants running the same software; discovery and reachability roles do not create a data hierarchy
 * TTL cannot be extended — must re-write with a new TTL
 
 REPRAM is the `/tmp` of the agent web: fast, ephemeral, shared storage that requires no trust, no setup, and no cleanup.
