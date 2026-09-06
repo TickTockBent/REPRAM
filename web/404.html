@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>404 // key not found — REPRAM</title>
+  <meta name="description" content="This key has expired or was never written. REPRAM forgets what it holds." />
+  <meta name="robots" content="noindex, follow" />
+  <meta name="theme-color" content="#0a0a0f" />
+
+  <link rel="stylesheet" href="/colors_and_type.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%230a0a0f'/><text x='50' y='68' font-family='monospace' font-weight='700' font-size='56' text-anchor='middle' fill='%2339ff14'>R</text></svg>" />
+
+  <style>
+    /* Mirrors the base + background stack in index.html. Static on purpose:
+       this page is served to every bad path, so it carries no React, no
+       Babel, and no analytics beacon. */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: #0a0a0f;
+      color: var(--color-text-body);
+      font-family: var(--font-mono);
+      line-height: 1.7;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    .bg-layer { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+    .bg-scanlines::after {
+      content: "";
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 2;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        #00000020 3px, #00000020 4px
+      );
+    }
+    .bg-vignette {
+      background: radial-gradient(ellipse at center, transparent 40%, #0a0a0f 100%);
+      z-index: 1;
+    }
+
+    ::selection { background: #39ff1480; color: #0a0a0f; }
+    a { color: #39ff14; text-decoration: none; transition: color .2s, text-shadow .2s, border-color .2s, box-shadow .2s; }
+    a:hover { color: #e040fb; text-shadow: 0 0 8px #e040fb99; }
+
+    /* ---------- Nav (SiteNav) ---------- */
+    .site-nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+      background: rgba(10,10,15,0.9);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      border-bottom: 1px solid #39ff1433;
+    }
+    .site-nav-inner {
+      max-width: 1280px; margin: 0 auto; padding: 0 24px;
+      height: 56px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .site-nav-brand {
+      color: #39ff14; text-shadow: 0 0 10px #39ff1480;
+      font-size: 14px; font-weight: 700; letter-spacing: 0.1em;
+    }
+    .site-nav-brand:hover { color: #39ff14; }
+    .site-nav-brand .prompt { color: #22d3ee; }
+    .site-nav-brand .ver { color: #8b949e; margin-left: 8px; letter-spacing: 0; font-size: 11px; }
+    .site-nav-links { display: flex; gap: 22px; align-items: center; font-size: 12px; }
+    .site-nav-links a { color: #8b949e; letter-spacing: 0.06em; }
+    .site-nav-links a:hover { color: #39ff14; text-shadow: 0 0 8px #39ff1460; }
+    .site-nav-links .btn-gh {
+      color: #22d3ee; border: 1px solid #22d3ee4d; padding: 6px 12px;
+    }
+    .site-nav-links .btn-gh:hover {
+      color: #39ff14; border-color: #39ff1480; text-shadow: none;
+      box-shadow: 0 0 8px #39ff1430, inset 0 0 8px #39ff1410;
+    }
+
+    /* ---------- Page ---------- */
+    main {
+      position: relative; z-index: 3;
+      max-width: 1180px; margin: 0 auto;
+      padding: 112px 28px 60px;
+      min-height: 100vh;
+      display: flex; flex-direction: column; justify-content: center;
+    }
+    .rule {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 18px;
+    }
+    .rule .label { color: #22d3ee; font-size: 12px; letter-spacing: 0.14em; }
+    .rule .line { flex: 1; height: 1px; background: #22d3ee33; }
+    .rule .status { color: #8b949e; font-size: 11px; letter-spacing: 0.1em; }
+    .dead-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #e040fb; box-shadow: 0 0 8px #e040fb;
+      animation: pulse-dot 1.6s ease-in-out infinite;
+    }
+
+    .code-wrap {
+      width: 100%; display: flex; justify-content: center; align-items: center;
+      padding: 22px 0; margin: 0 0 22px; position: relative;
+    }
+    h1.wm-glitch {
+      position: relative; isolation: isolate;
+      font-family: var(--font-mono);
+      font-size: clamp(72px, 16vw, 164px);
+      font-weight: 700; letter-spacing: 0.14em; line-height: 1; margin: 0;
+      color: #39ff14;
+      text-shadow: 0 0 10px #39ff14cc, 0 0 22px #39ff1466;
+      animation: wm-glitch-shadow 2.2s infinite;
+    }
+    .wm-glitch::before, .wm-glitch::after {
+      content: attr(data-text);
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: -1;
+    }
+    .wm-glitch::before {
+      color: #e040fb; text-shadow: 0 0 10px #e040fbcc;
+      animation: wm-glitch-1 0.55s infinite steps(1, end);
+    }
+    .wm-glitch::after {
+      color: #22d3ee; text-shadow: 0 0 10px #22d3eecc;
+      animation: wm-glitch-2 0.48s infinite steps(1, end);
+    }
+
+    .lede { color: #b8c0cc; font-size: 16px; line-height: 1.7; max-width: 680px; margin: 0 0 8px; }
+    .lede .muted { color: #8b949e; }
+
+    .term {
+      margin-top: 28px; padding: 16px 18px;
+      border: 1px solid #22d3ee33; background: #0d1117cc;
+      font-size: 13px; line-height: 1.65;
+    }
+    .term .tag { font-weight: 700; }
+    .term .txt { color: #b8c0cc; margin-left: 10px; }
+    .term .path { color: #f0f6fc; word-break: break-all; }
+    .term .prompt-line { margin-top: 6px; }
+    .cursor {
+      display: inline-block; width: 8px; height: 14px; background: #39ff14;
+      margin-left: 4px; vertical-align: text-bottom;
+      animation: cursor-blink 1s step-end infinite;
+    }
+
+    .ctas { display: flex; gap: 14px; margin-top: 28px; flex-wrap: wrap; }
+    .cta {
+      display: inline-flex; align-items: center;
+      padding: 10px 18px; font-size: 13px; letter-spacing: 0.06em;
+      border: 1px solid #39ff1480; color: #39ff14;
+    }
+    .cta .glyph { margin-right: 6px; color: #22d3ee; }
+    .cta.primary { background: #39ff14; color: #0a0a0f; box-shadow: 0 0 12px #39ff1440; }
+    .cta.primary .glyph { color: #0a0a0f; }
+    .cta.primary:hover { background: #e040fb; border-color: #e040fb; color: #0a0a0f; text-shadow: none; box-shadow: 0 0 12px #e040fb60; }
+    .cta:not(.primary):hover { color: #e040fb; border-color: #e040fb99; text-shadow: none; box-shadow: 0 0 8px #e040fb30; }
+
+    footer {
+      margin-top: 60px; padding-top: 18px; border-top: 1px solid #22d3ee1a;
+      color: #8b949e; font-size: 11px; letter-spacing: 0.05em;
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    }
+    footer .note { font-style: italic; letter-spacing: 0; }
+
+    @keyframes cursor-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 0.6; transform: scale(0.9); }
+      50%      { opacity: 1;   transform: scale(1.1); }
+    }
+    @keyframes wm-glitch-shadow {
+      0%, 100% { text-shadow: 0 0 10px #39ff14cc, 0 0 22px #39ff1466; }
+      20%      { text-shadow: 3px 0 10px #e040fbcc, -2px 0 6px #39ff1480; }
+      40%      { text-shadow: -3px 0 10px #22d3eecc, 2px 0 6px #39ff1480; }
+      60%      { text-shadow: 0 0 12px #39ff14ff, 0 0 24px #39ff14aa; }
+      80%      { text-shadow: 2px 0 8px #e040fbaa, -2px 0 8px #22d3eeaa; }
+    }
+    @keyframes wm-glitch-1 {
+      0%, 100% { clip-path: inset(0 0 0 0); transform: translate(0,0); }
+      20%      { clip-path: inset(18% 0 62% 0); transform: translate(-2px, 0); }
+      40%      { clip-path: inset(52% 0 20% 0); transform: translate(2px, 0); }
+      60%      { clip-path: inset(8%  0 82% 0); transform: translate(0, 0); }
+      80%      { clip-path: inset(80% 0 8%  0); transform: translate(1px, 0); }
+    }
+    @keyframes wm-glitch-2 {
+      0%, 100% { clip-path: inset(0 0 0 0); transform: translate(0,0); }
+      20%      { clip-path: inset(60% 0 20% 0); transform: translate(2px, 0); }
+      40%      { clip-path: inset(22% 0 52% 0); transform: translate(-2px, 0); }
+      60%      { clip-path: inset(78% 0 12% 0); transform: translate(1px, 0); }
+      80%      { clip-path: inset(10% 0 78% 0); transform: translate(-1px, 0); }
+    }
+
+    @media (max-width: 720px) {
+      .site-nav-links a:not(.btn-gh) { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-layer bg-vignette"></div>
+  <div class="bg-layer bg-scanlines"></div>
+
+  <header class="site-nav">
+    <div class="site-nav-inner">
+      <a href="/" class="site-nav-brand">
+        <span class="prompt">$</span>&nbsp;repram<span class="ver">v2.0</span>
+      </a>
+      <nav class="site-nav-links">
+        <a href="/#architecture">architecture</a>
+        <a href="/#patterns">patterns</a>
+        <a href="/#quickstart">quickstart</a>
+        <a href="/#api">api</a>
+        <a class="btn-gh" href="https://github.com/TickTockBent/REPRAM"><span>@</span> github</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="rule">
+      <span class="label">// NET://REPRAM.IO</span>
+      <span class="line"></span>
+      <span class="dead-dot" aria-hidden="true"></span>
+      <span class="status">KEY&nbsp;NOT&nbsp;FOUND</span>
+    </div>
+
+    <div class="code-wrap">
+      <h1 class="wm-glitch" data-text="404" aria-label="404">404</h1>
+    </div>
+
+    <p class="lede">
+      this key has expired, or was never written.
+      <br />
+      <span class="muted">
+        REPRAM forgets what it holds. absence of a write is the only signal,
+        and this address is silent. there is nothing here to retrieve.
+      </span>
+    </p>
+
+    <div class="term" role="status" aria-live="polite">
+      <div><span class="tag" style="color:#22d3ee">[GET]</span><span class="txt"><span class="path" id="req-path">/</span></span></div>
+      <div><span class="tag" style="color:#facc15">[SYS]</span><span class="txt">lookup returned no entry</span></div>
+      <div><span class="tag" style="color:#e040fb">[TTL]</span><span class="txt">0s remaining · nothing to sweep</span></div>
+      <div><span class="tag" style="color:#39ff14">[ OK]</span><span class="txt">the network is intact. the key is not.</span></div>
+      <div class="prompt-line">
+        <span style="color:#22d3ee">guest@repram</span><span style="color:#8b949e">:</span><span style="color:#39ff14">~</span><span style="color:#8b949e">$ </span><span style="color:#b8c0cc">cd /</span><span class="cursor"></span>
+      </div>
+    </div>
+
+    <div class="ctas">
+      <a class="cta primary" href="/"><span class="glyph">&gt;</span>back to the landing page</a>
+      <a class="cta" href="https://github.com/TickTockBent/REPRAM"><span class="glyph">@</span>github</a>
+    </div>
+
+    <footer>
+      <span>REPRAM v2.0 · ephemeral by design · MIT</span>
+      <span class="note">// this page will not self-destruct. whatever you were looking for already did.</span>
+    </footer>
+  </main>
+
+  <script>
+    // Echo the requested path into the terminal readout. Text-only: the value
+    // goes through textContent, never innerHTML, so a crafted path can't inject.
+    (function () {
+      var el = document.getElementById('req-path');
+      if (!el) return;
+      var requestedPath = window.location.pathname || '/';
+      if (requestedPath.length > 80) requestedPath = requestedPath.slice(0, 77) + '...';
+      el.textContent = requestedPath;
+    })();
+  </script>
+</body>
+</html>

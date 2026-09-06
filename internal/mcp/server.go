@@ -23,6 +23,8 @@ import (
 	"repram/internal/storage"
 )
 
+const defaultStoreTTLSeconds = 30 * 60
+
 const protocolVersion = "2024-11-05"
 
 // Server reads JSON-RPC requests line by line from in and writes replies to
@@ -259,7 +261,7 @@ func tools() []toolDef {
 					},
 					"ttl_seconds": map[string]any{
 						"type":        "number",
-						"description": "Time-to-live in seconds. The data will be automatically deleted after this duration. Minimum 300 (5 minutes), maximum 86400 (24 hours). Default: 3600 (1 hour).",
+						"description": "Time-to-live in seconds. The data will be automatically deleted after this duration. Values below 300 seconds are accepted and normalized to 300. Maximum 86400 (24 hours). Default: 1800 (30 minutes).",
 					},
 					"key": map[string]any{
 						"type":        "string",
@@ -373,7 +375,7 @@ func (s *Server) toolStore(ctx context.Context, args map[string]interface{}) (an
 		return nil, fmt.Errorf("data: required string argument")
 	}
 
-	ttl := 3600
+	ttl := defaultStoreTTLSeconds
 	if v, present := args["ttl_seconds"]; present {
 		n, err := toInt(v)
 		if err != nil {
@@ -515,4 +517,3 @@ func newKey() string {
 		hex.EncodeToString(b[10:16]),
 	)
 }
-

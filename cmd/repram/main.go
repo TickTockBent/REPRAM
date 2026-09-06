@@ -39,6 +39,11 @@ import (
 	"repram/internal/trust"
 )
 
+const (
+	defaultTTLSeconds = 30 * 60
+	minimumTTLSeconds = 5 * 60
+)
+
 // omegaLastRefreshGauge records the unix timestamp of the most recent
 // successful signed-list refresh. The burn-in dashboard plots
 // `time() - repram_omega_last_refresh_unix_seconds` to surface freshness.
@@ -108,6 +113,12 @@ func main() {
 	replicationFactor := envInt("REPRAM_REPLICATION", 3)
 	minTTL := envInt("REPRAM_MIN_TTL", 300)
 	maxTTL := envInt("REPRAM_MAX_TTL", 86400)
+	// Five minutes is the protocol floor: callers may request less, but the
+	// accepted value is normalized upward so it has time to propagate. An
+	// operator may configure a stricter floor, never a looser one.
+	if minTTL < minimumTTLSeconds {
+		minTTL = minimumTTLSeconds
+	}
 	rateLimit := envInt("REPRAM_RATE_LIMIT", 100)
 	maxStorageMB := envInt("REPRAM_MAX_STORAGE_MB", defaultStorageMB)
 	writeTimeout := envInt("REPRAM_WRITE_TIMEOUT", 5)      // seconds
@@ -687,7 +698,7 @@ func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TTL from header or query param
-	ttl := 3600 // Default 1 hour
+	ttl := defaultTTLSeconds
 	if ttlStr := r.URL.Query().Get("ttl"); ttlStr != "" {
 		if parsed, err := strconv.Atoi(ttlStr); err == nil && parsed > 0 {
 			ttl = parsed

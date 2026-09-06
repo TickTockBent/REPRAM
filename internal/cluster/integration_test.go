@@ -393,3 +393,41 @@ func TestWriteReplicationToThreeNodes(t *testing.T) {
 		}
 	}
 }
+
+func TestSameKeyGossipUsesArrivalOrderNotTimestamp(t *testing.T) {
+	node := NewClusterNode("receiver", "127.0.0.1", 0, 0, 1, 0, time.Second, "", "default")
+
+	newer := &gossip.Message{
+		Type:      gossip.MessageTypePut,
+		From:      "node-newer",
+		Key:       "collision",
+		Data:      []byte("newer-by-timestamp"),
+		TTL:       300,
+		Timestamp: time.Now(),
+		MessageID: "collision-newer",
+	}
+	older := &gossip.Message{
+		Type:      gossip.MessageTypePut,
+		From:      "node-older",
+		Key:       "collision",
+		Data:      []byte("older-by-timestamp"),
+		TTL:       300,
+		Timestamp: time.Now().Add(-time.Hour),
+		MessageID: "collision-older",
+	}
+
+	if err := node.HandleGossipMessage(newer); err != nil {
+		t.Fatalf("handle newer PUT: %v", err)
+	}
+	if err := node.HandleGossipMessage(older); err != nil {
+		t.Fatalf("handle later-arriving older PUT: %v", err)
+	}
+
+	data, exists := node.Get("collision")
+	if !exists {
+		t.Fatal("collision key missing")
+	}
+	if got := string(data); got != "older-by-timestamp" {
+		t.Fatalf("collision value = %q, want last-arriving value %q", got, "older-by-timestamp")
+	}
+}

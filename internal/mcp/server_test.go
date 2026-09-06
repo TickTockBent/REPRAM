@@ -309,6 +309,17 @@ func TestStoreGeneratesKey(t *testing.T) {
 	}
 }
 
+func TestStoreOmittedTTLDefaultsToThirtyMinutes(t *testing.T) {
+	s := openStream(t)
+	defer s.close()
+
+	resp := s.call("tools/call", `{"name":"repram_store","arguments":{"data":"default","key":"default-ttl"}}`)
+	got := toolContent(t, resp)
+	if got["ttl_seconds"].(float64) != 1800 {
+		t.Errorf("ttl_seconds = %v, want 1800", got["ttl_seconds"])
+	}
+}
+
 func TestStoreClampsTTL(t *testing.T) {
 	s := openStream(t)
 	defer s.close()

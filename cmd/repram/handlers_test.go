@@ -97,6 +97,25 @@ func TestPutTTLFromQueryParam(t *testing.T) {
 	}
 }
 
+func TestPutOmittedTTLDefaultsToThirtyMinutes(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest("PUT", "/v1/data/defaultttl", strings.NewReader("data"))
+	w := httptest.NewRecorder()
+	server.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	getReq := httptest.NewRequest("GET", "/v1/data/defaultttl", nil)
+	getW := httptest.NewRecorder()
+	server.Router().ServeHTTP(getW, getReq)
+	if got := getW.Header().Get("X-Original-TTL"); got != "1800" {
+		t.Fatalf("X-Original-TTL = %q, want %q", got, "1800")
+	}
+}
+
 func TestPutTTLClampedToMin(t *testing.T) {
 	server, cleanup := newTestServer(t)
 	defer cleanup()
@@ -133,7 +152,7 @@ func TestPutMalformedTTLUsesDefault(t *testing.T) {
 
 	server.Router().ServeHTTP(w, req)
 
-	// Should succeed — malformed TTL falls through to default (3600), clamped to min/max
+	// Malformed TTL falls through to the 30-minute default.
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
@@ -149,7 +168,7 @@ func TestPutNegativeTTLUsesDefault(t *testing.T) {
 
 	server.Router().ServeHTTP(w, req)
 
-	// Negative TTL fails the `parsed > 0` check, so default (3600) is used
+	// Negative TTL fails the `parsed > 0` check, so the 30-minute default is used.
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d", w.Code)
 	}

@@ -3,13 +3,7 @@
   "buildCommand": "echo 'No build needed'",
   "outputDirectory": ".",
   "routes": [
-    {
-      "src": "/(.*\\.(jsx|js|css|png|jpg|jpeg|gif|svg|ico|webp|woff2?|txt))",
-      "dest": "/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "status": 404, "dest": "/404.html" }
   ]
 }
